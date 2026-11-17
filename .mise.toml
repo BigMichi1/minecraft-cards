@@ -1,3 +1,10 @@
+[vars]
+# GHSA-67mh-4wv8-2f99 is an esbuild development-server issue that reaches the
+# tree only through drizzle-kit (dev dependency, migration generation). esbuild
+# never runs in the bot or its Docker image. Drop the ignore once drizzle-kit
+# ships with esbuild >= 0.25.0 only.
+audit_ignores = "--ignore GHSA-67mh-4wv8-2f99"
+
 [tools]
 bun = "1.4.4"
 claude = "2.1.326"
@@ -89,6 +96,13 @@ run = "bun run scripts/download-model.ts"
 [tasks.audit]
 description = "Audit dependencies for vulnerabilities"
 run = "bun audit"
+
+[tasks."audit:ci"]
+# Gate on every severity, with known upstream-blocked findings named explicitly
+# (vars.audit_ignores) so any new advisory still fails the build. Runs from
+# .github/workflows/audit.yml on main and daily.
+description = "Fail on any dependency advisory that is not a known upstream-blocked exception"
+run = "bun audit {{vars.audit_ignores}}"
 
 [tasks.outdated]
 description = "Check for outdated dependencies"

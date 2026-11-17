@@ -15,7 +15,11 @@ export const SHOP_PEAK_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 /** Rows whose problems were already logged, so a bad row warns once per process, not per run. */
 const warnedOnce = new Set<string>();
 
-/** Forget which rows were warned about (tests: row ids restart after a table is emptied). */
+/**
+ * Forget which rows were warned about (tests: the set outlives each test's data within one worker,
+ * and row ids do not restart after a table is emptied, AUTOINCREMENT, so a later test would
+ * otherwise inherit earlier warnings).
+ */
 export function resetWarnings(): void {
   warnedOnce.clear();
 }
@@ -36,38 +40,40 @@ function isShopSummary(entry: unknown): entry is ShopSummary {
 /**
  * Parse a stored summary. Rows written by an older version lack newer fields, so every field
  * added to RunSummary after the first release must be optional; this check covers the fields
- * every version wrote. An unreadable row (warned once, with the reason) gives undefined; shop
- * entries that are not shop summaries are dropped with a warning.
+ * every version wrote. A row that is not valid JSON, not an object or lacks one of those fields
+ * gives undefined; shop entries that are not shop summaries are dropped. Each problem is warned
+ * once per process, with its reason.
  */
 function parseSummary(json: string, rowId: number): RunSummary | undefined {
+  let value: unknown;
   try {
-    const value: unknown = JSON.parse(json);
-    if (typeof value !== 'object' || value === null) {
-      warnOnce(`${rowId}`, `run ${rowId}: stored summary is not a run summary`);
-      return undefined;
-    }
-    const v = value as Record<string, unknown>;
-    if (
-      typeof v.startedAt !== 'number' ||
-      typeof v.finishedAt !== 'number' ||
-      typeof v.notified !== 'number' ||
-      typeof v.dmFailures !== 'number' ||
-      typeof v.shops !== 'object' ||
-      v.shops === null
-    ) {
-      warnOnce(`${rowId}`, `run ${rowId}: stored summary is not a run summary`);
-      return undefined;
-    }
-    const shops: Record<string, ShopSummary> = {};
-    for (const [shop, entry] of Object.entries(v.shops)) {
-      if (isShopSummary(entry)) shops[shop] = entry;
-      else warnOnce(`${rowId}:${shop}`, `run ${rowId}: stored ${shop} entry is not a shop summary`);
-    }
-    return { ...(value as RunSummary), shops };
+    value = JSON.parse(json);
   } catch (err) {
     warnOnce(`${rowId}`, `run ${rowId}: stored summary is unreadable: ${errorMessage(err)}`);
     return undefined;
   }
+  if (typeof value !== 'object' || value === null) {
+    warnOnce(`${rowId}`, `run ${rowId}: stored summary is not an object`);
+    return undefined;
+  }
+  const v = value as Record<string, unknown>;
+  if (
+    typeof v.startedAt !== 'number' ||
+    typeof v.finishedAt !== 'number' ||
+    typeof v.notified !== 'number' ||
+    typeof v.dmFailures !== 'number' ||
+    typeof v.shops !== 'object' ||
+    v.shops === null
+  ) {
+    warnOnce(`${rowId}`, `run ${rowId}: stored summary lacks a field every version wrote`);
+    return undefined;
+  }
+  const shops: Record<string, ShopSummary> = {};
+  for (const [shop, entry] of Object.entries(v.shops)) {
+    if (isShopSummary(entry)) shops[shop] = entry;
+    else warnOnce(`${rowId}:${shop}`, `run ${rowId}: stored ${shop} entry is not a shop summary`);
+  }
+  return { ...(value as RunSummary), shops };
 }
 
 export const runManager = {
@@ -90,7 +96,8 @@ export const runManager = {
 
   /**
    * The highest number of listings `shop` returned in its successful runs that started within
-   * the last 3 days before `now`, however many runs that is; undefined when there is none.
+   * the last SHOP_PEAK_WINDOW_MS (3 days) before `now`, however many runs that is; undefined when
+   * there is none.
    * Unreadable rows and entries are skipped with a warning, once per row.
    */
   shopPeakListings(shop: ShopId, now: number): number | undefined {

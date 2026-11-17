@@ -58,6 +58,14 @@ export const IMAGE_RETRY_MS = 24 * 60 * 60 * 1000;
 /** A shop returning fewer than this share of its recent peak count alerts the admin. */
 const DROP_ALERT_SHARE = 0.5;
 
+/** A window as text: whole days print without decimals, other values with at most one. */
+export function formatWindow(ms: number): string {
+  const days = ms / (24 * 60 * 60 * 1000);
+  if (days < 1) return `${Math.round(ms / (60 * 60 * 1000))} hours`;
+  const rounded = Math.round(days * 10) / 10;
+  return rounded === 1 ? '1 day' : `${rounded} days`;
+}
+
 /**
  * True when the picture has not been judged yet, or the last attempt could not judge it:
  * `pending` (new or changed listing), `no_reference` and `model_unavailable` (both cheap to
@@ -158,12 +166,12 @@ async function checkShop(
     }
     if (peak !== undefined && found.length < peak * DROP_ALERT_SHARE) {
       // A pagination or markup change can leave only part of the shop readable. Measured
-      // against the peak of the successful runs of the last 3 days (longer than the 24 h
-      // throttle), a lasting drop keeps alerting daily until its last healthy run is older
-      // than 3 days (about three alerts).
+      // against the peak of the successful runs of the last SHOP_PEAK_WINDOW_MS (3 days, longer
+      // than the 24 h throttle), a lasting drop keeps alerting daily until its last healthy run
+      // is older than that (about three alerts).
       await alert(
         `shop-drop:${adapter.id}`,
-        `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last ${SHOP_PEAK_WINDOW_MS / (24 * 60 * 60 * 1000)} days — check the pagination and markup.`
+        `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)} — check the pagination and markup.`
       );
     }
     for (const l of found) fetched.set(l.url, l);

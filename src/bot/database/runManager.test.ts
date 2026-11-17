@@ -47,6 +47,21 @@ describe('runManager', () => {
     }
   });
 
+  test('a JSON null or number summary warns once, reads as no run and is skipped', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: 'null' }).run();
+      db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: '42' }).run();
+      runManager.record(summary);
+      expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
+      expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
+      expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn.mock.calls.every((c) => /not an object/.test(String(c[0])))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('a summary of an older version without the newer optional fields still reads', () => {
     runManager.record(summary);
     expect(runManager.last()).toEqual(summary);

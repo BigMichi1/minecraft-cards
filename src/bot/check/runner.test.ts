@@ -31,6 +31,7 @@ import {
   type PendingNotifications,
   type RunDeps,
   IMAGE_RETRY_MS,
+  formatWindow,
 } from './runner';
 import { cid } from '../../test/cardIds';
 
@@ -410,7 +411,16 @@ describe('runCheck', () => {
     expect(alerts).toEqual([]);
     await runCheck(depsWith([ok('blue-ocean', many.slice(0, 2))]));
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]).toContain('2 card listings, down from 10 at most');
+    expect(alerts[0]).toContain('2 card listings, down from 10 at most in the last 3 days —');
+  });
+
+  test('formatWindow prints whole days plainly and never a long decimal', () => {
+    const day = 24 * 60 * 60 * 1000;
+    expect(formatWindow(3 * day)).toBe('3 days');
+    expect(formatWindow(day)).toBe('1 day');
+    expect(formatWindow(2.5 * day)).toBe('2.5 days');
+    expect(formatWindow(10 * day) + formatWindow(day / 3)).toBe('10 days8 hours');
+    expect(formatWindow((10 / 3) * day)).toBe('3.3 days');
   });
 
   test('a lasting drop keeps alerting once a day instead of becoming the new normal', async () => {

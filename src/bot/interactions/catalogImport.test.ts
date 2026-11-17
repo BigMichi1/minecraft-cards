@@ -137,6 +137,35 @@ describe('handleCatalogButton', () => {
     }
   });
 
+  test('the note goes out as an ephemeral follow-up when it was answered but not deferred', async () => {
+    const store = createImportStore(() => clock);
+    const token = store.put([cid('1')]);
+    const button = fakeButton(`catalog-save:${token}`);
+    const followUps: any[] = [];
+    Object.assign(button, {
+      replied: true,
+      update: async () => {
+        throw new Error('unknown interaction');
+      },
+      followUp: async (p: unknown) => {
+        followUps.push(p);
+      },
+    });
+    const log = spyOn(logger, 'log');
+    try {
+      await handleCatalogButton(button, { adminId: 'admin' }, store);
+      expect(replies).toEqual([]);
+      expect(followUps).toEqual([
+        {
+          content: 'The catalog was saved, but this message could not be updated.',
+          flags: MessageFlags.Ephemeral,
+        },
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   test('a note that cannot be delivered is logged as a warning and does not become a button failure', async () => {
     const store = createImportStore(() => clock);
     const token = store.put([cid('1')]);

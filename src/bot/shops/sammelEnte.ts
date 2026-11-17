@@ -23,8 +23,8 @@ function parsePrice(text: string): Listing['price'] {
 
 /**
  * Parse one category page. `productCount` counts every product box, cards or not; of the boxes
- * that are not card listings, `skippedNoId` had a title naming a card number ("|#" or "| #") that could
- * not be read (other products such as boosters and puzzle packs are not counted) and
+ * that are not card listings, `skippedNoId` had a title naming a card number ("|#" or "| #")
+ * that could not be read (other products such as boosters and puzzle packs are not counted) and
  * `skippedInvalid` no link or title. `lastPage` is the highest `?p=N` in the pagination (1 when
  * none).
  */

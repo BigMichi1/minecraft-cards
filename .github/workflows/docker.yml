@@ -61,8 +61,8 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             # Major version zero is initial development: no moving `0` tag. The release notes
-            # list the version tags (see release-attestation.yml); every run also pushes
-            # `sha-<short>`, and pushes to the default branch push `main` and `latest`.
+            # list the version tags (see release-attestation.yml); every non-PR run also pushes
+            # `sha-<short>`; pushes to the default branch also push `main` and `latest`.
             type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
             type=sha
             type=raw,value=latest,enable={{is_default_branch}}

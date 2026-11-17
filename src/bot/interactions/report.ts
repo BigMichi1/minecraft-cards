@@ -231,7 +231,11 @@ const UNSENT_WARN_AFTER_MS = 24 * 60 * 60 * 1000;
 /** Reports already logged as having no listing, so the check run logs each once per process. */
 const warnedMissingListing = new Set<number>();
 
-/** Forget which reports were logged (tests: report ids restart after a table is emptied). */
+/**
+ * Forget which reports were logged (tests: the set outlives each test's data within one worker,
+ * and report ids do not restart after a table is emptied, AUTOINCREMENT, so a later test would
+ * otherwise inherit earlier warnings).
+ */
 export function resetReportWarnings(): void {
   warnedMissingListing.clear();
 }
@@ -239,7 +243,8 @@ export function resetReportWarnings(): void {
 /**
  * Retry the admin DM of open reports whose DM failed (reportManager.unsentOpen); called every
  * check run. Returns how many went out; never throws. A report that stays unsent for over a
- * day logs one warning per day.
+ * day logs one warning per day; a report whose listing no longer exists is skipped and logged
+ * once per process.
  */
 export async function retryUnsentReports(
   notifyAdmin: NotifyAdmin,
@@ -248,7 +253,7 @@ export async function retryUnsentReports(
   let sent = 0;
   try {
     for (const report of reportManager.unsentOpen()) {
-      // One report's failure (a database read, the alert throttle) must not skip the reports after it.
+      // One report's failure (a database read, the alert throttle) must not skip the ones after it.
       try {
         const listing = listingManager.getById(report.listingId);
         if (!listing) {

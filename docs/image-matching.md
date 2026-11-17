@@ -49,8 +49,11 @@ Worst pairs for DINOv2: lowest true 123 = 0.6650, 80 = 0.7441, 166 = 0.7459; hig
 
 **Choice:** DINOv2-small has the wider (less negative) gap and far fewer errors. Because the
 groups overlap, a gap midpoint is not a separating threshold; the default is the
-fewest-errors point rounded to 0.78. At that point about 2 % of genuine matches show as
-unconfirmed and about 3 % of neighbouring-card mix-ups would still be confirmed, so
+fewest-errors point 0.7772, rounded to 0.78. The error rates were measured at 0.7772: 4 of
+203 genuine matches (about 2 %) show as unconfirmed and 6 of 203 neighbouring-card mix-ups
+(about 3 %) would still be confirmed. The rounded 0.78 was not re-measured (the measurement
+needs the live shops); a pair scoring between 0.7772 and 0.78 counts as unconfirmed there,
+so at 0.78 the first rate can only be the same or higher and the second the same or lower.
 `confirmed` is strong evidence, not proof.
 
 Measured with transformers.js 4.3.2 on CPU; embedding two shop images (download included) took about 0.5 s.
@@ -74,7 +77,7 @@ Measured with transformers.js 4.3.2 on CPU; embedding two shop images (download 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",
 URLs ending `-tcc-1`). The blue-ocean parser reads card ids from those URLs too (for
 example `1` from `…-tcc-1`), so the 250 of 456 blue-ocean listings that are not series 3
-still get a card id, which is not the series 3 card of that number. The measurement script and the blue-ocean adapter both filter them out by title (`isOnFireCardTitle`: the title must contain "LEGO Minecraft TCC" and "On Fire").
+still get a card id, which is not the series 3 card of that number. The blue-ocean parser filters them out by title (`isOnFireCardTitle`: the title must contain "LEGO Minecraft TCC" and "On Fire"), and the measurement script reads blue-ocean through it.
 
 ## Compiled binary (`bun build --compile`)
 

@@ -15,7 +15,8 @@ import { cosineSimilarity } from './similarity';
 export const DEFAULT_IMAGE_MODEL = 'Xenova/dinov2-small';
 /**
  * The measured groups overlap, so this is the fewest-errors point (0.7772, rounded), not a
- * gap midpoint: about 2% of same-card pairs stay unconfirmed, about 3% of neighbours confirm.
+ * gap midpoint. At 0.7772 about 2% of same-card pairs stayed unconfirmed and about 3% of
+ * neighbours confirmed; 0.78 itself was not re-measured (docs/image-matching.md).
  */
 export const DEFAULT_IMAGE_MATCH_THRESHOLD = 0.78;
 

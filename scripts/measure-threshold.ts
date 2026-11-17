@@ -3,9 +3,10 @@
  *
  * Fetches the live blue-ocean and sammel-ente listings, pairs them by card id (true pairs:
  * same card in both shops) and by shifting the id by one (false pairs: neighbouring cards),
- * and prints min / median / max cosine similarity per group and model, plus the gap between
- * the lowest true pair and the highest false pair. Pick the model with the widest gap and
- * use the gap midpoint as IMAGE_MATCH_THRESHOLD.
+ * and prints min / median / max cosine similarity per group and model, the gap between the
+ * lowest true pair and the highest false pair, and the errors at the gap midpoint and at the
+ * fewest-errors threshold. Pick the model with the widest gap and use its fewest-errors
+ * threshold as IMAGE_MATCH_THRESHOLD: the groups overlap, so the midpoint separates nothing.
  *
  * Usage: ./bin/mise run measure:threshold [-- --pages all|<n>] [--limit <pairs>]
  *   --pages  shop pages to read per shop (default all; page 1 alone rarely shares a card id)
@@ -22,8 +23,7 @@ const { createTransformersEmbedder } = await import('../src/bot/matcher/embedder
 const { cosineSimilarity } = await import('../src/bot/matcher/similarity');
 const { createSammelEnteAdapter, parseSammelEntePage } =
   await import('../src/bot/shops/sammelEnte');
-const { createBlueOceanAdapter, parseBlueOceanPage, isOnFireCardTitle } =
-  await import('../src/bot/shops/blueOcean');
+const { createBlueOceanAdapter, parseBlueOceanPage } = await import('../src/bot/shops/blueOcean');
 const { fetchText } = await import('../src/bot/utils/http');
 type Listing = import('../src/bot/shops/types').Listing;
 
@@ -94,19 +94,15 @@ function fewestErrors(trueSims: Scored, falseSims: Scored): number {
   return best.threshold;
 }
 
-// The blue-ocean category also lists series 1 and 2 cards; the parser already drops them,
-// this keeps the script on the same rule if that ever changes.
-
-const { sammel, blue: allBlue } = await loadListings();
-const blue = allBlue.filter((l) => isOnFireCardTitle(l.title));
+// The blue-ocean parser already keeps only series 3 ("On Fire") titles.
+const { sammel, blue } = await loadListings();
 const reference = imagesById(sammel);
 const candidates = imagesById(blue);
 let ids = [...candidates.keys()].filter((id) => reference.has(id));
 ids.sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
 if (Number.isFinite(limit)) ids = ids.slice(0, limit);
 console.log(
-  `sammel-ente: ${sammel.length} listings, blue-ocean: ${blue.length} series 3 listings ` +
-    `(of ${allBlue.length}), ` +
+  `sammel-ente: ${sammel.length} listings, blue-ocean: ${blue.length} series 3 listings, ` +
     `shared card ids: ${ids.length}`
 );
 if (ids.length < 2) {
@@ -125,7 +121,7 @@ const falsePairs = ids.map((id, k) => {
   return { label: `${id}~${next}`, blue: candidates.get(id)!, ref: reference.get(next)! };
 });
 
-const results: { model: string; gap: number; midpoint: number }[] = [];
+const results: { model: string; gap: number; fewestErrors: number }[] = [];
 for (const model of MODELS) {
   console.log(`\n== ${model}`);
   let embedder;
@@ -178,13 +174,13 @@ for (const model of MODELS) {
   console.log(`at the midpoint: ${describeErrors(trueSims, falseSims, midpoint)}`);
   const best = fewestErrors(trueSims, falseSims);
   console.log(`fewest errors at ${fmt(best)}: ${describeErrors(trueSims, falseSims, best)}`);
-  results.push({ model, gap, midpoint });
+  results.push({ model, gap, fewestErrors: best });
 }
 
 const best = results.sort((a, b) => b.gap - a.gap)[0];
 if (best) {
   console.log(
-    `\nwidest gap: ${best.model} (gap ${fmt(best.gap)}, threshold midpoint ${fmt(best.midpoint)})`
+    `\nwidest gap: ${best.model} (gap ${fmt(best.gap)}, fewest-errors threshold ${fmt(best.fewestErrors)})`
   );
   if (best.gap <= 0) console.log('warning: the groups overlap; no threshold separates them');
 }

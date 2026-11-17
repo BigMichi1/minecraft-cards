@@ -1,7 +1,5 @@
 [test]
 preload = ["./src/test/setup.ts"]
-# scripts/ is CI tooling, not bot code. The coverage gate in test.yml is scoped
-# to src/, but the lcov action does not filter by that path, so a tested script
-# would still be counted against the bot's coverage baseline. The key was
-# previously spelled coverageIgnorePatterns, which Bun silently ignores.
+# Coverage measures bot code only: not tests, test helpers and fixtures, or the
+# tooling in scripts/.
 coveragePathIgnorePatterns = ["**/*.test.ts", "**/test/**", "**/scripts/**"]

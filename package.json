@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Discord bot that tracks Minecraft sticker card availability in shops",
   "license": "MIT",
-  "main": "dist/bot/bot.js",
+  "main": "src/bot/bot.ts",
   "scripts": {
     "typecheck": "bun check -p tsconfig.bot.json",
     "test": "bun test",

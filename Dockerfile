@@ -83,6 +83,6 @@ RUN useradd --system --uid 10001 --home-dir /app --shell /usr/sbin/nologin bot \
 USER bot
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD pgrep -f "src/bot/bot.ts" || exit 1
+  CMD pgrep -f "[b]ot/bot\.ts" || exit 1
 
 CMD ["bun", "run", "src/bot/bot.ts"]

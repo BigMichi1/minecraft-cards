@@ -36,7 +36,7 @@ Podman works the same way: `podman build -t minecraft-cards .`, then
 
 ## Health
 
-The container healthcheck is `pgrep -f src/bot/bot.ts`: it reports whether the process lives,
+The container healthcheck is `pgrep -f "[b]ot/bot\.ts"` (the bracket keeps the check from matching itself): it reports whether the process lives,
 not whether Discord is reachable. Shop failures and unparseable pages reach the admin as DMs.
 
 ## First start

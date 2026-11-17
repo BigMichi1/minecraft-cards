@@ -3,7 +3,8 @@ import type { ButtonInteraction } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import { catalogManager, type ImportPreview } from '../database/catalogManager';
 import { replyWithError } from '../utils/interactionReply';
-import { logError } from '../utils/logger';
+import { errorMessage } from '../utils/async';
+import logger, { logError } from '../utils/logger';
 import { joinWithinLimit } from '../utils/messageLimit';
 
 const TTL_MS = 10 * 60_000;
@@ -105,9 +106,14 @@ export async function handleCatalogButton(
         ? 'The catalog was saved, but this message could not be updated.'
         : 'The import was cancelled, but this message could not be updated.';
       try {
-        await i.reply({ content: note, flags: MessageFlags.Ephemeral });
-      } catch (replyErr) {
-        logError('[CATALOG IMPORT] telling the admin the message update failed failed', replyErr);
+        const payload = { content: note, flags: MessageFlags.Ephemeral } as const;
+        // A deferred or already answered interaction cannot be replied to again.
+        if (i.deferred || i.replied) await i.followUp(payload);
+        else await i.reply(payload);
+      } catch (noteErr) {
+        logger.warn(
+          `[CATALOG IMPORT] the note about the failed message update could not be delivered: ${errorMessage(noteErr)}`
+        );
       }
     }
   } catch (err) {

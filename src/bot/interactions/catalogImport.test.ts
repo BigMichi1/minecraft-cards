@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import type { ButtonInteraction } from 'discord.js';
+import { MessageFlags, type ButtonInteraction } from 'discord.js';
 import { catalogManager } from '../database/catalogManager';
 import { db, initializeDatabase } from '../database/db';
 import { cards } from '../database/schema/index';
@@ -101,9 +101,68 @@ describe('handleCatalogButton', () => {
       expect(replies[0].content).toBe(
         'The catalog was saved, but this message could not be updated.'
       );
+      expect(replies[0].flags).toBe(MessageFlags.Ephemeral);
       expect(log).toHaveBeenCalled();
     } finally {
       log.mockRestore();
+    }
+  });
+
+  test('the note goes out as an ephemeral follow-up when the interaction was already answered', async () => {
+    const store = createImportStore(() => clock);
+    const token = store.put([cid('1')]);
+    const button = fakeButton(`catalog-save:${token}`);
+    const followUps: any[] = [];
+    Object.assign(button, {
+      deferred: true,
+      update: async () => {
+        throw new Error('unknown interaction');
+      },
+      followUp: async (p: unknown) => {
+        followUps.push(p);
+      },
+    });
+    const log = spyOn(logger, 'log');
+    try {
+      await handleCatalogButton(button, { adminId: 'admin' }, store);
+      expect(replies).toEqual([]);
+      expect(followUps).toEqual([
+        {
+          content: 'The catalog was saved, but this message could not be updated.',
+          flags: MessageFlags.Ephemeral,
+        },
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('a note that cannot be delivered is logged as a warning and does not become a button failure', async () => {
+    const store = createImportStore(() => clock);
+    const token = store.put([cid('1')]);
+    const button = fakeButton(`catalog-save:${token}`);
+    Object.assign(button, {
+      update: async () => {
+        throw new Error('unknown interaction');
+      },
+      reply: async () => {
+        throw new Error('interaction gone');
+      },
+    });
+    const log = spyOn(logger, 'log');
+    const warn = spyOn(logger, 'warn');
+    try {
+      await handleCatalogButton(button, { adminId: 'admin' }, store);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const line = String(warn.mock.calls[0]?.[0]);
+      expect(line).toContain('could not be delivered');
+      expect(line).not.toContain('failed failed');
+      const logged = log.mock.calls.map((c) => String(c[1]));
+      expect(logged.some((m) => m.includes('button failed'))).toBe(false);
+      expect(replies).toEqual([]);
+    } finally {
+      log.mockRestore();
+      warn.mockRestore();
     }
   });
 

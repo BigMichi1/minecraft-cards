@@ -22,7 +22,8 @@ const { createTransformersEmbedder } = await import('../src/bot/matcher/embedder
 const { cosineSimilarity } = await import('../src/bot/matcher/similarity');
 const { createSammelEnteAdapter, parseSammelEntePage } =
   await import('../src/bot/shops/sammelEnte');
-const { createBlueOceanAdapter, parseBlueOceanPage } = await import('../src/bot/shops/blueOcean');
+const { createBlueOceanAdapter, parseBlueOceanPage, isOnFireCardTitle } =
+  await import('../src/bot/shops/blueOcean');
 const { fetchText } = await import('../src/bot/utils/http');
 type Listing = import('../src/bot/shops/types').Listing;
 
@@ -93,12 +94,11 @@ function fewestErrors(trueSims: Scored, falseSims: Scored): number {
   return best.threshold;
 }
 
-// The blue-ocean category also lists series 1 and 2 cards ("LEGO Minecraft TCC 1"), whose
-// numbers the parser reads from other parts of the URL; series 3 titles say "On Fire".
-const SERIES_3 = /on fire/i;
+// The blue-ocean category also lists series 1 and 2 cards; the parser already drops them,
+// this keeps the script on the same rule if that ever changes.
 
 const { sammel, blue: allBlue } = await loadListings();
-const blue = allBlue.filter((l) => SERIES_3.test(l.title));
+const blue = allBlue.filter((l) => isOnFireCardTitle(l.title));
 const reference = imagesById(sammel);
 const candidates = imagesById(blue);
 let ids = [...candidates.keys()].filter((id) => reference.has(id));

@@ -11,9 +11,19 @@ const BASE_URL = `${ORIGIN}/produkte/lego/lego-minecraft/lego-minecraft-sticker-
 const PAGE_DELAY_MS = 1500;
 const MAX_PAGES = 60;
 const CARD_TITLE_MARKER = 'LEGO Minecraft TCC';
+// Quote characters around "On Fire" vary (straight, curly) and do not matter here.
+const SERIES_3_MARKER = /on fire/i;
 const LINK = 'a[data-testid="product-box-product-name-link"]';
 // The page repeats unrelated products in a "recommended" slider below the grid.
 const RECOMMENDATION_SLIDER = '.cms-element-product-slider, .product-slider-wrapper';
+
+/**
+ * True for a series 3 "On Fire" card title. The category also lists TCC series 1 and 2
+ * cards, whose ids the URL suffix would turn into wrong series 3 ids.
+ */
+export function isOnFireCardTitle(title: string): boolean {
+  return title.includes(CARD_TITLE_MARKER) && SERIES_3_MARKER.test(title);
+}
 
 function parsePrice(label: string | undefined): Listing['price'] {
   const match = /(\d+(?:\.\d+)?)/.exec(label ?? '');
@@ -50,7 +60,7 @@ export function parseBlueOceanPage(html: string): {
 
     const title = link.text().replace(/\s+/g, ' ').trim();
     const href = link.attr('href');
-    if (!href || !title.includes(CARD_TITLE_MARKER)) return;
+    if (!href || !isOnFireCardTitle(title)) return;
 
     const box = link.closest('[data-testid="product-box"], .product-card');
     const urlId = normalizeCardId(/-(\d+)$/.exec(href)?.[1] ?? '');

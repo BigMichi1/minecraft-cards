@@ -1,4 +1,5 @@
 import { describe, test, expect } from 'bun:test';
+import * as cheerio from 'cheerio';
 import { parseBlueOceanPage, createBlueOceanAdapter } from './blueOcean';
 import { ShopLayoutError } from './types';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
@@ -34,9 +35,22 @@ describe('parseBlueOceanPage', () => {
 
   test('keeps only TCC cards and counts only the listing grid as products', () => {
     expect(b1.listings.every((l) => l.title.includes('LEGO Minecraft TCC'))).toBe(true);
+    expect(b1.listings.every((l) => l.title.includes('On Fire'))).toBe(true);
     expect(b1.listings).toHaveLength(19);
     // recommendation slider boxes are not part of the listing
     expect(b1.productCount).toBe(24);
+  });
+
+  test('skips series 2 TCC products but still counts them as products', () => {
+    // No saved fixture holds a non-"On Fire" TCC product, so rewrite a real product box.
+    const $ = cheerio.load(readFixture('blue-ocean-p1.html'));
+    const link = $('a[data-testid="product-box-product-name-link"]').first();
+    link.attr('href', '/nr.-5-creeper-commonlego-minecraft-tcc-serie-2-2dd00088-5');
+    link.find('div').first().text('Nr. 5 Creeper| CommonLEGO Minecraft TCC Serie 2');
+    const boxHtml = $.html(link.closest('[data-testid="product-box"], .product-card'));
+    const parsed = parseBlueOceanPage(`<div class="cms-page">${boxHtml}</div>`);
+    expect(parsed.productCount).toBe(1);
+    expect(parsed.listings).toEqual([]);
   });
 
   test('page 99 has no products', () => {
@@ -56,7 +70,7 @@ describe('parseBlueOceanPage', () => {
   test('flags a disagreement between the url number and the image number', () => {
     const html = box(
       '/nr.-1-foo-lego-minecraft-tcc-on-fire-2dd00088-5',
-      'Nr. 1 Foo LEGO Minecraft TCC',
+      'Nr. 1 Foo LEGO Minecraft TCC "On Fire"',
       'https://x.test/a/TCG3_.P7.jpg?ts=1'
     );
     const [l] = parseBlueOceanPage(html).listings;
@@ -67,7 +81,7 @@ describe('parseBlueOceanPage', () => {
   test('reads a sold out card as unavailable', () => {
     const html = box(
       '/nr.-1-foo-lego-minecraft-tcc-on-fire-2dd00088-5',
-      'Nr. 1 Foo LEGO Minecraft TCC',
+      'Nr. 1 Foo LEGO Minecraft TCC "On Fire"',
       'https://x.test/a/TCG3_.P5.jpg',
       'Nicht verfügbar'
     );
@@ -75,7 +89,11 @@ describe('parseBlueOceanPage', () => {
   });
 
   test('skips a TCC product whose id cannot be read', () => {
-    const html = box('/lego-minecraft-tcc-on-fire-display', 'LEGO Minecraft TCC Display', '');
+    const html = box(
+      '/lego-minecraft-tcc-on-fire-display',
+      'LEGO Minecraft TCC "On Fire" Display',
+      ''
+    );
     const parsed = parseBlueOceanPage(html);
     expect(parsed.listings).toEqual([]);
     expect(parsed.productCount).toBe(1);

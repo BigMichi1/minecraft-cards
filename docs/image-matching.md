@@ -94,3 +94,10 @@ Spike: a script that embeds one image, built with `bun build --compile` and run.
 So a compiled binary is possible only with a custom `Bun.build` plugin plus shipping
 `libonnxruntime.so.1` beside it. Task 15 should use the `bun run` image variant (source +
 `node_modules` in the image), which needs none of that.
+
+## Input limits
+
+Remote pictures are bounded before they reach the model: downloads over 10 MB are refused
+(declared `Content-Length` up front, streamed bodies as soon as they pass the cap), and
+pictures over 10000 px on a side or more elongated than 10:1 are refused from their header,
+before decoding or resizing. Both surface as `model_unavailable`.

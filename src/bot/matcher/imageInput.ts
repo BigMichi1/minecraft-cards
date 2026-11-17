@@ -152,8 +152,25 @@ const FILTERS: Record<number, 'nearest' | 'bilinear' | 'cubic' | 'lanczos3'> = {
 };
 
 /** Decode `bytes` (JPEG / PNG / WebP / GIF), resize and center-crop it as the processor would. */
+/** Larger pictures are refused before resizing: a resize to the shortest edge can need gigabytes. */
+export const MAX_IMAGE_SIDE = 10_000;
+/** Longer side over shorter side; a 2x4000 strip would otherwise resize to 256x512000. */
+export const MAX_ASPECT_RATIO = 10;
+
+/** Throws when the picture is too large or too elongated to resize safely. */
+export function checkImageSize(width: number, height: number): void {
+  if (width > MAX_IMAGE_SIDE || height > MAX_IMAGE_SIDE) {
+    throw new Error(`image ${width}x${height} exceeds ${MAX_IMAGE_SIDE} px per side`);
+  }
+  if (Math.max(width, height) > MAX_ASPECT_RATIO * Math.min(width, height)) {
+    throw new Error(`image ${width}x${height} exceeds aspect ratio ${MAX_ASPECT_RATIO}:1`);
+  }
+}
+
 export async function prepareImage(bytes: Uint8Array, spec: ResizeSpec): Promise<Pixels> {
+  // metadata() reads only the header, so the check runs before any pixel is decoded.
   const { width, height } = await new Bun.Image(bytes).metadata();
+  checkImageSize(width, height);
   const [w, h] = spec.do_resize === false ? [width, height] : resizedSize(width, height, spec);
   const png = await new Bun.Image(bytes)
     .resize(w, h, { filter: FILTERS[spec.resample ?? 2] ?? 'bilinear' })

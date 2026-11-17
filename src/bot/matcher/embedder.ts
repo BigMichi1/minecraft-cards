@@ -91,6 +91,33 @@ function firstVectorNormalised(tensor: FeatureTensor): Float32Array {
   return vec;
 }
 
+/** Shop pictures are well under 2 MB; anything over this is refused. */
+export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+/** Read the body, refusing a declared or streamed size over MAX_IMAGE_BYTES. */
+async function readCapped(response: Response, url: string): Promise<Uint8Array> {
+  const declared = Number(response.headers.get('Content-Length'));
+  if (declared > MAX_IMAGE_BYTES) {
+    await response.body?.cancel();
+    throw new Error(`image ${url} is ${declared} bytes, over ${MAX_IMAGE_BYTES}`);
+  }
+  if (!response.body) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  const reader = response.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_IMAGE_BYTES) {
+      await reader.cancel();
+      throw new Error(`image ${url} is over ${MAX_IMAGE_BYTES} bytes`);
+    }
+    chunks.push(value);
+  }
+  return new Uint8Array(Buffer.concat(chunks));
+}
+
 /**
  * Local image embedder over `@huggingface/transformers` (`image-feature-extraction`).
  * Model files are downloaded once into `cacheDir`. Rejects when the model cannot load.
@@ -113,7 +140,7 @@ export async function createTransformersEmbedder(
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) throw new HttpError(response.status, imageUrl);
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      const bytes = await readCapped(response, imageUrl);
       return firstVectorNormalised(await extractor(bytes));
     },
   };

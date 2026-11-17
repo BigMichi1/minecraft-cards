@@ -1,6 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { deflateSync } from 'node:zlib';
-import { centerCrop, decodePng, prepareImage, resizedSize, type Pixels } from './imageInput';
+import {
+  centerCrop,
+  checkImageSize,
+  decodePng,
+  prepareImage,
+  resizedSize,
+  type Pixels,
+} from './imageInput';
 
 function crc32(bytes: Uint8Array): number {
   let crc = 0xffffffff;
@@ -147,5 +154,40 @@ describe('prepareImage', () => {
   test('a square crop size works too', async () => {
     const out = await prepareImage(source, { do_center_crop: true, crop_size: 2 });
     expect({ w: out.width, h: out.height }).toEqual({ w: 2, h: 2 });
+  });
+});
+
+describe('image size limits', () => {
+  const spec = { do_resize: true, size: { shortest_edge: 256 } };
+
+  test('a 2x4000 strip is refused by the aspect check', async () => {
+    const strip = png(
+      2,
+      4000,
+      2,
+      Array.from({ length: 4000 }, () => [0, 0, 0, 0, 0, 0, 0])
+    );
+    await expect(prepareImage(strip, spec)).rejects.toThrow(/aspect ratio 10:1/);
+  });
+
+  test('a 12000x12000 picture is refused from its header, before any decode or resize', async () => {
+    // Only the IHDR is real; the image data is a single empty row, so a decode would fail.
+    const huge = png(12000, 12000, 2, [[0]]);
+    await expect(prepareImage(huge, spec)).rejects.toThrow(/exceeds 10000 px per side/);
+  });
+
+  test('pictures at the limits pass', () => {
+    expect(() => checkImageSize(10000, 1000)).not.toThrow();
+    expect(() => checkImageSize(10001, 5000)).toThrow(/px per side/);
+    expect(() => checkImageSize(101, 10)).toThrow(/aspect/);
+  });
+
+  test('a normal picture still prepares', async () => {
+    const square = png(2, 2, 2, [
+      [0, 1, 2, 3, 4, 5, 6],
+      [0, 1, 2, 3, 4, 5, 6],
+    ]);
+    const out = await prepareImage(square, { ...spec, size: { shortest_edge: 4 } });
+    expect({ w: out.width, h: out.height }).toEqual({ w: 4, h: 4 });
   });
 });

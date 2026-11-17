@@ -8,6 +8,7 @@ import {
   DEFAULT_IMAGE_MATCH_THRESHOLD,
   DEFAULT_IMAGE_MODEL,
   matchListing,
+  MAX_IMAGE_BYTES,
   pooledOutput,
   type ImageEmbedder,
 } from './embedder';
@@ -221,6 +222,70 @@ describe('createTransformersEmbedder', () => {
       }
     );
     await expect(embedder.embed('https://img/missing.jpg')).rejects.toThrow(/404/);
+  });
+
+  describe('download cap', () => {
+    const extractorCalls: number[] = [];
+    const load = async () => async (bytes: Uint8Array) => {
+      extractorCalls.push(bytes.length);
+      return { data: new Float32Array([1, 0]), dims: [1, 2] };
+    };
+
+    test('a declared size over 10 MB is refused before reading', async () => {
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        {
+          fetchFn: async () =>
+            new Response(new Uint8Array([1]), {
+              headers: { 'Content-Length': String(MAX_IMAGE_BYTES + 1) },
+            }),
+          loadPipeline: load,
+        }
+      );
+      await expect(embedder.embed('https://img/big.jpg')).rejects.toThrow(/over 10485760/);
+    });
+
+    test('a streamed body over 10 MB without Content-Length is cut off', async () => {
+      let pulled = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          pulled++;
+          controller.enqueue(new Uint8Array(1024 * 1024));
+          if (pulled > 50) controller.close();
+        },
+      });
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        { fetchFn: async () => new Response(stream), loadPipeline: load }
+      );
+      await expect(embedder.embed('https://img/endless.jpg')).rejects.toThrow(/over 10485760/);
+      expect(pulled).toBeLessThan(20);
+    });
+
+    test('an oversize picture is model_unavailable in matchListing', async () => {
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        {
+          fetchFn: async () =>
+            new Response('x', { headers: { 'Content-Length': String(MAX_IMAGE_BYTES * 2) } }),
+          loadPipeline: load,
+        }
+      );
+      expect(await matchListing(blue12, 'ref12', embedder, 0.85)).toEqual({
+        status: 'model_unavailable',
+        similarity: null,
+      });
+    });
+
+    test('a picture under the cap still embeds', async () => {
+      extractorCalls.length = 0;
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        { fetchFn: async () => new Response(new Uint8Array(5000)), loadPipeline: load }
+      );
+      expect(Array.from(await embedder.embed('u'))).toEqual([1, 0]);
+      expect(extractorCalls).toEqual([5000]);
+    });
   });
 
   test('a model that cannot load rejects', async () => {

@@ -125,7 +125,7 @@ JSON APIs were not used.
 1. Collect the union of all users' wanted card numbers. If empty, skip shops.
 2. **Fetch shops** sequentially with a small delay between pages. Each shop adapter
    returns `Listing[]`: `{ shop, cardNumber | null, title, url, imageUrl, price,
-   available }`.
+available }`.
    - sammel-ente: card number from `#NNN` in the title.
    - blue-ocean: card number from URL suffix (cross-checked with image filename `P<n>`;
      if both present and disagree, the listing is marked unconfirmed).

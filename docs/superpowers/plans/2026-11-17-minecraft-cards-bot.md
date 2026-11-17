@@ -68,10 +68,12 @@ src/bot/interactions/{report,catalogImport}.ts
 ### Task 1: Project scaffold and tooling
 
 **Files:**
+
 - Create: everything in the first block of the file structure above, plus `src/bot/utils/logger.ts`, `src/bot/utils/async.ts`, `src/bot/utils/async.test.ts`, `src/test/setup.ts`
 - Modify: `.mise.toml` (keep the user's `[tools]` block, add ref's `[vars]`-free task set)
 
 **Interfaces:**
+
 - Produces: `logger` (default export, winston, `LOG_LEVEL`), `sleep(ms: number): Promise<void>`, `errorMessage(e: unknown): string` — same as ref `src/bot/utils/async.ts`.
 
 - [ ] **Step 1:** Copy from ref: `bin/mise`, `bunfig.toml`, `tsconfig.bot.json`, `eslint.config.mjs`, `.prettierrc`, `.prettierignore`, `.syncpackrc.json`, `.commitlintrc.json`, `.gitleaks.toml`, `.gitattributes`, `.gitignore`, `.dockerignore`, `DCO.md`, `.husky/pre-commit`, `.husky/commit-msg`, `src/bot/utils/logger.ts`, `src/bot/utils/async.ts` (+ its test). Rewrite `.husky/pre-push` DCO check in POSIX sh (loop with `while read`, count unsigned commits in a variable, no arrays). Copy `.mise.toml` tasks: install, ci:install, prod:install, dev, build, prod:build, typecheck, test, test:coverage, lint, lint:fix, format, format:check, gitleaks, commitlint, db:generate, db:studio, audit, outdated, docker-build/up/down/logs (container name `minecraft-cards`). Drop ref-only tasks (credentials, deps:*, audit:pr) for now.
@@ -85,6 +87,7 @@ src/bot/interactions/{report,catalogImport}.ts
 **Files:** Create `src/bot/cards/cardId.ts`, `src/bot/cards/cardId.test.ts`, `src/bot/cards/starterCatalog.ts`, `src/bot/cards/starterCatalog.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `type CardId = string`, `type CardType = 'base' | 'le' | 'xxl'`
   - `normalizeCardId(raw: string): CardId | null` — accepts `12`, `012`, `#12`, `LE8`, `#LE008`, `le 8`, `XXL1`; rejects `0`, empty, other text.
@@ -104,8 +107,13 @@ expect(parseCardList('#012, 12 , LE008, le 8, 20-22, LE1-LE2, xxl1, foo, 0, 25-2
 });
 expect(parseCardList('LE1-3').ids).toEqual(['LE1', 'LE2', 'LE3']);
 expect(parseCardList('1-301').invalid).toEqual(['1-301']);
-expect(formatCardList(['5', '1', '2', '3', '12', 'LE2', 'LE1', 'XXL1'])).toBe('1-3, 5, 12, LE1-LE2, XXL1');
-expect(parseChecklist('Prüfliste für Nummern diese Sammlung:\n1, 2, LE1, XXL1')).toEqual({ ids: ['1', '2', 'LE1', 'XXL1'], invalid: [] });
+expect(formatCardList(['5', '1', '2', '3', '12', 'LE2', 'LE1', 'XXL1'])).toBe(
+  '1-3, 5, 12, LE1-LE2, XXL1'
+);
+expect(parseChecklist('Prüfliste für Nummern diese Sammlung:\n1, 2, LE1, XXL1')).toEqual({
+  ids: ['1', '2', 'LE1', 'XXL1'],
+  invalid: [],
+});
 const starter = parseChecklist(STARTER_CHECKLIST);
 expect(starter.invalid).toEqual([]);
 expect(starter.ids.length).toBe(251);
@@ -122,6 +130,7 @@ expect(starter.ids.filter((id) => cardType(id) === 'le').length).toBe(22);
 **Files:** Create `drizzle.config.ts` (as ref, default `./data/cards.db`), `src/bot/database/db.ts` (copy ref's, default path `data/cards.db`), `src/bot/database/schema/{index,users,cards,listings,notifications,reports,runs,imageEmbeddings,adminAlerts}.ts`, generated `src/bot/database/migrations/`, `src/bot/database/catalogManager.ts` + test.
 
 **Tables** (camelCase fields, `casing: 'snake_case'`; all times integer ms):
+
 - `users`: `discordId` text PK, `createdAt`, `dmFailedAt` nullable
 - `wantedCards`: `discordId` FK users (cascade delete), `cardId` text; PK (discordId, cardId)
 - `cards`: `cardId` PK, `type`, `name` nullable, `referenceImageUrl` nullable, `updatedAt`
@@ -134,6 +143,7 @@ expect(starter.ids.filter((id) => cardType(id) === 'le').length).toBe(22);
 - `adminAlerts`: `key` PK, `lastSentAt`
 
 **Interfaces:**
+
 - Consumes: `parseChecklist`, `cardType`, `STARTER_CHECKLIST` (Task 2)
 - Produces `catalogManager`:
   - `seedIfEmpty(): void` — inserts starter catalog when `cards` is empty
@@ -165,6 +175,7 @@ expect(catalogManager.getCard('999')).toBeUndefined();
 ```
 
 (Insert the wanted row directly with Drizzle in this test; `userManager` comes in Task 4.)
+
 - [ ] **Step 3:** Run → FAIL. **Step 4:** Implement. **Step 5:** Run → PASS.
 - [ ] **Step 6:** Commit `feat(database): add schema and card catalog`.
 
@@ -173,6 +184,7 @@ expect(catalogManager.getCard('999')).toBeUndefined();
 **Files:** Create `src/bot/database/userManager.ts` + test.
 
 **Interfaces:**
+
 - Consumes: `parseCardList`, `formatCardList` (Task 2), `catalogManager.knownIds()` (Task 3)
 - Produces `userManager`:
   - `type ListChange = { ok: true; ids: CardId[] } | { ok: false; invalid: string[] }` (`invalid` = unparseable tokens plus parsed ids not in the catalog)
@@ -190,7 +202,12 @@ userManager.addToList('u1', '1-3');
 userManager.removeFromList('u1', '45');
 expect(userManager.getList('u1')).toEqual(['1', '2', '3', '12', 'LE8']);
 userManager.setList('u2', '12');
-expect(userManager.usersWanting(['12', '3'])).toEqual(new Map([['u1', ['3', '12']], ['u2', ['12']]]));
+expect(userManager.usersWanting(['12', '3'])).toEqual(
+  new Map([
+    ['u1', ['3', '12']],
+    ['u2', ['12']],
+  ])
+);
 userManager.markDmFailed('u1', 1);
 expect(userManager.takeDmFailure('u1')).toBe(true);
 expect(userManager.takeDmFailure('u1')).toBe(false);
@@ -204,21 +221,34 @@ expect(userManager.takeDmFailure('u1')).toBe(false);
 **Files:** Create `src/bot/utils/http.ts` + test, `src/bot/shops/types.ts` + test, `src/bot/shops/sammelEnte.ts` + test, `src/bot/shops/blueOcean.ts` + test, fixtures `src/test/fixtures/sammel-ente-p1.html`, `sammel-ente-p11.html`, `blue-ocean-p1.html`, `blue-ocean-p2.html`, `blue-ocean-p99.html`. Modify `.gitleaksignore`/`.gitleaks.toml` allowlist for `src/test/fixtures/` (blue-ocean pages embed a public storefront access token that gitleaks flags).
 
 **Interfaces:**
+
 - Produces (`types.ts`):
 
 ```ts
 export type ShopId = 'sammel-ente' | 'blue-ocean' | 'ebay';
-export interface Money { cents: number; currency: string }
+export interface Money {
+  cents: number;
+  currency: string;
+}
 export interface Listing {
-  shop: ShopId; url: string; title: string; cardIds: CardId[];
-  cardName: string | null;          // sammel-ente only: name from title
-  imageUrl: string | null; price: Money | null; available: boolean;
-  format: 'shop' | 'auction' | 'fixed_price'; auctionEndsAt: number | null;
-  idConflict: boolean;              // blue-ocean URL vs image number disagree
+  shop: ShopId;
+  url: string;
+  title: string;
+  cardIds: CardId[];
+  cardName: string | null; // sammel-ente only: name from title
+  imageUrl: string | null;
+  price: Money | null;
+  available: boolean;
+  format: 'shop' | 'auction' | 'fixed_price';
+  auctionEndsAt: number | null;
+  idConflict: boolean; // blue-ocean URL vs image number disagree
 }
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
-export interface ShopAdapter { id: ShopId; fetchListings(): Promise<Listing[]> }
-export class ShopLayoutError extends Error {}   // page fetched but no cards parsed
+export interface ShopAdapter {
+  id: ShopId;
+  fetchListings(): Promise<Listing[]>;
+}
+export class ShopLayoutError extends Error {} // page fetched but no cards parsed
 ```
 
 - `http.ts`: `fetchText(url: string, fetchFn?: FetchFn): Promise<string>` — UA/timeout from Global Constraints, throws `HttpError(status, url)` on non-2xx.
@@ -226,6 +256,7 @@ export class ShopLayoutError extends Error {}   // page fetched but no cards par
 - `parseBlueOceanPage(html: string): { listings: Listing[]; productCount: number }` (`productCount` counts all product boxes, cards or not) and `createBlueOceanAdapter(fetchFn?: FetchFn): ShopAdapter` (pages 1.. until `productCount === 0`, hard cap 60 pages).
 
 Parsing rules (verify against fixtures):
+
 - sammel-ente: product box `.card.product-box`; title `a.product-name`; card id from `#NNN` / `#LENNN` in title, XXL from product code `MNC-03XX-XXL-NNNN` in href; skip boxes without an id (boosters, starter packs, `PZL`). `cardName` = title text after the id. Available iff `.delivery-information.delivery-available` present. Image `img.product-image` `src`. Price from the box's price element, `€` German format (`0,99 €` → 99 cents EUR).
 - blue-ocean: link `a[data-testid="product-box-product-name-link"]`; only titles containing `LEGO Minecraft TCC`; card id = trailing number of the href (`…-2dd00088-12` → `12`), ignore the title's `Nr.`; image `img[data-testid="product-box-img"]` `src`, number from `P<n>` in the file name; `idConflict` when both exist and differ. Available iff stock text `Auf Lager`. Price from `[data-testid="product-box-product-price"]` (`5.99` → 599 EUR). How LE/XXL appear on blue-ocean is not known: if the fixtures show any, map them; otherwise a card-like TCC product whose id can't be read is skipped and logged at `warn`.
 - Either adapter throws `ShopLayoutError` when the whole run parsed zero card listings.
@@ -237,8 +268,12 @@ Parsing rules (verify against fixtures):
 const p1 = parseSammelEntePage(readFixture('sammel-ente-p1.html'));
 expect(p1.lastPage).toBe(11);
 const squid = p1.listings.find((l) => l.cardIds[0] === '12')!;
-expect(squid).toMatchObject({ shop: 'sammel-ente', cardName: 'Squid', format: 'shop',
-  url: 'https://shop-sammel-ente.de/LEGO-Minecraft-Serie-3-012-Squid/MNC-03XX-BAS-0012' });
+expect(squid).toMatchObject({
+  shop: 'sammel-ente',
+  cardName: 'Squid',
+  format: 'shop',
+  url: 'https://shop-sammel-ente.de/LEGO-Minecraft-Serie-3-012-Squid/MNC-03XX-BAS-0012',
+});
 expect(p1.listings.some((l) => l.title.includes('Booster'))).toBe(false);
 // availability as captured in the fixture: #12 available, #2 sold out
 expect(squid.available).toBe(true);
@@ -246,18 +281,20 @@ expect(p1.listings.find((l) => l.cardIds[0] === '2')!.available).toBe(false);
 
 const b1 = parseBlueOceanPage(readFixture('blue-ocean-p1.html'));
 const bSquid = b1.listings.find((l) => l.url.endsWith('-2dd00088-12'))!;
-expect(bSquid.cardIds).toEqual(['12']);           // title says "Nr. 9"
+expect(bSquid.cardIds).toEqual(['12']); // title says "Nr. 9"
 expect(bSquid.idConflict).toBe(false);
 expect(b1.listings.find((l) => l.url.endsWith('-107'))!.cardIds).toEqual(['107']);
 expect(b1.listings.every((l) => l.title.includes('LEGO Minecraft TCC'))).toBe(true);
 expect(parseBlueOceanPage(readFixture('blue-ocean-p99.html')).productCount).toBe(0);
 
 // adapter with fake fetch: page 1 returns a non-shop HTML page
-await expect(createSammelEnteAdapter(fakeFetch({ '?p=1': '<html>Just a moment...</html>' })).fetchListings())
-  .rejects.toBeInstanceOf(ShopLayoutError);
+await expect(
+  createSammelEnteAdapter(fakeFetch({ '?p=1': '<html>Just a moment...</html>' })).fetchListings()
+).rejects.toBeInstanceOf(ShopLayoutError);
 ```
 
 (If the live fixture shows different stock states, adjust the two availability expectations to the fixture, keeping one available and one sold-out assertion.)
+
 - [ ] **Step 3:** Run → FAIL. **Step 4:** Implement with cheerio. **Step 5:** Run → PASS.
 - [ ] **Step 6:** Commit `feat(shops): parse sammel-ente and blue-ocean listings`.
 
@@ -266,6 +303,7 @@ await expect(createSammelEnteAdapter(fakeFetch({ '?p=1': '<html>Just a moment...
 **Files:** Create `src/bot/shops/ebay.ts` + test, fixtures `src/test/fixtures/ebay-token.json`, `ebay-search.json` (hand-written in the Browse API response shape, 5 items: single card fixed price, auction with `currentBidPrice` + shipping, bundle `#12, #45 und LE8`, a listing with no id, a `12/228` title).
 
 **Interfaces:**
+
 - Consumes: `Listing`, `FetchFn`, `ShopAdapter`, `normalizeCardId`
 - Produces:
   - `extractCardIdsFromTitle(title: string): CardId[]`, recognising only prefixed forms: `#12`, `Nr. 12`, `Nr.12`, `No. 12`, `Karte 12`, `Card 12`, `12/228`, `LE8`/`LE 08`, `XXL1`, and lists after a prefix (`Nr. 12, 45 und 107`). Bare numbers never count (`Serie 3`, `2026`, `228`).
@@ -278,14 +316,24 @@ await expect(createSammelEnteAdapter(fakeFetch({ '?p=1': '<html>Just a moment...
 
 ```ts
 expect(extractCardIdsFromTitle('LEGO Minecraft On Fire Karte Nr. 12 Squid')).toEqual(['12']);
-expect(extractCardIdsFromTitle('Lego Minecraft TCC Serie 3 #12, #45 und LE8')).toEqual(['12', '45', 'LE8']);
+expect(extractCardIdsFromTitle('Lego Minecraft TCC Serie 3 #12, #45 und LE8')).toEqual([
+  '12',
+  '45',
+  'LE8',
+]);
 expect(extractCardIdsFromTitle('Minecraft Serie 3 Karte 107/228 2026')).toEqual(['107']);
 expect(extractCardIdsFromTitle('LEGO Minecraft Serie 3 Booster 2026')).toEqual([]);
-const adapter = createEbayAdapter({ clientId: 'id', clientSecret: 'secret', fetchFn: fixtureFetch });
+const adapter = createEbayAdapter({
+  clientId: 'id',
+  clientSecret: 'secret',
+  fetchFn: fixtureFetch,
+});
 const listings = await adapter.fetchListings();
 expect(listings).toHaveLength(4);
 expect(adapter.lastSkippedNoId).toBe(1);
-expect(listings.find((l) => l.format === 'auction')).toMatchObject({ price: { cents: 149 + 160, currency: 'EUR' } });
+expect(listings.find((l) => l.format === 'auction')).toMatchObject({
+  price: { cents: 149 + 160, currency: 'EUR' },
+});
 expect(tokenRequests(fixtureFetch)).toBe(1); // cached across the 3 queries
 ```
 
@@ -297,6 +345,7 @@ expect(tokenRequests(fixtureFetch)).toBe(1); // cached across the 3 queries
 **Files:** Create `src/bot/matcher/similarity.ts` + test, `src/bot/matcher/embedder.ts` + test, `scripts/measure-threshold.ts`, `scripts/download-model.ts`.
 
 **Interfaces:**
+
 - Produces:
   - `cosineSimilarity(a: Float32Array, b: Float32Array): number`
   - `interface ImageEmbedder { model: string; embed(imageUrl: string): Promise<Float32Array> }`
@@ -311,12 +360,17 @@ expect(tokenRequests(fixtureFetch)).toBe(1); // cached across the 3 queries
 expect(cosineSimilarity(new Float32Array([1, 0]), new Float32Array([1, 0]))).toBeCloseTo(1);
 expect(cosineSimilarity(new Float32Array([1, 0]), new Float32Array([0, 1]))).toBeCloseTo(0);
 const cached = createCachedEmbedder(fake);
-await cached.embed('u'); await cached.embed('u');
+await cached.embed('u');
+await cached.embed('u');
 expect(fake.calls).toBe(1);
 expect((await matchListing(blue12, 'ref12', fakeSame, 0.85)).status).toBe('confirmed');
 expect((await matchListing(blue12, 'ref12', fakeDifferent, 0.85)).status).toBe('unconfirmed');
-expect((await matchListing({ ...blue12, idConflict: true }, 'ref12', fakeSame, 0.85)).status).toBe('unconfirmed');
-expect((await matchListing(blue12, 'ref12', throwingEmbedder, 0.85)).status).toBe('model_unavailable');
+expect((await matchListing({ ...blue12, idConflict: true }, 'ref12', fakeSame, 0.85)).status).toBe(
+  'unconfirmed'
+);
+expect((await matchListing(blue12, 'ref12', throwingEmbedder, 0.85)).status).toBe(
+  'model_unavailable'
+);
 expect((await matchListing(bundle, 'ref12', fakeSame, 0.85)).status).toBe('bundle');
 ```
 
@@ -331,6 +385,7 @@ expect((await matchListing(bundle, 'ref12', fakeSame, 0.85)).status).toBe('bundl
 **Files:** Create `src/bot/database/listingManager.ts` + test.
 
 **Interfaces:**
+
 - Consumes: `Listing`, `MatchStatus`, `userManager.usersWanting`
 - Produces `listingManager`:
   - `upsertFromRun(shop: ShopId, listings: Listing[], now: number): StoredListing[]` — insert or update by `url`; sets `availableSince = now` when a listing becomes available (new, or previously unavailable), clears it when unavailable; listings of that shop not in `listings` become unavailable; when `manualOverride` is set, the stored card ids are kept. Only called for shops whose fetch succeeded.
@@ -351,12 +406,12 @@ listingManager.upsertFromRun('blue-ocean', [blue12Available], 1000);
 expect(listingManager.pendingNotifications().get('u1')).toHaveLength(1);
 const l = listingManager.getByUrl(blue12Available.url)!;
 listingManager.recordNotified('u1', l.id, l.availableSince!);
-listingManager.upsertFromRun('blue-ocean', [blue12Available], 2000);    // still in stock
+listingManager.upsertFromRun('blue-ocean', [blue12Available], 2000); // still in stock
 expect(listingManager.pendingNotifications().get('u1') ?? []).toHaveLength(0);
 listingManager.upsertFromRun('blue-ocean', [{ ...blue12Available, available: false }], 3000);
-listingManager.upsertFromRun('blue-ocean', [blue12Available], 4000);    // back in stock
+listingManager.upsertFromRun('blue-ocean', [blue12Available], 4000); // back in stock
 expect(listingManager.pendingNotifications().get('u1')).toHaveLength(1);
-listingManager.upsertFromRun('blue-ocean', [], 5000);                   // vanished → unavailable
+listingManager.upsertFromRun('blue-ocean', [], 5000); // vanished → unavailable
 expect(listingManager.getByUrl(blue12Available.url)!.available).toBe(false);
 
 // override survives rescrape
@@ -378,22 +433,31 @@ expect(listingManager.pendingNotifications().get('u1') ?? []).toHaveLength(0);
 **Files:** Create `src/bot/check/runner.ts` + test, `src/bot/check/scheduler.ts` + test, `src/bot/database/runManager.ts` + test (runs + adminAlerts).
 
 **Interfaces:**
+
 - Consumes: adapters (Tasks 5–6), `catalogManager`, `userManager`, `listingManager`, `matchListing`, Task 10's `NotificationSender`
 - Produces:
 
 ```ts
 export interface RunSummary {
-  startedAt: number; finishedAt: number;
+  startedAt: number;
+  finishedAt: number;
   shops: Partial<Record<ShopId, { listings: number; error?: string; skippedNoId?: number }>>;
-  notified: number; dmFailures: number;
+  notified: number;
+  dmFailures: number;
 }
 export interface RunDeps {
-  adapters: ShopAdapter[]; embedder: ImageEmbedder | null; threshold: number;
-  sender: NotificationSender; alertAdmin: (text: string) => Promise<void>; now: () => number;
+  adapters: ShopAdapter[];
+  embedder: ImageEmbedder | null;
+  threshold: number;
+  sender: NotificationSender;
+  alertAdmin: (text: string) => Promise<void>;
+  now: () => number;
 }
 export function runCheck(deps: RunDeps): Promise<RunSummary>;
-export function createScheduler(run: () => Promise<RunSummary>, intervalMs: number):
-  { start(): void; stop(): void; trigger(): Promise<RunSummary | 'busy'> };
+export function createScheduler(
+  run: () => Promise<RunSummary>,
+  intervalMs: number
+): { start(): void; stop(): void; trigger(): Promise<RunSummary | 'busy'> };
 ```
 
 - `runManager`: `record(summary: RunSummary): void`, `last(): RunSummary | undefined`, `shouldAlert(key: string, now: number, everyMs: number): boolean` (true and updates `lastSentAt` when due).
@@ -413,7 +477,8 @@ await runCheck(depsWith([failingBlue(new ShopLayoutError('no cards'))]));
 expect(alerts).toHaveLength(1); // throttled to once per 24 h
 
 // DM failure for one user does not block others and is retried next run
-userManager.setList('u1', '12'); userManager.setList('u2', '12');
+userManager.setList('u1', '12');
+userManager.setList('u2', '12');
 sender.failFor('u1');
 const r = await runCheck(depsWith([okBlue(blue12Available)]));
 expect(r.notified).toBe(1);
@@ -438,6 +503,7 @@ await first;
 **Files:** Create `src/bot/notify/messages.ts` + test, `src/bot/notify/sender.ts` + test.
 
 **Interfaces:**
+
 - Consumes: `StoredListing`, `catalogManager.getCard`, `formatCardList`
 - Produces:
   - `kleinanzeigenSearchUrl(cardId: CardId): string` → `https://www.kleinanzeigen.de/s-lego-minecraft-karte-<id lowercased>/k0`
@@ -454,9 +520,15 @@ expect(msgs).toHaveLength(2);
 expect(msgs[0].embeds).toHaveLength(5);
 expect(msgs[0].components).toHaveLength(5);
 const row = msgs[0].components![0].toJSON();
-expect(row.components.map((c: any) => c.label)).toEqual(['Open in shop', 'Kleinanzeigen', '❌ Wrong card']);
+expect(row.components.map((c: any) => c.label)).toEqual([
+  'Open in shop',
+  'Kleinanzeigen',
+  '❌ Wrong card',
+]);
 expect(row.components[2].custom_id).toBe('report:1');
-expect(kleinanzeigenSearchUrl('LE8')).toBe('https://www.kleinanzeigen.de/s-lego-minecraft-karte-le8/k0');
+expect(kleinanzeigenSearchUrl('LE8')).toBe(
+  'https://www.kleinanzeigen.de/s-lego-minecraft-karte-le8/k0'
+);
 expect(embedJson(item0Unconfirmed).footer.text).toContain('⚠️ number unconfirmed');
 expect(embedJson(item0Unconfirmed).thumbnail.url).toBe(referenceUrl);
 // sender: fake client whose send throws for 'u1'
@@ -472,6 +544,7 @@ expect(r).toEqual({ notified: 1, dmFailures: 1 });
 **Files:** Create `src/bot/commands/missing.ts` + test, `src/bot/commands/help.ts` + test. Copy ref `src/bot/utils/interactionReply.ts` + test.
 
 **Interfaces:**
+
 - Consumes: `userManager`, `formatCardList`
 - Produces: each module exports `data: SlashCommandBuilder` and `execute(interaction: ChatInputCommandInteraction): Promise<void>` (ref pattern).
 - `/missing` subcommands: `set list:<string>`, `add list:<string>`, `remove list:<string>`, `list`, `clear`. All replies ephemeral. Success reply: `Your missing cards (N): <formatCardList>`. Failure reply: `Nothing changed. Unknown or invalid: <tokens joined by ", ">`. String option `max_length` 6000.
@@ -495,6 +568,7 @@ expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
 **Files:** Create `src/bot/database/reportManager.ts` + test, `src/bot/interactions/report.ts` + test.
 
 **Interfaces:**
+
 - Consumes: `listingManager`, `catalogManager`, `config.botAdminId`
 - Produces:
   - `reportManager.create(r: { listingId: number; reporterId: string; reason: 'wrong_number' | 'wrong_series' | 'other'; note: string | null; now: number }): number` — inserts and calls `listingManager.setOnHold`
@@ -507,10 +581,18 @@ expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
 - [ ] **Step 1: Failing tests:**
 
 ```ts
-const id = reportManager.create({ listingId: l.id, reporterId: 'u1', reason: 'wrong_number', note: 'shows #8', now: 1 });
+const id = reportManager.create({
+  listingId: l.id,
+  reporterId: 'u1',
+  reason: 'wrong_number',
+  note: 'shows #8',
+  now: 1,
+});
 expect(listingManager.getById(l.id)!.onHold).toBe(true);
 await handleReportModal(fakeModal('report-modal:' + l.id + ':wrong_series', 'u1', ''), adminSpy);
-expect(adminSpy.calls[0].embeds[0].toJSON().fields.find((f: any) => f.name === 'Reason').value).toBe('Wrong series');
+expect(
+  adminSpy.calls[0].embeds[0].toJSON().fields.find((f: any) => f.name === 'Reason').value
+).toBe('Wrong series');
 expect(lastReply().content).toContain('admin has been notified');
 ```
 
@@ -522,6 +604,7 @@ expect(lastReply().content).toContain('admin has been notified');
 **Files:** Create `src/bot/commands/admin.ts` + test, `src/bot/interactions/catalogImport.ts` + test.
 
 **Interfaces:**
+
 - Consumes: `listingManager.overrideCards/clearHold`, `runManager.last`, scheduler `trigger()` (passed in), `catalogManager.previewImport/applyImport`, `parseChecklist`, `parseCardList`
 - Produces:
   - `/admin` subcommands: `map url:<string> cards:<string>`, `clear url:<string>`, `status`, `run`; group `catalog` → `import list:<string max 6000>`. `execute(interaction, ctx: { trigger: () => Promise<RunSummary | 'busy'> })`. Any user other than `BOT_ADMIN_ID` gets ephemeral `Only the bot admin can use this.` and nothing runs.
@@ -535,7 +618,10 @@ expect(lastReply().content).toContain('admin has been notified');
 ```ts
 await adminExecute(fakeInteraction('u1', 'status'), ctx);
 expect(lastReply().content).toBe('Only the bot admin can use this.');
-await adminExecute(fakeAdmin('catalog', 'import', 'Prüfliste für Nummern diese Sammlung:\n' + checklistWithLE23), ctx);
+await adminExecute(
+  fakeAdmin('catalog', 'import', 'Prüfliste für Nummern diese Sammlung:\n' + checklistWithLE23),
+  ctx
+);
 expect(lastReply().content).toContain('Added: LE23');
 const store = createImportStore(() => clock);
 const token = store.put(['1']);
@@ -556,6 +642,7 @@ expect(lastReply().content).toBe('A check is already running.');
 **Files:** Create `src/bot/config.ts` + test, `src/bot/bot.ts`, `.env.example`.
 
 **Interfaces:**
+
 - Produces: `loadConfig(env: Record<string, string | undefined>): Config` with `Config = { discordToken; guildId?; botAdminId; dbPath; checkIntervalMs; ebay: { clientId; clientSecret } | null; imageModel; imageMatchThreshold; modelCacheDir }`; throws `ConfigError` naming the variable for missing `DISCORD_TOKEN`/`BOT_ADMIN_ID`, non-numeric interval or threshold outside (0, 1).
 - `bot.ts`: load config (exit 1 on `ConfigError`), `initializeDatabase()`, `catalogManager.seedIfEmpty()`, register commands statically (guild-scoped when `DISCORD_GUILD_ID` set), intents `Guilds` + `DirectMessages`. Create embedder via `createCachedEmbedder(await createTransformersEmbedder(...))`; on failure log `error` and run with `embedder = null`. Adapters: sammel-ente, blue-ocean, eBay only when configured (else log `warn` "eBay disabled: EBAY_CLIENT_ID/EBAY_CLIENT_SECRET not set"). On `ClientReady` start the scheduler. Route `InteractionCreate`: chat commands → modules; buttons by customId prefix (`report:`, `report-reason:`, `catalog-save:`, `catalog-cancel:`); modals `report-modal:`. Before each chat command, if `userManager.takeDmFailure(user)` add a follow-up `I couldn't send you a DM — please allow DMs from server members.` Errors through `replyWithError`. SIGINT/SIGTERM: stop scheduler, destroy client, `closeDatabase()`. `unhandledRejection`/`uncaughtException` guards as ref.
 
@@ -563,8 +650,14 @@ expect(lastReply().content).toBe('A check is already running.');
 
 ```ts
 expect(() => loadConfig({ BOT_ADMIN_ID: '1' })).toThrow('DISCORD_TOKEN');
-expect(loadConfig({ DISCORD_TOKEN: 't', BOT_ADMIN_ID: '1' })).toMatchObject({ checkIntervalMs: 3_600_000, ebay: null, dbPath: './data/cards.db' });
-expect(() => loadConfig({ DISCORD_TOKEN: 't', BOT_ADMIN_ID: '1', IMAGE_MATCH_THRESHOLD: '2' })).toThrow('IMAGE_MATCH_THRESHOLD');
+expect(loadConfig({ DISCORD_TOKEN: 't', BOT_ADMIN_ID: '1' })).toMatchObject({
+  checkIntervalMs: 3_600_000,
+  ebay: null,
+  dbPath: './data/cards.db',
+});
+expect(() =>
+  loadConfig({ DISCORD_TOKEN: 't', BOT_ADMIN_ID: '1', IMAGE_MATCH_THRESHOLD: '2' })
+).toThrow('IMAGE_MATCH_THRESHOLD');
 ```
 
 - [ ] **Step 2:** Run → FAIL. **Step 3:** Implement `config.ts`, `bot.ts`, `.env.example` (commented like ref's). **Step 4:** Run → PASS; `./bin/mise run typecheck && ./bin/mise run lint` exit 0.

@@ -5,7 +5,7 @@ import {
   type PendingNotifications,
   type StoredListing,
 } from '../database/listingManager';
-import { runManager } from '../database/runManager';
+import { runManager, SHOP_PEAK_WINDOW_MS } from '../database/runManager';
 import { userManager } from '../database/userManager';
 import { matchListing, type ImageEmbedder } from '../matcher/embedder';
 import type { FetchResult, Listing, ShopAdapter, ShopId } from '../shops/types';
@@ -159,10 +159,11 @@ async function checkShop(
     if (peak !== undefined && found.length < peak * DROP_ALERT_SHARE) {
       // A pagination or markup change can leave only part of the shop readable. Measured
       // against the peak of the successful runs of the last 3 days (longer than the 24 h
-      // throttle), a lasting drop keeps alerting daily until it leaves the window.
+      // throttle), a lasting drop keeps alerting daily until its last healthy run is older
+      // than 3 days (about three alerts).
       await alert(
         `shop-drop:${adapter.id}`,
-        `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last 3 days — check the pagination and markup.`
+        `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last ${SHOP_PEAK_WINDOW_MS / (24 * 60 * 60 * 1000)} days — check the pagination and markup.`
       );
     }
     for (const l of found) fetched.set(l.url, l);

@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
 import { db, initializeDatabase } from './db';
 import { adminAlerts, runs } from './schema/index';
-import { runManager } from './runManager';
+import { resetWarnings, runManager } from './runManager';
 import type { RunSummary } from '../check/runner';
 
 const NOW = 10_000_000_000;
@@ -22,6 +22,7 @@ describe('runManager', () => {
   beforeEach(() => {
     db.delete(runs).run();
     db.delete(adminAlerts).run();
+    resetWarnings();
   });
 
   test('last returns the most recent recorded summary', () => {
@@ -40,6 +41,7 @@ describe('runManager', () => {
       db.insert(runs).values({ startedAt: 1, finishedAt: 2, summary: 'not json' }).run();
       expect(runManager.last()).toBeUndefined();
       expect(warn).toHaveBeenCalledTimes(2);
+      expect(warn.mock.calls.some((c) => /unreadable: .*JSON/i.test(String(c[0])))).toBe(true);
     } finally {
       warn.mockRestore();
     }
@@ -75,6 +77,20 @@ describe('runManager', () => {
     // 72 h after the 100 it leaves the window.
     expect(runManager.shopPeakListings('blue-ocean', NOW + 72 * hour)).toBe(100);
     expect(runManager.shopPeakListings('blue-ocean', NOW + 72 * hour + 1)).toBe(10);
+  });
+
+  test('shopPeakListings still sees the peak when more than 500 runs happened in the window', () => {
+    // One-minute interval: 600 runs in 10 hours, the peak first.
+    const minute = 60 * 1000;
+    runManager.record({ ...summary, startedAt: NOW, shops: { 'blue-ocean': { listings: 100 } } });
+    for (let m = 1; m <= 600; m += 1) {
+      runManager.record({
+        ...summary,
+        startedAt: NOW + m * minute,
+        shops: { 'blue-ocean': { listings: 10 } },
+      });
+    }
+    expect(runManager.shopPeakListings('blue-ocean', NOW + 600 * minute)).toBe(100);
   });
 
   test('shopPeakListings ignores a corrupted shop entry and warns about an unreadable row', () => {

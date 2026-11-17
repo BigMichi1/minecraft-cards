@@ -1,6 +1,7 @@
 import { desc, eq, gte } from 'drizzle-orm';
 import type { RunSummary, ShopSummary } from '../check/runner';
 import type { ShopId } from '../shops/types';
+import { errorMessage } from '../utils/async';
 import logger from '../utils/logger';
 import { db } from './db';
 import { adminAlerts, runs } from './schema/index';
@@ -9,13 +10,15 @@ import { adminAlerts, runs } from './schema/index';
  * How far back `shopPeakListings` looks. Longer than the 24 h alert throttle, so a lasting drop
  * is still measured against the healthy counts when its next alert is due.
  */
-const SHOP_PEAK_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
-
-/** Upper bound of rows read for the window (3 days at a 9 minute interval; shorter intervals see less). */
-const SHOP_HISTORY_RUNS = 500;
+export const SHOP_PEAK_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
 /** Rows whose problems were already logged, so a bad row warns once per process, not per run. */
 const warnedOnce = new Set<string>();
+
+/** Forget which rows were warned about (tests: row ids restart after a table is emptied). */
+export function resetWarnings(): void {
+  warnedOnce.clear();
+}
 
 function warnOnce(key: string, message: string): void {
   if (warnedOnce.has(key)) return;
@@ -33,12 +36,16 @@ function isShopSummary(entry: unknown): entry is ShopSummary {
 /**
  * Parse a stored summary. Rows written by an older version lack newer fields, so every field
  * added to RunSummary after the first release must be optional; this check covers the fields
- * every version wrote. Shop entries that are not shop summaries are dropped with a warning.
+ * every version wrote. An unreadable row (warned once, with the reason) gives undefined; shop
+ * entries that are not shop summaries are dropped with a warning.
  */
 function parseSummary(json: string, rowId: number): RunSummary | undefined {
   try {
     const value: unknown = JSON.parse(json);
-    if (typeof value !== 'object' || value === null) return undefined;
+    if (typeof value !== 'object' || value === null) {
+      warnOnce(`${rowId}`, `run ${rowId}: stored summary is not a run summary`);
+      return undefined;
+    }
     const v = value as Record<string, unknown>;
     if (
       typeof v.startedAt !== 'number' ||
@@ -48,6 +55,7 @@ function parseSummary(json: string, rowId: number): RunSummary | undefined {
       typeof v.shops !== 'object' ||
       v.shops === null
     ) {
+      warnOnce(`${rowId}`, `run ${rowId}: stored summary is not a run summary`);
       return undefined;
     }
     const shops: Record<string, ShopSummary> = {};
@@ -56,7 +64,8 @@ function parseSummary(json: string, rowId: number): RunSummary | undefined {
       else warnOnce(`${rowId}:${shop}`, `run ${rowId}: stored ${shop} entry is not a shop summary`);
     }
     return { ...(value as RunSummary), shops };
-  } catch {
+  } catch (err) {
+    warnOnce(`${rowId}`, `run ${rowId}: stored summary is unreadable: ${errorMessage(err)}`);
     return undefined;
   }
 }
@@ -76,31 +85,24 @@ export const runManager = {
   last(): RunSummary | undefined {
     const row = db.select().from(runs).orderBy(desc(runs.id)).limit(1).get();
     if (!row) return undefined;
-    const summary = parseSummary(row.summary, row.id);
-    if (!summary) warnOnce(`${row.id}`, `run ${row.id}: stored summary is not a run summary`);
-    return summary;
+    return parseSummary(row.summary, row.id);
   },
 
   /**
    * The highest number of listings `shop` returned in its successful runs that started within
-   * the last 3 days before `now` (at most SHOP_HISTORY_RUNS rows); undefined when there is none.
+   * the last 3 days before `now`, however many runs that is; undefined when there is none.
    * Unreadable rows and entries are skipped with a warning, once per row.
    */
   shopPeakListings(shop: ShopId, now: number): number | undefined {
     const rows = db
-      .select({ id: runs.id, summary: runs.summary })
+      .select({ id: runs.id, summary: runs.summary }) // id keys the once-per-row warning
       .from(runs)
       .where(gte(runs.startedAt, now - SHOP_PEAK_WINDOW_MS))
-      .orderBy(desc(runs.id))
-      .limit(SHOP_HISTORY_RUNS)
       .all();
     let peak: number | undefined;
     for (const row of rows) {
       const summary = parseSummary(row.summary, row.id);
-      if (!summary) {
-        warnOnce(`${row.id}`, `run ${row.id}: stored summary is not a run summary`);
-        continue;
-      }
+      if (!summary) continue;
       const entry = summary.shops[shop];
       if (entry === undefined || entry.error !== undefined) continue;
       peak = Math.max(peak ?? entry.listings, entry.listings);

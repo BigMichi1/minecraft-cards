@@ -1,0 +1,90 @@
+import * as cheerio from 'cheerio';
+import { normalizeCardId } from '../cards/cardId';
+import { errorMessage, sleep as realSleep } from '../utils/async';
+import { fetchText } from '../utils/http';
+import logger from '../utils/logger';
+import type { AdapterOptions, FetchFn, Listing, ShopAdapter } from './types';
+import { ShopLayoutError } from './types';
+
+const BASE_URL = 'https://shop-sammel-ente.de/Minecraft/Serie-3/';
+const PAGE_DELAY_MS = 1500;
+const MAX_PAGES = 60;
+
+// "LEGO Minecraft Serie 3 | #012 Squid" -> id "012", name "Squid". Puzzle packs
+// ("... Puzzle-Paket #1 (154 - 162)") have no pipe, boosters and starter packs no "#".
+const TITLE_PATTERN = /\|\s*#((?:LE|XXL)?\d+)\s+(\S.*)$/i;
+
+function parsePrice(text: string): Listing['price'] {
+  const match = /(\d+(?:\.\d{3})*),(\d{2})\s*€/.exec(text.replace(/\s+/g, ' '));
+  if (!match) return null;
+  const euros = Number.parseInt((match[1] ?? '').replace(/\./g, ''), 10);
+  return { cents: euros * 100 + Number.parseInt(match[2] ?? '0', 10), currency: 'EUR' };
+}
+
+/** Parse one category page. `lastPage` is the highest `?p=N` in the pagination (1 when none). */
+export function parseSammelEntePage(html: string): { listings: Listing[]; lastPage: number } {
+  const $ = cheerio.load(html);
+
+  let lastPage = 1;
+  $('a[href*="?p="]').each((_, el) => {
+    const page = Number.parseInt(/[?&]p=(\d+)/.exec($(el).attr('href') ?? '')?.[1] ?? '', 10);
+    if (page > lastPage) lastPage = page;
+  });
+
+  const listings: Listing[] = [];
+  $('.card.product-box').each((_, el) => {
+    const box = $(el);
+    const link = box.find('a.product-name').first();
+    const href = link.attr('href');
+    const title = link.text().replace(/\s+/g, ' ').trim();
+    if (!href || !title) return;
+    const match = TITLE_PATTERN.exec(title);
+    const cardId = match ? normalizeCardId(match[1] ?? '') : null;
+    if (!match || !cardId) return;
+
+    listings.push({
+      shop: 'sammel-ente',
+      url: new URL(href, BASE_URL).toString(),
+      title,
+      cardIds: [cardId],
+      cardName: (match[2] ?? '').trim(),
+      imageUrl: box.find('img.product-image').first().attr('src') ?? null,
+      price: parsePrice(box.find('.product-price').first().text()),
+      available: box.find('.delivery-information.delivery-available').length > 0,
+      format: 'shop',
+      auctionEndsAt: null,
+      idConflict: false,
+    });
+  });
+  return { listings, lastPage };
+}
+
+export function createSammelEnteAdapter(
+  fetchFn?: FetchFn,
+  options: AdapterOptions = {}
+): ShopAdapter {
+  const sleep = options.sleep ?? realSleep;
+  const delayMs = options.delayMs ?? PAGE_DELAY_MS;
+  return {
+    id: 'sammel-ente',
+    async fetchListings() {
+      const first = parseSammelEntePage(await fetchText(`${BASE_URL}?p=1`, fetchFn));
+      const byUrl = new Map(first.listings.map((l) => [l.url, l]));
+      const lastPage = Math.min(first.lastPage, MAX_PAGES);
+      for (let page = 2; page <= lastPage; page++) {
+        await sleep(delayMs);
+        try {
+          const parsed = parseSammelEntePage(await fetchText(`${BASE_URL}?p=${page}`, fetchFn));
+          for (const listing of parsed.listings) byUrl.set(listing.url, listing);
+        } catch (error) {
+          logger.error(`sammel-ente page ${page} failed: ${errorMessage(error)}`);
+          throw error;
+        }
+      }
+      if (byUrl.size === 0) {
+        throw new ShopLayoutError('sammel-ente: no card listings found on any page');
+      }
+      return [...byUrl.values()];
+    },
+  };
+}

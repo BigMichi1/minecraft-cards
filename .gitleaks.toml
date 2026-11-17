@@ -7,4 +7,7 @@ paths = [
     "README.md",
     "docs/",
     ".github/workflows/",
+    # Real shop pages kept verbatim as parser fixtures; blue-ocean embeds its public
+    # storefront access token and a public strapi token in the page.
+    '''^src/test/fixtures/''',
 ]

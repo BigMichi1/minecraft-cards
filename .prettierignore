@@ -27,3 +27,6 @@ api-logs/
 models/
 .superpowers/
 dist-bundle/
+
+# Real shop pages kept verbatim as test fixtures
+src/test/fixtures/

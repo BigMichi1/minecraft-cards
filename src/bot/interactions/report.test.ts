@@ -14,6 +14,8 @@ import {
 
 let replies: Array<any> = [];
 let modals: Array<any> = [];
+let edits: Array<any> = [];
+let deferrals = 0;
 
 function fakeButton(customId: string) {
   return {
@@ -32,7 +34,7 @@ function fakeButton(customId: string) {
 }
 
 function fakeModal(customId: string, note: string) {
-  return {
+  const self = {
     customId,
     user: { id: 'u1', tag: 'bob#1' },
     deferred: false,
@@ -41,8 +43,17 @@ function fakeModal(customId: string, note: string) {
     fields: { getTextInputValue: (_: string) => note },
     reply: async (p: unknown) => {
       replies.push(p);
+      (self as any).replied = true;
     },
-  } as unknown as ModalSubmitInteraction;
+    deferReply: async () => {
+      deferrals += 1;
+      (self as any).deferred = true;
+    },
+    editReply: async (p: unknown) => {
+      edits.push(p);
+    },
+  };
+  return self as unknown as ModalSubmitInteraction;
 }
 
 const lastReply = () => replies[replies.length - 1];
@@ -84,6 +95,8 @@ describe('report flow', () => {
   beforeEach(() => {
     replies = [];
     modals = [];
+    edits = [];
+    deferrals = 0;
     db.delete(reports).run();
     db.delete(listingCards).run();
     db.delete(listings).run();
@@ -140,8 +153,24 @@ describe('report flow', () => {
       .toJSON()
       .fields.find((f: any) => f.name === 'Reason').value;
     expect(reason).toBe('Wrong series');
-    expect(lastReply().content).toContain('admin has been notified');
-    expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
+    expect(deferrals).toBe(1);
+    expect(replies).toHaveLength(0);
+    expect(edits).toHaveLength(1);
+    expect(edits[0].content).toContain('admin has been notified');
+  });
+
+  test('repeat reports are stored but alert the admin only once until resolved', async () => {
+    const l = makeListing();
+    const spy = adminSpy();
+    await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'a'), spy);
+    await handleReportModal(fakeModal(`report-modal:${l.id}:wrong_number`, 'b'), spy);
+    expect(db.select().from(reports).all()).toHaveLength(2);
+    expect(spy.calls).toHaveLength(1);
+    expect(edits).toHaveLength(2);
+    expect(edits[1].content).toContain('admin has been notified');
+    db.update(reports).set({ resolvedAt: 5 }).run();
+    await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'c'), spy);
+    expect(spy.calls).toHaveLength(2);
   });
 
   test('modal still thanks the user when notifying the admin fails', async () => {
@@ -150,7 +179,7 @@ describe('report flow', () => {
       throw new Error('dm closed');
     });
     expect(db.select().from(reports).all()).toHaveLength(1);
-    expect(lastReply().content).toContain('admin has been notified');
+    expect(edits[0].content).toContain('admin has been notified');
   });
 
   test('modal for a vanished listing or bad id never throws', async () => {

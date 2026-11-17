@@ -158,6 +158,8 @@ export async function handleReportModal(
       await i.reply(ephemeral(NO_LISTING));
       return;
     }
+    // Acknowledge first: the DB write and the admin DM must not eat the 3 s window.
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
     const note = i.fields.getTextInputValue('note').trim() || null;
     const report = {
       listingId: listing.id,
@@ -165,15 +167,19 @@ export async function handleReportModal(
       reason: parsed.reason,
       note,
     };
+    // Checked before inserting: only the first open report on a listing alerts the admin.
+    const alreadyOpen = reportManager.hasOpenReport(listing.id);
     reportManager.create({ ...report, now: Date.now() });
-    try {
-      await notifyAdmin(buildAdminReportMessage(report, listing, i.user.tag ?? i.user.username));
-    } catch (err) {
-      logger.error(
-        `[REPORT] Could not notify the admin of a report on listing ${listing.id}: ${errorMessage(err)}`
-      );
+    if (!alreadyOpen) {
+      try {
+        await notifyAdmin(buildAdminReportMessage(report, listing, i.user.tag ?? i.user.username));
+      } catch (err) {
+        logger.error(
+          `[REPORT] Could not notify the admin of a report on listing ${listing.id}: ${errorMessage(err)}`
+        );
+      }
     }
-    await i.reply(ephemeral(THANKS));
+    await i.editReply({ content: THANKS });
   } catch (err) {
     logger.error(`[REPORT] modal failed: ${errorMessage(err)}`);
     await replyWithError(i, 'Report failed', 'Something went wrong. Please try again later.');

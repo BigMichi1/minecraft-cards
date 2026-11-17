@@ -9,10 +9,11 @@ release versions, `sha-<short>`); release images are signed with Cosign.
 Verify a release image with Cosign v2.6 or later (the release notes carry the same command for
 the exact version; the image name is lowercase):
 
-```bash
-cosign verify ghcr.io/bigmichi1/minecraft-cards: \
-  '^https://github.com/BigMichi1/minecraft-cards/' \
-  --certificate-oidc-issuer https://token.actions.githubusercontent.com < version > --certificate-identity-regexp
+```sh
+VERSION=1.2.3 # the release to verify, without the leading v
+cosign verify "ghcr.io/bigmichi1/minecraft-cards:${VERSION}" \
+  --certificate-identity-regexp '^https://github.com/BigMichi1/minecraft-cards/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 - **Build stage** installs the pinned toolchain through `bin/mise`, the locked dependencies, and
@@ -63,7 +64,7 @@ These reach the admin as DMs. Throttled alerts go out at most once a day per kin
 shop alerts): shop failures and unparseable pages, a shop whose card listings all read as
 unavailable (a changed stock marker), a shop returning less than half of its peak count (the
 highest over its successful runs of the last 3 days: a pagination or markup change; a lasting
-drop keeps alerting daily until it leaves that window),
+drop keeps alerting daily until its last healthy run is older than 3 days, about three alerts),
 a check run that failed, a run where every notification DM failed, and notifications that could
 not be built. Failed slash command registration and an image model that failed to load are DMed
 once per start, not throttled. A wrong-card report whose admin DM failed is sent again with the

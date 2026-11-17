@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-All tasks run through the vendored Mise launcher `./bin/mise` (it pins Bun, gitleaks, ripgrep and jq into `.mise/`, plus the maintainer's own `claude` and `python` tools, which the bot does not use). Do not call `bun run`, `npm`, or `npx` directly; if a task is missing, add it to `.mise.toml`.
+All tasks run through the vendored Mise launcher `./bin/mise` (it pins Bun, gitleaks, ripgrep and jq into `.mise/`, plus the maintainer's own `claude` and `python` tools, which the bot does not use but `mise install` also installs in CI and in the Docker builder stage). Do not call `bun run`, `npm`, or `npx` directly; if a task is missing, add it to `.mise.toml`.
 
 ```bash
 ./bin/mise run install       # bun install
@@ -34,7 +34,7 @@ Bun + TypeScript Discord bot (discord.js), SQLite through Drizzle. `src/bot/bot.
 - `config.ts`: env parsing, fails fast with a message naming the variable.
 - `cards/`: canonical card ids and the starter catalog.
 - `shops/`: adapters for sammel-ente, blue-ocean and eBay behind one `ShopAdapter` interface.
-- `check/`: `runner.ts` (one round for all users), `scheduler.ts` (interval, `/admin run`) and `adminAlert.ts` (admin DMs throttled to once a day per kind).
+- `check/`: `runner.ts` (one round for all users), `scheduler.ts` (interval, `/admin run`) and `adminAlert.ts` (throttled admin alerts, at most once a day per key; the registration and model-load DMs are not throttled, they go once per start).
 - `lifecycle.ts`: shutdown and the slash command runner (DM failure notice).
 - `matcher/`: image embedder (transformers.js), cosine similarity, bounded image download.
 - `notify/`: message building and DM sending.
@@ -74,5 +74,5 @@ Docs: `docs/development.md`, `configuration.md`, `image-matching.md`, `deploymen
 - `sharp` is bypassed: it hangs under Bun 1.4.4, so the embedder decodes and resizes with `Bun.Image`.
 - Validate every URL (`validUrl` in `notify/messages.ts`) before it reaches a discord.js builder; one bad URL must not break a batch.
 - An empty catalog import (no card ids recognised) changes nothing.
-- Match statuses (`matcher/matchStatus.ts`, `docs/image-matching.md`): new listings start `pending`; `image_unavailable` is retried at most once a day; an admin-mapped listing is never reset by a rescrape.
+- Match statuses (`matcher/matchStatus.ts`, `docs/image-matching.md`): new single-card listings of shops other than sammel-ente start `pending`; `image_unavailable` is retried at most once a day; an admin-mapped listing is never reset by a rescrape.
 - Only Discord error 50007 counts as closed DMs; other DM failures are retried without marking the user.

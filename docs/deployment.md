@@ -23,8 +23,10 @@ The server is x86_64; the image has not been built for arm64.
 In the Discord Developer Portal, first open the **Installation** tab and set **Install Link**
 to **None** (Discord refuses a private app that still has a default install link), save, then
 turn off **Public Bot** on the **Bot** tab, so only you can add the bot to a server. Invite the
-bot with the URL from **OAuth2 → URL Generator** (scopes `bot` + `applications.commands`). `/admin` is registered with the Administrator default permission (hidden
-from other members); the bot still accepts it only from `BOT_ADMIN_ID`.
+bot with the URL from **OAuth2 → URL Generator** (scopes `bot` + `applications.commands`); no
+bot permissions need to be ticked, because the bot only sends DMs and registers commands.
+`/admin` is registered with the Administrator default permission (hidden from other members);
+the bot still accepts it only from `BOT_ADMIN_ID`.
 
 ## Run
 
@@ -45,14 +47,17 @@ Podman works the same way: `podman build -t minecraft-cards .`, then
 
 ## Health
 
-The container healthcheck is `pgrep -f "[b]ot/bot\.ts"` (the bracket keeps the check from matching itself): it reports whether the process lives,
-not whether Discord is reachable. These reach the admin as DMs (each kind at most once a day):
+The container healthcheck is `pgrep -f "[b]ot/bot\.ts"` (the bracket keeps the check from
+matching itself): it reports whether the process lives, not whether Discord is reachable.
+
+These reach the admin as DMs. Throttled alerts go out at most once a day per kind and shop:
 shop failures and unparseable pages, a shop whose card listings all read as unavailable (a
-changed stock marker), a shop returning less than half of its last successful count (a
-pagination or markup change), a check run that failed, a run where every notification DM
-failed, notifications that could not be built, failed slash command registration, and an image
-model that failed to load. A wrong-card report whose admin DM failed is sent again with the
-next check.
+changed stock marker), a shop returning less than half of its recent peak count (the highest of
+its last 5 successful runs: a pagination or markup change; a lasting drop keeps alerting daily),
+a check run that failed, a run where every notification DM failed, and notifications that could
+not be built. Failed slash command registration and an image model that failed to load are DMed
+once per start, not throttled. A wrong-card report whose admin DM failed is sent again with the
+next check; one still unsent after a day also logs a warning, once a day.
 
 ## First start
 

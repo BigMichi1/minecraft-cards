@@ -2,8 +2,10 @@
 
 Everything runs through the vendored Mise launcher `./bin/mise`, which pins Bun, gitleaks,
 ripgrep and jq into `.mise/`. `.mise.toml` also pins `claude` (Claude Code) and `python`: the
-maintainer's own toolchain, not used by the bot, its tests or CI. Do not call `bun run`, `npm` or `npx` directly; a missing task
-belongs in `.mise.toml`.
+maintainer's own toolchain, not used by the bot or its tests. `mise install` still installs
+them everywhere it runs, in CI (`test.yml`, `audit.yml`) and in the Docker builder stage; the
+production image does not carry them. Do not call `bun run`, `npm` or `npx` directly; a missing
+task belongs in `.mise.toml`.
 
 ## Setup
 

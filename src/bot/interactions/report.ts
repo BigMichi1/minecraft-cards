@@ -240,17 +240,22 @@ export async function retryUnsentReports(
   let sent = 0;
   try {
     for (const report of reportManager.unsentOpen()) {
-      const listing = listingManager.getById(report.listingId);
-      if (!listing) continue;
-      if (await sendReport(notifyAdmin, report, listing, report.reporterId)) {
-        sent++;
-      } else if (
-        now - report.createdAt >= UNSENT_WARN_AFTER_MS &&
-        runManager.shouldAlert(`report-unsent:${report.id}`, now, UNSENT_WARN_AFTER_MS)
-      ) {
-        logger.warn(
-          `[REPORT] report ${report.id} on listing ${listing.id} has not reached the admin for over a day`
-        );
+      // One report's failure (database, DM) must not skip the reports after it.
+      try {
+        const listing = listingManager.getById(report.listingId);
+        if (!listing) continue;
+        if (await sendReport(notifyAdmin, report, listing, report.reporterId)) {
+          sent++;
+        } else if (
+          now - report.createdAt >= UNSENT_WARN_AFTER_MS &&
+          runManager.shouldAlert(`report-unsent:${report.id}`, now, UNSENT_WARN_AFTER_MS)
+        ) {
+          logger.warn(
+            `[REPORT] report ${report.id} on listing ${listing.id} has not reached the admin for over a day`
+          );
+        }
+      } catch (err) {
+        logError(`[REPORT] retrying report ${report.id} failed`, err);
       }
     }
   } catch (err) {

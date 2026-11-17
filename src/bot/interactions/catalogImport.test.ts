@@ -97,10 +97,31 @@ describe('handleCatalogButton', () => {
     try {
       await handleCatalogButton(button, { adminId: 'admin' }, store);
       expect([...catalogManager.knownIds()].sort()).toEqual(ids('1', '2'));
-      const embed = replies[0].embeds[0].toJSON();
-      expect(embed.description).toBe(
+      expect(replies[0].embeds).toBeUndefined();
+      expect(replies[0].content).toBe(
         'The catalog was saved, but this message could not be updated.'
       );
+      expect(log).toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('a message that cannot be updated after a cancel is reported as cancelled, not failed', async () => {
+    const store = createImportStore(() => clock);
+    const token = store.put([cid('1')]);
+    const button = fakeButton(`catalog-cancel:${token}`);
+    (button as unknown as { update: () => Promise<void> }).update = async () => {
+      throw new Error('unknown interaction');
+    };
+    const log = spyOn(logger, 'log');
+    try {
+      await handleCatalogButton(button, { adminId: 'admin' }, store);
+      expect(replies[0].embeds).toBeUndefined();
+      expect(replies[0].content).toBe(
+        'The import was cancelled, but this message could not be updated.'
+      );
+      expect(store.peek(token)).toBeUndefined();
       expect(log).toHaveBeenCalled();
     } finally {
       log.mockRestore();

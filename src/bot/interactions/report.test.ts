@@ -6,6 +6,7 @@ import { cards, listingCards, listings, reports, adminAlerts } from '../database
 import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { reportManager } from '../database/reportManager';
+import { runManager } from '../database/runManager';
 import logger from '../utils/logger';
 import {
   buildAdminReportMessage,
@@ -279,6 +280,40 @@ describe('report flow', () => {
         expect(escalations()).toHaveLength(2);
       } finally {
         warn.mockRestore();
+      }
+    });
+
+    test('one report failing its escalation does not skip the reports after it', async () => {
+      const listingsOfReports = [makeListing(), makeListing('https://www.blue-ocean.de/p/13')];
+      const failing = async () => {
+        throw new Error('dm closed');
+      };
+      const day = 24 * 60 * 60 * 1000;
+      const ids = [1_000, 2_000].map((now, n) =>
+        reportManager.create({
+          listingId: listingsOfReports[n]!.id,
+          reporterId: 'u1',
+          reason: 'other',
+          note: null,
+          now,
+        })
+      );
+      const alert = spyOn(runManager, 'shouldAlert').mockImplementationOnce(() => {
+        throw new Error('database is locked');
+      });
+      const warn = spyOn(logger, 'warn');
+      const log = spyOn(logger, 'log');
+      try {
+        await retryUnsentReports(failing, 3_000 + day);
+        expect(alert).toHaveBeenCalledTimes(2);
+        expect(
+          warn.mock.calls.filter((c: unknown[]) => String(c[0]).includes(`report ${ids[1]}`))
+        ).toHaveLength(1);
+        expect(log).toHaveBeenCalled();
+      } finally {
+        alert.mockRestore();
+        warn.mockRestore();
+        log.mockRestore();
       }
     });
 

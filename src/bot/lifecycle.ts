@@ -18,7 +18,7 @@ export interface ShutdownDeps {
 export interface Shutdown {
   /**
    * Stop everything and exit with `code` (1 when a step failed). A later call stops nothing
-   * twice, but raises the exit code to the larger of the two.
+   * twice; while the first is still running, it raises the exit code to the largest one given.
    */
   shutdown(reason: string, code: number): Promise<void>;
   /** True once shutdown() was called; DMs failing then are the client going away. */

@@ -98,15 +98,17 @@ export async function handleCatalogButton(
     try {
       await i.update({ content: saved ? 'Catalog saved.' : 'Import cancelled.', components: [] });
     } catch (err) {
-      // The work is done; only the message could not be updated, so do not say it failed.
+      // The work is done; only the message could not be updated, so do not say it failed:
+      // a plain ephemeral note, not the red error embed.
       logError('[CATALOG IMPORT] updating the message failed', err);
-      await replyWithError(
-        i,
-        saved ? 'Catalog saved' : 'Import cancelled',
-        saved
-          ? 'The catalog was saved, but this message could not be updated.'
-          : 'The import was cancelled, but this message could not be updated.'
-      );
+      const note = saved
+        ? 'The catalog was saved, but this message could not be updated.'
+        : 'The import was cancelled, but this message could not be updated.';
+      try {
+        await i.reply({ content: note, flags: MessageFlags.Ephemeral });
+      } catch (replyErr) {
+        logError('[CATALOG IMPORT] telling the admin the message update failed failed', replyErr);
+      }
     }
   } catch (err) {
     logError('[CATALOG IMPORT] button failed', err);

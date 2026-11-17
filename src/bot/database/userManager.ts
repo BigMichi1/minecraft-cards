@@ -22,7 +22,7 @@ function readList(tx: Tx, discordId: string): CardId[] {
     .sort(compareCardIds);
 }
 
-/** Parse input; `invalid` is unparseable tokens followed by (when checked) ids not in the catalog. */
+/** Parse input; empty input yields `invalid: []` (clearing is explicit via clearList). `invalid` is unparseable tokens followed by (when checked) ids not in the catalog. */
 function parseChecked(
   input: string,
   checkCatalog: boolean
@@ -35,6 +35,7 @@ function parseChecked(
       })()
     : [];
   const invalid = [...parsed.invalid, ...unknown];
+  if (invalid.length === 0 && parsed.ids.length === 0) return { invalid: [] };
   return invalid.length > 0 ? { invalid } : { ids: parsed.ids };
 }
 

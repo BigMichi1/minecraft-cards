@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { db, initializeDatabase } from './db';
 import { cards, users, wantedCards } from './schema/index';
 import { catalogManager } from './catalogManager';
@@ -74,5 +75,21 @@ describe('userManager', () => {
     expect(userManager.takeDmFailure('u1')).toBe(true);
     expect(userManager.takeDmFailure('u1')).toBe(false);
     expect(userManager.takeDmFailure('nobody')).toBe(false);
+  });
+
+  test('empty or separator-only input is rejected and changes nothing', () => {
+    userManager.setList('u1', '12, 45');
+    expect(userManager.setList('u1', '')).toEqual({ ok: false, invalid: [] });
+    expect(userManager.setList('u1', ' ')).toEqual({ ok: false, invalid: [] });
+    expect(userManager.addToList('u1', ' , ')).toEqual({ ok: false, invalid: [] });
+    expect(userManager.removeFromList('u1', ' , ')).toEqual({ ok: false, invalid: [] });
+    expect(userManager.getList('u1')).toEqual(['12', '45']);
+  });
+
+  test('empty input does not create a user row', () => {
+    expect(userManager.setList('u9', '')).toEqual({ ok: false, invalid: [] });
+    expect(userManager.addToList('u9', ',')).toEqual({ ok: false, invalid: [] });
+    expect(userManager.removeFromList('u9', ',')).toEqual({ ok: false, invalid: [] });
+    expect(db.select().from(users).where(eq(users.discordId, 'u9')).all()).toEqual([]);
   });
 });

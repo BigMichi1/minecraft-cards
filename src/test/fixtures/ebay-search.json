@@ -4,46 +4,101 @@
   "itemSummaries": [
     {
       "itemId": "v1|110000000001|0",
+      "legacyItemId": "110000000001",
       "title": "LEGO Minecraft On Fire Karte Nr. 12 Squid",
-      "itemWebUrl": "https://www.ebay.de/itm/110000000001",
-      "image": { "imageUrl": "https://i.ebayimg.com/images/g/aaa/s-l225.jpg" },
-      "price": { "value": "1.49", "currency": "EUR" },
-      "buyingOptions": ["FIXED_PRICE"]
+      "itemWebUrl": "https://www.ebay.de/itm/110000000001?hash=item19a1b2c3d0:g:AbCdEfGhIjKlMnOp&amdata=enc%3AAQAKAAAA0xyz%3D%3D",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/aaa/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.49",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ]
     },
     {
       "itemId": "v1|110000000002|0",
+      "legacyItemId": "110000000002",
       "title": "Lego Minecraft TCC Serie 3 #12, #45 und LE8",
-      "itemWebUrl": "https://www.ebay.de/itm/110000000002",
-      "image": { "imageUrl": "https://i.ebayimg.com/images/g/bbb/s-l225.jpg" },
-      "price": { "value": "4.99", "currency": "EUR" },
-      "buyingOptions": ["FIXED_PRICE", "BEST_OFFER"],
-      "shippingOptions": [{ "shippingCost": { "value": "1.00", "currency": "EUR" } }]
+      "itemWebUrl": "https://www.ebay.de/itm/110000000002?hash=item19a1b2c3d1:g:AbCdEfGhIjKlMnOp&amdata=enc%3AAQAKAAAA1xyz%3D%3D",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/bbb/s-l225.jpg"
+      },
+      "price": {
+        "value": "4.99",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE",
+        "BEST_OFFER"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCost": {
+            "value": "1.00",
+            "currency": "EUR"
+          }
+        }
+      ]
     },
     {
       "itemId": "v1|110000000003|0",
+      "legacyItemId": "110000000003",
       "title": "LEGO Minecraft Serie 3 Karte #107 Auktion",
-      "itemWebUrl": "https://www.ebay.de/itm/110000000003",
-      "image": { "imageUrl": "https://i.ebayimg.com/images/g/ccc/s-l225.jpg" },
-      "price": { "value": "0.99", "currency": "EUR" },
-      "currentBidPrice": { "value": "1.49", "currency": "EUR" },
-      "buyingOptions": ["AUCTION"],
-      "shippingOptions": [{ "shippingCost": { "value": "1.60", "currency": "EUR" } }],
+      "itemWebUrl": "https://www.ebay.de/itm/110000000003?hash=item19a1b2c3d2:g:AbCdEfGhIjKlMnOp&amdata=enc%3AAQAKAAAA2xyz%3D%3D",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/ccc/s-l225.jpg"
+      },
+      "price": {
+        "value": "0.99",
+        "currency": "EUR"
+      },
+      "currentBidPrice": {
+        "value": "1.49",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "AUCTION"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCost": {
+            "value": "1.60",
+            "currency": "EUR"
+          }
+        }
+      ],
       "itemEndDate": "2026-11-20T18:30:00.000Z"
     },
     {
       "itemId": "v1|110000000004|0",
+      "legacyItemId": "110000000004",
       "title": "LEGO Minecraft Serie 3 Booster 2026",
-      "itemWebUrl": "https://www.ebay.de/itm/110000000004",
-      "image": { "imageUrl": "https://i.ebayimg.com/images/g/ddd/s-l225.jpg" },
-      "price": { "value": "3.50", "currency": "EUR" },
-      "buyingOptions": ["FIXED_PRICE"]
+      "itemWebUrl": "https://www.ebay.de/itm/110000000004?hash=item19a1b2c3d3:g:AbCdEfGhIjKlMnOp&amdata=enc%3AAQAKAAAA3xyz%3D%3D",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/ddd/s-l225.jpg"
+      },
+      "price": {
+        "value": "3.50",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ]
     },
     {
       "itemId": "v1|110000000005|0",
       "title": "Minecraft Serie 3 Karte 107/228 2026",
-      "itemWebUrl": "https://www.ebay.de/itm/110000000005",
-      "price": { "value": "2", "currency": "EUR" },
-      "buyingOptions": ["FIXED_PRICE"]
+      "itemWebUrl": "https://www.ebay.de/itm/110000000005?hash=item19a1b2c3d4:g:AbCdEfGhIjKlMnOp&amdata=enc%3AAQAKAAAA4xyz%3D%3D",
+      "price": {
+        "value": "2",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ]
     }
   ]
 }

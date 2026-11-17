@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { createEbayAdapter, extractCardIdsFromTitle, EBAY_QUERIES } from './ebay';
 import { HttpError } from '../utils/http';
 import { readFixture } from '../../test/shopHelpers';
-import type { FetchFn } from './types';
+import { ShopLayoutError, type FetchFn } from './types';
 
 describe('extractCardIdsFromTitle', () => {
   test('reads prefixed numbers', () => {
@@ -45,7 +45,14 @@ describe('extractCardIdsFromTitle', () => {
   });
 });
 
-function makeFetch(options: { tokenStatus?: number; searchStatus?: number } = {}): {
+function makeFetch(
+  options: {
+    tokenStatus?: number;
+    searchStatus?: number;
+    /** Body of the n-th search request (0-based); defaults to the fixture. */
+    searchBody?: (n: number) => string;
+  } = {}
+): {
   fetchFn: FetchFn;
   tokenCalls: number;
   searchUrls: string[];
@@ -58,8 +65,9 @@ function makeFetch(options: { tokenStatus?: number; searchStatus?: number } = {}
       state.tokenCalls++;
       return new Response(readFixture('ebay-token.json'), { status: options.tokenStatus ?? 200 });
     }
+    const body = options.searchBody?.(state.searchUrls.length) ?? readFixture('ebay-search.json');
     state.searchUrls.push(url);
-    return new Response(readFixture('ebay-search.json'), { status: options.searchStatus ?? 200 });
+    return new Response(body, { status: options.searchStatus ?? 200 });
   };
   return {
     fetchFn,
@@ -95,6 +103,7 @@ describe('createEbayAdapter', () => {
       auctionEndsAt: Date.parse('2026-11-20T18:30:00.000Z'),
       url: 'https://www.ebay.de/itm/110000000003',
     });
+    // No legacyItemId on this item: the number comes from the middle of `v1|<n>|0`.
     expect(listings.find((l) => l.cardIds.includes('LE8'))).toMatchObject({
       format: 'fixed_price',
       cardIds: ['12', '45', 'LE8'],
@@ -106,6 +115,67 @@ describe('createEbayAdapter', () => {
     expect(noImage.imageUrl).toBeNull();
     expect(noImage.price).toEqual({ cents: 200, currency: 'EUR' });
     expect(noImage.cardIds).toEqual(['107']);
+    expect(noImage.url).toBe('https://www.ebay.de/itm/110000000005');
+    for (const l of listings) expect(l.url).not.toContain('?');
+  });
+
+  const item = (over: Record<string, unknown>) => ({
+    itemId: 'v1|220000000001|0',
+    legacyItemId: '220000000001',
+    title: 'LEGO Minecraft Karte Nr. 12',
+    itemWebUrl: 'https://www.ebay.de/itm/220000000001?hash=item1:g:x&amdata=enc%3Afirst',
+    price: { value: '1.00', currency: 'EUR' },
+    buyingOptions: ['FIXED_PRICE'],
+    ...over,
+  });
+  const body = (...items: object[]) => JSON.stringify({ itemSummaries: items });
+
+  test('the same item from two searches with different tracking data is one listing', async () => {
+    const fake = makeFetch({
+      searchBody: (n) =>
+        body(
+          item({
+            itemWebUrl: `https://www.ebay.de/itm/220000000001?hash=item1:g:x&amdata=enc%3Asearch${n}`,
+          })
+        ),
+    });
+    const adapter = createEbayAdapter({ clientId: 'id', clientSecret: 's', fetchFn: fake.fetchFn });
+    const first = await adapter.fetchListings();
+    const second = await adapter.fetchListings();
+    expect(first.map((l) => l.url)).toEqual(['https://www.ebay.de/itm/220000000001']);
+    expect(second.map((l) => l.url)).toEqual(first.map((l) => l.url));
+  });
+
+  test('without any item id the web url is used without its query string', async () => {
+    const fake = makeFetch({
+      searchBody: () =>
+        body(
+          item({
+            itemId: undefined,
+            legacyItemId: undefined,
+            itemWebUrl: 'https://www.ebay.de/itm/330000000001?hash=h&amdata=enc%3Ax',
+          })
+        ),
+    });
+    const adapter = createEbayAdapter({ clientId: 'id', clientSecret: 's', fetchFn: fake.fetchFn });
+    expect((await adapter.fetchListings()).map((l) => l.url)).toEqual([
+      'https://www.ebay.de/itm/330000000001',
+    ]);
+  });
+
+  test('every search returning zero items is a layout error', async () => {
+    const fake = makeFetch({ searchBody: () => JSON.stringify({ total: 0 }) });
+    const adapter = createEbayAdapter({ clientId: 'id', clientSecret: 's', fetchFn: fake.fetchFn });
+    await expect(adapter.fetchListings()).rejects.toBeInstanceOf(ShopLayoutError);
+  });
+
+  test('one search with items is enough, even when none of them names a card', async () => {
+    const fake = makeFetch({
+      searchBody: (n) => (n === 1 ? body(item({ title: 'LEGO Minecraft Booster' })) : body()),
+    });
+    const adapter = createEbayAdapter({ clientId: 'id', clientSecret: 's', fetchFn: fake.fetchFn });
+    expect(await adapter.fetchListings()).toEqual([]);
+    expect(adapter.lastSkippedNoId).toBe(1);
   });
 
   test('sends marketplace, auth and user agent headers', async () => {

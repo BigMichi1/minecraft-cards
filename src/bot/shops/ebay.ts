@@ -1,10 +1,11 @@
 import { compareCardIds, normalizeCardId } from '../cards/cardId';
 import type { CardId } from '../cards/cardId';
 import { REQUEST_TIMEOUT_MS, USER_AGENT, HttpError } from '../utils/http';
-import type { FetchFn, Listing, Money, ShopAdapter } from './types';
+import { ShopLayoutError, type FetchFn, type Listing, type Money, type ShopAdapter } from './types';
 
 const TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 const SEARCH_URL = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
+const ITEM_URL = 'https://www.ebay.de/itm/';
 const TOKEN_SAFETY_MARGIN_MS = 60_000;
 
 export const EBAY_QUERIES = [
@@ -48,6 +49,7 @@ interface EbayMoney {
 
 interface EbayItem {
   itemId?: string;
+  legacyItemId?: string;
   title?: string;
   itemWebUrl?: string;
   image?: { imageUrl?: string };
@@ -84,13 +86,34 @@ function totalPrice(item: EbayItem, isAuction: boolean): Money | null {
   return base;
 }
 
+/**
+ * The stable listing URL. `itemWebUrl` carries per-search tracking (`?hash=…&amdata=…`), so the
+ * same item would get a new URL, a new row and a new notification on every search. The URL is
+ * built from `legacyItemId`, else from the middle of `itemId` (`v1|<n>|<variation>`), else it is
+ * `itemWebUrl` without its query string.
+ */
+function listingUrl(item: EbayItem): string | null {
+  const legacy = item.legacyItemId ?? /^v1\|(\d+)\|/.exec(item.itemId ?? '')?.[1];
+  if (legacy && /^\d+$/.test(legacy)) return `${ITEM_URL}${legacy}`;
+  if (!item.itemWebUrl) return null;
+  try {
+    const url = new URL(item.itemWebUrl);
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 function toListing(item: EbayItem): Listing | null {
-  if (!item.itemWebUrl || !item.title) return null;
+  const url = listingUrl(item);
+  if (!url || !item.title) return null;
   const isAuction = item.buyingOptions?.includes('AUCTION') ?? false;
   const endsAt = isAuction && item.itemEndDate ? Date.parse(item.itemEndDate) : Number.NaN;
   return {
     shop: 'ebay',
-    url: item.itemWebUrl,
+    url,
     title: item.title,
     cardIds: extractCardIdsFromTitle(item.title),
     cardName: null,
@@ -154,20 +177,26 @@ export function createEbayAdapter(opts: {
     id: 'ebay',
     lastSkippedNoId: 0,
     async fetchListings() {
-      const byItemId = new Map<string, Listing>();
+      const byUrl = new Map<string, Listing>();
       const skipped = new Set<string>();
+      let itemsSeen = 0;
       for (const query of EBAY_QUERIES) {
-        for (const item of await search(query)) {
-          const itemId = item.itemId ?? item.itemWebUrl ?? '';
-          if (byItemId.has(itemId) || skipped.has(itemId)) continue;
+        const items = await search(query);
+        itemsSeen += items.length;
+        for (const item of items) {
           const listing = toListing(item);
-          if (!listing) continue;
-          if (listing.cardIds.length === 0) skipped.add(itemId);
-          else byItemId.set(itemId, listing);
+          if (!listing || byUrl.has(listing.url) || skipped.has(listing.url)) continue;
+          if (listing.cardIds.length === 0) skipped.add(listing.url);
+          else byUrl.set(listing.url, listing);
         }
       }
+      // Same rule as the shops: an answer with nothing in it is an API or query problem,
+      // and must not mark every stored eBay listing unavailable.
+      if (itemsSeen === 0) {
+        throw new ShopLayoutError(`eBay: all ${EBAY_QUERIES.length} searches returned no items`);
+      }
       adapter.lastSkippedNoId = skipped.size;
-      return [...byItemId.values()];
+      return [...byUrl.values()];
     },
   };
   return adapter;

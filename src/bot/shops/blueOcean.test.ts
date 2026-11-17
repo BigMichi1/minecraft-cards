@@ -149,5 +149,6 @@ describe('createBlueOceanAdapter', () => {
     expect(calls).toHaveLength(60);
     // identical pages are deduplicated by url
     expect(listings).toHaveLength(19);
-  });
+    // 60 parsed pages: under coverage on a loaded machine this exceeds the 5 s default.
+  }, 30_000);
 });

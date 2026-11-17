@@ -239,6 +239,28 @@ describe('createEbayAdapter', () => {
     expect(error.message).not.toContain('leaked');
   });
 
+  test('a failure answer without eBay error fields gives its message, else its field names only', async () => {
+    const failWith = async (body: object) => {
+      const fake = makeFetch({
+        tokenStatus: 503,
+        tokenBody: JSON.stringify({ ...body, access_token: 'v^1.1#leaked' }),
+      });
+      const adapter = createEbayAdapter({
+        clientId: 'id',
+        clientSecret: 'topsecret',
+        fetchFn: fake.fetchFn,
+      });
+      return (await adapter.fetchListings().catch((e: unknown) => e)) as HttpError;
+    };
+    const withMessage = await failWith({ message: 'Service unavailable' });
+    expect(withMessage.message).toContain('Service unavailable');
+    expect(withMessage.message).not.toContain('leaked');
+    const withFields = await failWith({ status: 'down' });
+    expect(withFields.message).toContain('fields: status, access_token');
+    expect(withFields.message).not.toContain('leaked');
+    expect(withFields.message).not.toContain('down');
+  });
+
   test("a search failure keeps at most 300 characters of eBay's error message", async () => {
     const fake = makeFetch({
       searchStatus: 400,

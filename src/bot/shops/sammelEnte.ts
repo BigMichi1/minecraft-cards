@@ -23,8 +23,8 @@ function parsePrice(text: string): Listing['price'] {
 
 /**
  * Parse one category page. `productCount` counts every product box, cards or not; of the boxes
- * that are not card listings, `skippedNoId` had a title without a card number (puzzle packs,
- * boosters) and `skippedInvalid` no link or title. `lastPage` is the highest `?p=N` in the
+ * that are not card listings, `skippedNoId` had a title naming a card number ("| #") that could
+ * not be read (other products such as boosters and puzzle packs are not counted) and `skippedInvalid` no link or title. `lastPage` is the highest `?p=N` in the
  * pagination (1 when none).
  */
 export function parseSammelEntePage(html: string): {
@@ -58,7 +58,9 @@ export function parseSammelEntePage(html: string): {
     const match = TITLE_PATTERN.exec(title);
     const cardId = match ? normalizeCardId(match[1] ?? '') : null;
     if (!match || !cardId) {
-      skippedNoId++;
+      // Boosters, starter packs and puzzle packs are no cards; only a title that names a card
+      // number (" | #") we could not read counts, so a parser drift shows in the summary.
+      if (title.includes('| #')) skippedNoId++;
       return;
     }
 

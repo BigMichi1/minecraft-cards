@@ -163,26 +163,39 @@ export function createEbayAdapter(opts: {
   /**
    * HttpError for a failed answer, with eBay's own error text: the `error`/`error_description`
    * of an OAuth answer or the messages of an API `errors` list, never other fields (a token
-   * answer carries the access token). A body that is not JSON is kept as text.
+   * answer carries the access token); an answer with none of those gives its `message` or
+   * `title`, else the names of its fields, never its values. A body that is not JSON is kept as text.
    */
   async function failure(response: Response, url: string): Promise<HttpError> {
     const text = await response.text().catch(() => '');
     let detail = text;
+    let json: unknown;
     try {
-      const json = JSON.parse(text) as {
+      json = JSON.parse(text);
+    } catch {
+      // Not JSON: an HTML error page or plain text, kept as it is.
+    }
+    if (typeof json === 'object' && json !== null) {
+      const body = json as {
         error?: string;
         error_description?: string;
+        message?: string;
+        title?: string;
         errors?: { message?: string; longMessage?: string }[];
       };
-      detail = [
-        json.error,
-        json.error_description,
-        ...(json.errors ?? []).map((e) => e.longMessage ?? e.message),
-      ]
-        .filter((part): part is string => typeof part === 'string')
-        .join('; ');
-    } catch {
-      // Not JSON: an HTML error page or plain text.
+      const parts = [
+        body.error,
+        body.error_description,
+        ...(Array.isArray(body.errors) ? body.errors : []).map((e) => e?.longMessage ?? e?.message),
+      ].filter((part): part is string => typeof part === 'string');
+      if (parts.length === 0) {
+        // A gateway or WAF answer: its message or title, else only the names of its fields.
+        const note = [body.message, body.title].find((part) => typeof part === 'string');
+        parts.push(note ?? `answer with fields: ${Object.keys(json).join(', ') || 'none'}`);
+      }
+      detail = parts.join('; ');
+    } else if (json !== undefined) {
+      detail = 'answer is JSON but not an object';
     }
     return new HttpError(response.status, url, redact(detail));
   }

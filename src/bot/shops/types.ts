@@ -36,7 +36,11 @@ export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
  */
 export interface FetchResult {
   listings: Listing[];
-  /** Products or items read but without a card number (puzzle packs, eBay titles naming none). */
+  /**
+   * Items whose card number could not be read: sammel-ente titles with a "| #" number that does
+   * not parse, eBay titles naming no card. Other sammel-ente products (boosters, puzzle packs)
+   * are not counted.
+   */
   skippedNoId?: number;
   /** Product boxes or items without a usable link or title. */
   skippedInvalid?: number;

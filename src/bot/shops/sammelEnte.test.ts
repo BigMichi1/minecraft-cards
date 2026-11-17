@@ -47,8 +47,22 @@ describe('parseSammelEntePage', () => {
     expect(p1.listings.some((l) => l.title.includes('Booster'))).toBe(false);
     expect(p1.listings.some((l) => l.title.includes('Starter'))).toBe(false);
     expect(p1.listings).toHaveLength(22);
-    expect(p1.skippedNoId).toBe(p1.productCount - 22);
+    expect(p1.productCount).toBeGreaterThan(22);
+    expect(p1.skippedNoId).toBe(0);
     expect(p1.skippedInvalid).toBe(0);
+  });
+
+  test('counts only card-numbered titles whose id cannot be read as skipped without an id', () => {
+    const box = (title: string) =>
+      `<div class="card product-box"><a class="product-name" href="/x">${title}</a></div>`;
+    const parsed = parseSammelEntePage(
+      box('LEGO Minecraft Serie 3 | #Mystery') +
+        box('LEGO Minecraft Serie 3 | #000 Zero') +
+        box('LEGO Minecraft Serie 3 Booster') +
+        box('Puzzle-Paket #1 (154 - 162)')
+    );
+    expect(parsed).toMatchObject({ productCount: 4, skippedNoId: 2, skippedInvalid: 0 });
+    expect(parsed.listings).toEqual([]);
   });
 
   test('counts product boxes without a link or title as invalid', () => {
@@ -106,9 +120,8 @@ describe('createSammelEnteAdapter', () => {
       },
     });
     expect(adapter.id).toBe('sammel-ente');
-    const { listings, skippedNoId } = await adapter.fetchListings();
+    const { listings } = await adapter.fetchListings();
     expect(calls).toHaveLength(11);
-    expect(skippedNoId).toBeGreaterThan(0);
     expect(calls[0]).toBe('https://shop-sammel-ente.de/Minecraft/Serie-3/?p=1');
     expect(calls[10]).toBe('https://shop-sammel-ente.de/Minecraft/Serie-3/?p=11');
     expect(sleeps).toEqual(Array(10).fill(1500));

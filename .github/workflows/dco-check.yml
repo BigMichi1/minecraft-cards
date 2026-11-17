@@ -50,16 +50,24 @@ jobs:
             COMMIT_RANGE="$PUSH_BEFORE..$PUSH_SHA"
           fi
 
-          # Check for Signed-off-by in commit messages
-          unsigned_commits=()
-          while IFS= read -r commit; do
-            if ! git log --format=%B -n 1 "$commit" | grep -q "^Signed-off-by:"; then
-              unsigned_commits+=("$commit")
-            fi
           # Merge commits are skipped: Kodiak brings PR branches up to date by
           # merging main in, and those merge commits carry no Signed-off-by.
           # They add no authored content; the commits they merge are checked.
-          done < <(git rev-list --no-merges "$COMMIT_RANGE")
+          # Captured first: a failing rev-list inside a process substitution
+          # would go unnoticed and pass the check with nothing checked.
+          if ! commits="$(git rev-list --no-merges "$COMMIT_RANGE")"; then
+            echo "::error::git rev-list failed for $COMMIT_RANGE; cannot verify DCO sign-offs"
+            exit 1
+          fi
+
+          # Check for Signed-off-by in commit messages
+          unsigned_commits=()
+          while IFS= read -r commit; do
+            [ -n "$commit" ] || continue
+            if ! git log --format=%B -n 1 "$commit" | grep -q "^Signed-off-by:"; then
+              unsigned_commits+=("$commit")
+            fi
+          done <<< "$commits"
 
           if [ ${#unsigned_commits[@]} -gt 0 ]; then
             echo "❌ DCO Check Failed"

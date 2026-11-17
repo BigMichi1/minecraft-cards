@@ -13,13 +13,15 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# Run linting via ESLint directly
+# Check with ESLint through mise. Plain lint, not lint:fix: fixes made here would not be
+# staged, so the commit would not contain them. Fix with `./bin/mise run lint:fix`, then
+# stage and commit again.
 echo "✨ Running linters..."
 cd "$PROJECT_ROOT"
-"$PROJECT_ROOT/bin/mise" run lint:fix
+"$PROJECT_ROOT/bin/mise" run lint
 
 if [ $? -ne 0 ]; then
-  echo "❌ ERROR: Linting failed!"
+  echo "❌ ERROR: Linting failed! Run ./bin/mise run lint:fix, stage the fixes and commit again."
   exit 1
 fi
 

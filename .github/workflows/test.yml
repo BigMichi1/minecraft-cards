@@ -33,20 +33,19 @@ jobs:
         run: ./bin/mise install
 
       - name: Install dependencies
-        run: ./bin/mise run install
+        # Frozen lockfile: a stale bun.lock fails here instead of being rewritten.
+        run: ./bin/mise run ci:install
 
       - name: Type check
         run: ./bin/mise run typecheck
 
       - name: Lint
-        # Nothing ran ESLint in CI, so a rule violation only surfaced in the
-        # pre-commit hook -- and never at all for a change pushed from a
-        # different machine or merged by Dependabot.
+        # The pre-commit hook does not run for pushes from other machines or for
+        # Dependabot merges; this step does.
         run: ./bin/mise run lint
 
       - name: Check formatting
-        # format:check was broken for long enough that 37 files drifted without
-        # anything noticing, and a Prettier minor bump later landed on main red.
+        # Catches formatting drift, including drift a Prettier update introduces.
         run: ./bin/mise run format:check
 
       - name: Run tests with coverage

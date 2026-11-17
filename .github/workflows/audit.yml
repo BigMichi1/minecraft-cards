@@ -1,6 +1,6 @@
-# Full dependency audit against the current advisory database. Runs on main's
-# own status and daily, so a new advisory against an installed package shows up
-# within a day even with no pushes.
+# Full dependency audit against the current advisory database. Runs on every
+# push to main and daily, so a new advisory against an installed package shows
+# up within a day even with no pushes.
 name: Dependency Audit
 
 on:

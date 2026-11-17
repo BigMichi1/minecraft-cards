@@ -80,8 +80,12 @@ export function loadConfig(env: Env): Config {
   const clientSecret = optional(env, 'EBAY_CLIENT_SECRET');
   if ((clientId === undefined) !== (clientSecret === undefined)) {
     // One without the other is a typo or a missing secret, not "eBay off".
+    const [missing, present] =
+      clientId === undefined
+        ? ['EBAY_CLIENT_ID', 'EBAY_CLIENT_SECRET']
+        : ['EBAY_CLIENT_SECRET', 'EBAY_CLIENT_ID'];
     throw new ConfigError(
-      `${clientId === undefined ? 'EBAY_CLIENT_ID' : 'EBAY_CLIENT_SECRET'} is not set, but ${clientId === undefined ? 'EBAY_CLIENT_SECRET' : 'EBAY_CLIENT_ID'} is: set both to enable eBay, or neither`
+      `${missing} is not set, but ${present} is: set both to enable eBay, or neither`
     );
   }
 

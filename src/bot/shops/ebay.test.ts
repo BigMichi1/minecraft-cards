@@ -30,6 +30,16 @@ describe('extractCardIdsFromTitle', () => {
     expect(extractCardIdsFromTitle('Sammlung 228 Karten')).toEqual([]);
   });
 
+  test('prices, counts and sizes after a prefix are not ids', () => {
+    expect(extractCardIdsFromTitle('Karte 1,50 €')).toEqual(['1']);
+    expect(extractCardIdsFromTitle('Nr. 12, 3er Set')).toEqual(['12']);
+    expect(extractCardIdsFromTitle('Karte 12 und 3 weitere')).toEqual(['12']);
+    expect(extractCardIdsFromTitle('Karte 3er Set')).toEqual([]);
+    expect(extractCardIdsFromTitle('Nr. 1er')).toEqual([]);
+    expect(extractCardIdsFromTitle('11/2026 neu')).toEqual([]);
+    expect(extractCardIdsFromTitle('Größe 10/12')).toEqual([]);
+  });
+
   test('dedupes and sorts', () => {
     expect(extractCardIdsFromTitle('LE8 #45 #12 Nr. 12')).toEqual(['12', '45', 'LE8']);
   });

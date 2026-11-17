@@ -14,10 +14,17 @@ export const EBAY_QUERIES = [
 ];
 
 const LE_XXL_PATTERN = /\b(LE|XXL)\s?(\d+)\b/gi;
-const FRACTION_PATTERN = /\b(\d+)\s*\/\s*\d+\b/g;
-// A prefix followed by a list: "#12, #45 und 107", "Nr. 12, 45", "Karte 12".
-const PREFIXED_LIST_PATTERN =
-  /(?:#|\b(?:Nr|No)\.?|\b(?:Karte|Card))\s*(\d+(?:\s*(?:,|&|\bund\b|\band\b)\s*#?\d+)*)/gi;
+// "12/228": only the series size counts, so dates (`11/2026`) and sizes (`10/12`) do not match.
+const FRACTION_PATTERN = /\b(\d+)\s*\/\s*228\b/g;
+const NOT_FOLLOWED_BY_WORD = '(?![\\dA-Za-zÄÖÜäöüß])';
+// A list item after the first must be a whole id, not a price or count ("3er Set", "3 weitere", "5 €").
+const LIST_ITEM = `#?\\d+${NOT_FOLLOWED_BY_WORD}(?!\\s*(?:€|EUR\\b|Stück|weitere|x\\b))`;
+// A prefix followed by a list: "#12, #45 und 107", "Nr. 12, 45", "Karte 12". A decimal comma
+// ("1,50") has no space after it, so it never continues a list.
+const PREFIXED_LIST_PATTERN = new RegExp(
+  `(?:#|\\b(?:Nr|No)\\.?|\\b(?:Karte|Card))\\s*(\\d+${NOT_FOLLOWED_BY_WORD}(?:(?:,\\s+|\\s*&\\s*|\\s+(?:und|and)\\s+)${LIST_ITEM})*)`,
+  'gi'
+);
 
 /** Card ids named in an eBay title. Only prefixed forms count; bare numbers (`Serie 3`, `2026`) never do. */
 export function extractCardIdsFromTitle(title: string): CardId[] {

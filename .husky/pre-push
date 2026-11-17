@@ -30,7 +30,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   fi
   # $range is deliberately unquoted: it holds several rev-list arguments.
   # shellcheck disable=SC2086
-  commits=$(git rev-list $range 2>/dev/null) || commits=""
+  if ! commits=$(git rev-list $range); then
+    echo "Error: git rev-list failed for '$range'; cannot verify DCO sign-offs." >&2
+    exit 1
+  fi
   for commit in $commits; do
     if ! git log --format=%B -n 1 "$commit" | grep -q "^Signed-off-by:"; then
       unsigned_count=$((unsigned_count + 1))

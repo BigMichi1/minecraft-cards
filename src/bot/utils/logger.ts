@@ -24,15 +24,26 @@ const customLevels = {
   },
 };
 
-// Create logger instance
+/** debug/trace sit below info, so they stay off unless LOG_LEVEL raises the threshold. */
+export function resolveLogLevel(env: Record<string, string | undefined>): string {
+  return env.LOG_LEVEL || 'info';
+}
+
+/**
+ * One console line: time, level, message, then any metadata as JSON and the stack of an
+ * error passed as the second argument (`logger.error('failed:', err)`) on the next lines.
+ */
+export function formatConsoleLine(info: winston.Logform.TransformableInfo): string {
+  const { timestamp, level, message, stack, service: _service, ...meta } = info;
+  let line = `${String(timestamp)} [${level}]: ${String(message)}`;
+  if (Object.keys(meta).length > 0) line += ` ${JSON.stringify(meta)}`;
+  if (typeof stack === 'string' && stack) line += `\n${stack}`;
+  return line;
+}
+
 const logger = winston.createLogger({
   levels: customLevels.levels,
-  // debug/trace sit below info in the custom level set above, so they are
-  // suppressed unless LOG_LEVEL raises the threshold. This is read from the
-  // environment because the docs advertise LOG_LEVEL=debug as the way to
-  // diagnose a failing redemption -- previously every logger.debug() call in
-  // the codebase was dead.
-  level: process.env.LOG_LEVEL || 'info',
+  level: resolveLogLevel(process.env),
   format: winston.format.combine(
     winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.errors({ stack: true }),
@@ -76,9 +87,7 @@ const logger = winston.createLogger({
       format: winston.format.combine(
         winston.format.colorize({ colors: customLevels.colors }),
         winston.format.timestamp({ format: 'HH:mm:ss' }),
-        winston.format.printf(({ timestamp, level, message }) => {
-          return `${timestamp} [${level}]: ${message}`;
-        })
+        winston.format.printf(formatConsoleLine)
       ),
     }),
   ],

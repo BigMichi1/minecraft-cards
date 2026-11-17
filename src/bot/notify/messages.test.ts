@@ -39,6 +39,10 @@ function embedJson(msg: MessageCreateOptions, idx = 0): any {
   return e.toJSON ? e.toJSON() : e;
 }
 
+function atMsg(list: { message: MessageCreateOptions }[], i: number): MessageCreateOptions {
+  return at(list, i).message;
+}
+
 function at<T>(list: T[], i: number): T {
   const v = list[i];
   if (v === undefined) throw new Error(`no element ${i}`);
@@ -66,10 +70,10 @@ describe('notification messages', () => {
   test('batches 5 items per message with link and report buttons', () => {
     const msgs = buildNotificationMessages(Array.from({ length: 7 }, (_, i) => item(i + 1)));
     expect(msgs).toHaveLength(2);
-    expect(at(msgs, 0).embeds).toHaveLength(5);
-    expect(at(msgs, 0).components).toHaveLength(5);
-    expect(at(msgs, 1).embeds).toHaveLength(2);
-    const row = (at(msgs, 0).components![0] as any).toJSON();
+    expect(at(msgs, 0).message.embeds).toHaveLength(5);
+    expect(at(msgs, 0).message.components).toHaveLength(5);
+    expect(at(msgs, 1).message.embeds).toHaveLength(2);
+    const row = (at(msgs, 0).message.components![0] as any).toJSON();
     expect(row.components.map((c: { label: string }) => c.label)).toEqual([
       'Open in shop',
       'Kleinanzeigen',
@@ -81,7 +85,7 @@ describe('notification messages', () => {
   });
 
   test('embed title, fields, image and confirmed footer', () => {
-    const e = embedJson(at(buildNotificationMessages([item(1)]), 0));
+    const e = embedJson(atMsg(buildNotificationMessages([item(1)]), 0));
     expect(e.title).toBe('🟢 Card #12 Squid is available');
     expect(e.image.url).toBe('https://img/1.jpg');
     expect(e.thumbnail).toBeUndefined();
@@ -96,15 +100,15 @@ describe('notification messages', () => {
       item(1, { cardIds: ['45'], matchStatus: 'unconfirmed', similarity: 0.5 }),
       item(2, { matchStatus: 'unconfirmed', similarity: 0.5 }),
     ]);
-    expect(embedJson(at(msgs, 0), 0).title).toBe('🟢 Card #45 is available');
-    const e = embedJson(at(msgs, 0), 1);
+    expect(embedJson(at(msgs, 0).message, 0).title).toBe('🟢 Card #45 is available');
+    const e = embedJson(at(msgs, 0).message, 1);
     expect(e.footer.text).toContain('⚠️ number unconfirmed');
     expect(e.thumbnail.url).toBe(referenceUrl);
   });
 
   test('footers for other statuses; reference has none; null image and null reference', () => {
     const f = (over: Partial<StoredListing>) =>
-      embedJson(at(buildNotificationMessages([item(1, over)]), 0));
+      embedJson(atMsg(buildNotificationMessages([item(1, over)]), 0));
     expect(f({ matchStatus: 'bundle', cardIds: ['12', '45'], shop: 'ebay' }).footer.text).toBe(
       'ℹ️ bundle — check the listing'
     );
@@ -122,7 +126,7 @@ describe('notification messages', () => {
 
   test('bundle title and eBay auction price', () => {
     const e = embedJson(
-      at(
+      atMsg(
         buildNotificationMessages([
           item(1, {
             shop: 'ebay',
@@ -144,7 +148,7 @@ describe('notification messages', () => {
   test('non-EUR price and long titles stay within Discord limits', () => {
     const ids = Array.from({ length: 200 }, (_, i) => String(i + 1));
     const e = embedJson(
-      at(
+      atMsg(
         buildNotificationMessages([
           item(1, {
             cardIds: ids,
@@ -158,5 +162,23 @@ describe('notification messages', () => {
     );
     expect(e.title.length).toBeLessThanOrEqual(256);
     expect(e.fields.find((x: { name: string }) => x.name === 'Price').value).toBe('5.00 USD');
+  });
+
+  test('invalid URLs never throw: no shop button, no image, report button stays', () => {
+    const long = `https://shop/${'x'.repeat(600)}`;
+    const msgs = buildNotificationMessages([
+      item(1, { url: long }),
+      item(2, { imageUrl: 'not a url' }),
+      item(3, { url: 'ftp://shop/3' }),
+    ]);
+    const message = atMsg(msgs, 0);
+    const labels = (i: number) =>
+      (message.components![i] as any).toJSON().components.map((c: { label: string }) => c.label);
+    expect(labels(0)).toEqual(['Kleinanzeigen', '❌ Wrong card']);
+    expect(embedJson(message, 0).url).toBeUndefined();
+    expect(embedJson(message, 1).image).toBeUndefined();
+    expect(labels(1)).toContain('Open in shop');
+    expect(labels(2)).toEqual(['Kleinanzeigen', '❌ Wrong card']);
+    expect(at(msgs, 0).items.map((x) => x.listing.id)).toEqual([1, 2, 3]);
   });
 });

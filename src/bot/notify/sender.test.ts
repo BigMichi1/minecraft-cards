@@ -106,4 +106,18 @@ describe('createDiscordSender', () => {
     expect(sleeps).toEqual([500]);
     expect(db.select().from(notifications).all()).toHaveLength(6);
   });
+
+  test('a listing with a bad URL does not stop other users', async () => {
+    const bad = seedListing(1);
+    const good = seedListing(2);
+    bad.url = `https://shop/${'x'.repeat(600)}`;
+    const client = fakeClient();
+    const sender = createDiscordSender(client, { sleep: async () => {} });
+    const pending = new Map([
+      ['u1', [{ listing: bad, cardIds: ['12'] }]],
+      ['u2', [{ listing: good, cardIds: ['12'] }]],
+    ]);
+    expect(await sender.send(pending)).toEqual({ notified: 2, dmFailures: 0 });
+    expect(client.sent.map((s) => s.user)).toEqual(['u1', 'u2']);
+  });
 });

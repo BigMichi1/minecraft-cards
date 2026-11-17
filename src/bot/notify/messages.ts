@@ -29,6 +29,19 @@ export function kleinanzeigenSearchUrl(cardId: CardId): string {
   return `https://www.kleinanzeigen.de/s-lego-minecraft-karte-${cardId.toLowerCase()}/k0`;
 }
 
+const MAX_URL = 512;
+
+/** Discord rejects non-http(s) and over-long URLs; a bad one must never break a whole batch. */
+function validUrl(url: string | null | undefined): string | null {
+  if (!url || url.length > MAX_URL) return null;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
@@ -74,34 +87,36 @@ function buildEmbed(item: NotificationItem): EmbedBuilder {
   if (listing.format === 'auction' && listing.auctionEndsAt !== null) {
     priceParts.push(`Auction · ends <t:${Math.floor(listing.auctionEndsAt / 1000)}:R>`);
   }
-  const embed = new EmbedBuilder()
-    .setTitle(title(item))
-    .setURL(listing.url)
-    .addFields(
-      { name: 'Shop', value: truncate(SHOP_NAMES[listing.shop], MAX_FIELD), inline: true },
-      {
-        name: 'Price',
-        value: truncate(priceParts.length > 0 ? priceParts.join(' · ') : 'unknown', MAX_FIELD),
-        inline: true,
-      }
-    );
-  if (listing.imageUrl) embed.setImage(listing.imageUrl);
+  const embed = new EmbedBuilder().setTitle(title(item)).addFields(
+    { name: 'Shop', value: truncate(SHOP_NAMES[listing.shop], MAX_FIELD), inline: true },
+    {
+      name: 'Price',
+      value: truncate(priceParts.length > 0 ? priceParts.join(' · ') : 'unknown', MAX_FIELD),
+      inline: true,
+    }
+  );
+  const listingUrl = validUrl(listing.url);
+  if (listingUrl) embed.setURL(listingUrl);
+  const imageUrl = validUrl(listing.imageUrl);
+  if (imageUrl) embed.setImage(imageUrl);
   const text = footer(listing);
   if (text) embed.setFooter({ text });
   if (listing.matchStatus === 'unconfirmed') {
     const reference = item.cardIds[0] ? catalogManager.getCard(item.cardIds[0]) : undefined;
-    if (reference?.referenceImageUrl) embed.setThumbnail(reference.referenceImageUrl);
+    const thumbnail = validUrl(reference?.referenceImageUrl);
+    if (thumbnail) embed.setThumbnail(thumbnail);
   }
   return embed;
 }
 
 function buildRow(item: NotificationItem): ActionRowBuilder<ButtonBuilder> {
-  const buttons = [
-    new ButtonBuilder()
-      .setStyle(ButtonStyle.Link)
-      .setLabel('Open in shop')
-      .setURL(item.listing.url),
-  ];
+  const buttons: ButtonBuilder[] = [];
+  const listingUrl = validUrl(item.listing.url);
+  if (listingUrl) {
+    buttons.push(
+      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Open in shop').setURL(listingUrl)
+    );
+  }
   if (item.cardIds[0]) {
     buttons.push(
       new ButtonBuilder()
@@ -119,12 +134,21 @@ function buildRow(item: NotificationItem): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
+export interface NotificationMessage {
+  message: MessageCreateOptions;
+  /** Exactly the items shown in `message`. */
+  items: NotificationItem[];
+}
+
 /** One message per 5 items (Discord allows 10 embeds and 5 action rows per message). */
-export function buildNotificationMessages(items: NotificationItem[]): MessageCreateOptions[] {
-  const messages: MessageCreateOptions[] = [];
+export function buildNotificationMessages(items: NotificationItem[]): NotificationMessage[] {
+  const messages: NotificationMessage[] = [];
   for (let i = 0; i < items.length; i += ITEMS_PER_MESSAGE) {
     const chunk = items.slice(i, i + ITEMS_PER_MESSAGE);
-    messages.push({ embeds: chunk.map(buildEmbed), components: chunk.map(buildRow) });
+    messages.push({
+      message: { embeds: chunk.map(buildEmbed), components: chunk.map(buildRow) },
+      items: chunk,
+    });
   }
   return messages;
 }

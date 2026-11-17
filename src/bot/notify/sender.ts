@@ -3,7 +3,7 @@ import type { NotificationSender, PendingNotifications } from '../check/runner';
 import { listingManager } from '../database/listingManager';
 import { userManager } from '../database/userManager';
 import logger from '../utils/logger';
-import { buildNotificationMessages } from './messages';
+import { buildNotificationMessages, type NotificationMessage } from './messages';
 
 /** The only part of the Discord client the sender needs. */
 export interface DmClient {
@@ -18,7 +18,10 @@ export interface SenderOptions {
 }
 
 const PAUSE_MS = 500;
-const ITEMS_PER_MESSAGE = 5;
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function createDiscordSender(
   client: DmClient,
@@ -33,14 +36,20 @@ export function createDiscordSender(
       let dmFailures = 0;
       let first = true;
       for (const [discordId, items] of pending) {
-        const messages = buildNotificationMessages(items);
+        let messages: NotificationMessage[];
+        try {
+          messages = buildNotificationMessages(items);
+        } catch (error) {
+          // Not a DM problem: leave the items unrecorded so they are retried next run.
+          logger.error(`building notifications for ${discordId} failed: ${errorText(error)}`);
+          continue;
+        }
         try {
           const user = await client.users.fetch(discordId);
-          for (const [index, message] of messages.entries()) {
+          for (const { message, items: sent } of messages) {
             if (!first) await sleep(PAUSE_MS);
             first = false;
             await user.send(message);
-            const sent = items.slice(index * ITEMS_PER_MESSAGE, (index + 1) * ITEMS_PER_MESSAGE);
             for (const { listing } of sent) {
               listingManager.recordNotified(discordId, listing.id, listing.availableSince ?? now());
               notified++;
@@ -48,9 +57,7 @@ export function createDiscordSender(
           }
         } catch (error) {
           dmFailures++;
-          logger.warn(
-            `DM to ${discordId} failed: ${error instanceof Error ? error.message : String(error)}`
-          );
+          logger.warn(`DM to ${discordId} failed: ${errorText(error)}`);
           userManager.markDmFailed(discordId, now());
         }
       }

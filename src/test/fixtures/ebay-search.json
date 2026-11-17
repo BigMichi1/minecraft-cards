@@ -1,0 +1,49 @@
+{
+  "href": "https://api.ebay.com/buy/browse/v1/item_summary/search?q=lego+minecraft&limit=200",
+  "total": 5,
+  "itemSummaries": [
+    {
+      "itemId": "v1|110000000001|0",
+      "title": "LEGO Minecraft On Fire Karte Nr. 12 Squid",
+      "itemWebUrl": "https://www.ebay.de/itm/110000000001",
+      "image": { "imageUrl": "https://i.ebayimg.com/images/g/aaa/s-l225.jpg" },
+      "price": { "value": "1.49", "currency": "EUR" },
+      "buyingOptions": ["FIXED_PRICE"]
+    },
+    {
+      "itemId": "v1|110000000002|0",
+      "title": "Lego Minecraft TCC Serie 3 #12, #45 und LE8",
+      "itemWebUrl": "https://www.ebay.de/itm/110000000002",
+      "image": { "imageUrl": "https://i.ebayimg.com/images/g/bbb/s-l225.jpg" },
+      "price": { "value": "4.99", "currency": "EUR" },
+      "buyingOptions": ["FIXED_PRICE", "BEST_OFFER"],
+      "shippingOptions": [{ "shippingCost": { "value": "1.00", "currency": "EUR" } }]
+    },
+    {
+      "itemId": "v1|110000000003|0",
+      "title": "LEGO Minecraft Serie 3 Karte #107 Auktion",
+      "itemWebUrl": "https://www.ebay.de/itm/110000000003",
+      "image": { "imageUrl": "https://i.ebayimg.com/images/g/ccc/s-l225.jpg" },
+      "price": { "value": "0.99", "currency": "EUR" },
+      "currentBidPrice": { "value": "1.49", "currency": "EUR" },
+      "buyingOptions": ["AUCTION"],
+      "shippingOptions": [{ "shippingCost": { "value": "1.60", "currency": "EUR" } }],
+      "itemEndDate": "2026-11-20T18:30:00.000Z"
+    },
+    {
+      "itemId": "v1|110000000004|0",
+      "title": "LEGO Minecraft Serie 3 Booster 2026",
+      "itemWebUrl": "https://www.ebay.de/itm/110000000004",
+      "image": { "imageUrl": "https://i.ebayimg.com/images/g/ddd/s-l225.jpg" },
+      "price": { "value": "3.50", "currency": "EUR" },
+      "buyingOptions": ["FIXED_PRICE"]
+    },
+    {
+      "itemId": "v1|110000000005|0",
+      "title": "Minecraft Serie 3 Karte 107/228 2026",
+      "itemWebUrl": "https://www.ebay.de/itm/110000000005",
+      "price": { "value": "2", "currency": "EUR" },
+      "buyingOptions": ["FIXED_PRICE"]
+    }
+  ]
+}

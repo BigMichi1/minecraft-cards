@@ -86,4 +86,25 @@ describe('/missing', () => {
     await execute(fakeInteraction('u1', 'list'));
     expect(lastReply().content).toBe('You have no missing cards on your list.');
   });
+
+  test('a huge invalid list is truncated to fit Discord and names the remainder', async () => {
+    const tokens = Array.from({ length: 1500 }, (_, i) => `bad${i}`);
+    await execute(fakeInteraction('u1', 'set', tokens.join(', ')));
+    const content = lastReply().content!;
+    expect(content.length).toBeLessThanOrEqual(2000);
+    expect(content.startsWith('Nothing changed. Unknown or invalid: ')).toBe(true);
+    const m = content.match(/… and (\d+) more$/);
+    expect(m).not.toBeNull();
+    const shown = content
+      .slice('Nothing changed. Unknown or invalid: '.length, m!.index)
+      .trim()
+      .split(', ');
+    expect(shown.length + Number(m![1])).toBe(1500);
+    expect(shown[0]).toBe('bad0');
+  });
+
+  test('duplicate invalid tokens appear once', async () => {
+    await execute(fakeInteraction('u1', 'add', '9999, 9999, abc, 9999'));
+    expect(lastReply().content).toBe('Nothing changed. Unknown or invalid: abc, 9999');
+  });
 });

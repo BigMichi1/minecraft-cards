@@ -49,10 +49,29 @@ export const data = new SlashCommandBuilder()
   .addSubcommand((sub) => sub.setName('list').setDescription('Show your missing list'))
   .addSubcommand((sub) => sub.setName('clear').setDescription('Empty your missing list'));
 
+const DISCORD_MESSAGE_LIMIT = 2000;
+
+/** Join items after a prefix; when over Discord's limit keep what fits plus `… and K more`. */
+function joinWithinLimit(prefix: string, items: string[]): string {
+  const full = prefix + items.join(', ');
+  if (full.length <= DISCORD_MESSAGE_LIMIT) return full;
+  for (let keep = items.length - 1; keep >= 0; keep--) {
+    const shown = items.slice(0, keep);
+    const text = `${prefix}${shown.length > 0 ? `${shown.join(', ')} ` : ''}… and ${items.length - keep} more`;
+    if (text.length <= DISCORD_MESSAGE_LIMIT) return text;
+  }
+  return `${prefix}… and ${items.length} more`.slice(0, DISCORD_MESSAGE_LIMIT);
+}
+
 function describeChange(change: ListChange): string {
-  if (change.ok) return `Your missing cards (${change.ids.length}): ${formatCardList(change.ids)}`;
+  if (change.ok) {
+    return joinWithinLimit(
+      `Your missing cards (${change.ids.length}): `,
+      formatCardList(change.ids).split(', ')
+    );
+  }
   if (change.invalid.length === 0) return 'No card numbers found. Example: 12, 45, LE8';
-  return `Nothing changed. Unknown or invalid: ${change.invalid.join(', ')}`;
+  return joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(change.invalid)]);
 }
 
 function run(interaction: ChatInputCommandInteraction): string {

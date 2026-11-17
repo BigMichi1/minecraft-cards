@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build outputs
+dist/
+dist-bundle/
+build.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Mise
+.mise/
+mise.local.toml
+
+# Database
+data/
+*.db
+*.sqlite
+
+# Debug logs
+debug/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+api-logs/
+
+# Testing
+coverage/
+.nyc_output/
+
+# Temporary files
+tmp/
+temp/
+
+# Docker volumes
+.docker-data/
+
+# Project
+.superpowers/
+models/

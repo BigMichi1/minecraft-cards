@@ -1,0 +1,61 @@
+#!/bin/sh
+# Rejects a push that contains commits without a Signed-off-by trailer (DCO).
+# POSIX sh only: this runs under `sh -e` from git, so no arrays or bashisms.
+
+ZERO="0000000000000000000000000000000000000000"
+
+if [ -z "$1" ]; then
+  echo "Error: Remote not provided to pre-push hook"
+  exit 1
+fi
+
+REMOTE="$1"
+unsigned_count=0
+unsigned_list=""
+
+echo "Checking DCO sign-offs for commits being pushed..."
+
+# git feeds one line per ref on stdin: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  : "$local_ref" "$remote_ref"
+  if [ "$local_sha" = "$ZERO" ]; then
+    # Deleting a remote ref: nothing to check.
+    continue
+  fi
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New remote ref: check only commits not already on any remote.
+    range="$local_sha --not --remotes=$REMOTE"
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  # $range is deliberately unquoted: it holds several rev-list arguments.
+  # shellcheck disable=SC2086
+  commits=$(git rev-list $range 2>/dev/null) || commits=""
+  for commit in $commits; do
+    if ! git log --format=%B -n 1 "$commit" | grep -q "^Signed-off-by:"; then
+      unsigned_count=$((unsigned_count + 1))
+      unsigned_list="${unsigned_list}  - $(git log --oneline -n 1 "$commit")
+"
+    fi
+  done
+done
+
+if [ "$unsigned_count" -gt 0 ]; then
+  echo ""
+  echo "DCO Check Failed"
+  echo ""
+  echo "The following commits are not signed off:"
+  printf '%s' "$unsigned_list"
+  echo ""
+  echo "Please sign off on all commits using:"
+  echo "  git commit --amend -s"
+  echo ""
+  echo "After amending, force-push with:"
+  echo "  git push --force-with-lease"
+  echo ""
+  echo "For more information, see DCO.md"
+  exit 1
+fi
+
+echo "All commits are properly signed off"
+exit 0

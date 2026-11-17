@@ -1,8 +1,11 @@
 [vars]
-# GHSA-67mh-4wv8-2f99 is an esbuild development-server issue that reaches the
-# tree only through drizzle-kit (dev dependency, migration generation). esbuild
-# never runs in the bot or its Docker image. Drop the ignore once drizzle-kit
-# ships with esbuild >= 0.25.0 only.
+# GHSA-67mh-4wv8-2f99 is an esbuild development-server issue (esbuild <= 0.24.2).
+# The only affected copy is esbuild 0.18.20, pinned by drizzle-kit (dev
+# dependency, migration generation) -> @esbuild-kit/esm-loader ->
+# @esbuild-kit/core-utils. drizzle-kit's own esbuild is already 0.25.x, and
+# `bun audit` names that path, which is misleading. esbuild never runs in the
+# bot and is not in the production image. Drop the ignore once
+# `bun pm why esbuild` lists no version <= 0.24.2.
 audit_ignores = "--ignore GHSA-67mh-4wv8-2f99"
 
 [tools]

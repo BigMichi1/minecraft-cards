@@ -14,13 +14,15 @@ on:
         type: string
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 jobs:
   attestation:
     name: Create Signed Release Attestation
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # edits the release: attestation assets and the notes block
+      id-token: write   # keyless Cosign signing
 
     steps:
       - name: Harden the runner
@@ -75,12 +77,24 @@ jobs:
           # OCI references must be lowercase; github.repository is not.
           IMAGE="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
 
+          # The tags docker.yml pushes (docker/metadata-action, type=semver): the version always;
+          # <major>.<minor> unless it is a pre-release (those only get the version tag); <major>
+          # unless it is a pre-release or major 0 (docker.yml disables the 0 tag).
+          VERSION="${TAG#v}"
+          TAGS_JSON="$(jq -cn --arg v "$VERSION" '
+            ($v | split(".")) as $p
+            | [$v]
+              + (if ($v | contains("-")) then []
+                 else [($p[0] + "." + $p[1])] + (if $p[0] == "0" then [] else [$p[0]] end)
+                 end)')"
+
           {
             echo "tag=$TAG"
             echo "upload_url=$UPLOAD_URL"
             echo "release_id=$RELEASE_ID"
             echo "commit_sha=$COMMIT_SHA"
             echo "image=$IMAGE"
+            echo "tags=$TAGS_JSON"
           } >> "$GITHUB_OUTPUT"
 
       - name: Generate Release Manifest
@@ -88,6 +102,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           IMAGE: ${{ steps.release.outputs.image }}
+          TAGS_JSON: ${{ steps.release.outputs.tags }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -e
@@ -109,8 +124,7 @@ jobs:
             --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --arg trigger "$EVENT_NAME" \
             --arg image "$IMAGE" \
-            --arg minor "${VERSION%.*}" \
-            --arg major "${VERSION%%.*}" \
+            --argjson tags "$TAGS_JSON" \
             '{
               version: "1.0.0",
               attestation_type: "release-manifest",
@@ -133,7 +147,7 @@ jobs:
                   {
                     image: $image,
                     built_by: "docker.yml",
-                    tags: [$version, $minor, $major],
+                    tags: $tags,
                     signing_method: "cosign-keyless",
                     signing_issuer: "https://token.actions.githubusercontent.com",
                     verification_instructions: ("cosign verify " + $image + ":" + $version + " --certificate-identity-regexp \u0027^https://github.com/" + $repository + "/\u0027 --certificate-oidc-issuer https://token.actions.githubusercontent.com")
@@ -239,6 +253,7 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
           RELEASE_ID: ${{ steps.release.outputs.release_id }}
           IMAGE: ${{ steps.release.outputs.image }}
+          TAGS_JSON: ${{ steps.release.outputs.tags }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -246,6 +261,8 @@ jobs:
             const tag = process.env.RELEASE_TAG;
             const image = process.env.IMAGE;
             const version = tag.replace(/^v/, '');
+            const tags = JSON.parse(process.env.TAGS_JSON);
+            const tagList = tags.map((t) => `- \`${image}:${t}\``).join('\n');
             const MARKER = '<!-- release-attestation -->';
 
             const comment = `${MARKER}
@@ -256,9 +273,7 @@ jobs:
             ### Release Assets
 
             **Docker Images** (Published to GitHub Container Registry):
-            - \`${image}:${version}\`
-            - \`${image}:${version.split('.').slice(0, 2).join('.')}\`
-            - \`${image}:${version.split('.')[0]}\`
+            ${tagList}
 
             All images are signed and can be verified using Cosign.
 

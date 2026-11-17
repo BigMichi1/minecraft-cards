@@ -5,9 +5,9 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Scan for secrets with Gitleaks via local bin/mise
 echo "🔐 Scanning for secrets with Gitleaks..."
-"$PROJECT_ROOT/bin/mise" run gitleaks
-
-if [ $? -ne 0 ]; then
+# `if !` rather than a later `$?` check: under `sh -e` a failing command exits at once, before
+# the advice below could print.
+if ! "$PROJECT_ROOT/bin/mise" run gitleaks; then
   echo "❌ ERROR: Gitleaks detected secrets!"
   echo "   Please remove secrets before committing."
   exit 1
@@ -18,9 +18,7 @@ fi
 # stage and commit again.
 echo "✨ Running linters..."
 cd "$PROJECT_ROOT"
-"$PROJECT_ROOT/bin/mise" run lint
-
-if [ $? -ne 0 ]; then
+if ! "$PROJECT_ROOT/bin/mise" run lint; then
   echo "❌ ERROR: Linting failed! Run ./bin/mise run lint:fix, stage the fixes and commit again."
   exit 1
 fi

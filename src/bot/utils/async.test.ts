@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { sleep, errorMessage } from './async';
+import { sleep, errorMessage, settlesWithin } from './async';
 
 describe('sleep', () => {
   test('resolves after roughly the requested delay', async () => {
@@ -42,5 +42,16 @@ describe('errorMessage', () => {
 
   test('stringifies an object without throwing', () => {
     expect(typeof errorMessage({ code: 500 })).toBe('string');
+  });
+});
+
+describe('settlesWithin', () => {
+  test('true when the promise settles in time, also by rejecting', async () => {
+    expect(await settlesWithin(sleep(1), 1000)).toBe(true);
+    expect(await settlesWithin(Promise.reject(new Error('x')), 1000)).toBe(true);
+  });
+
+  test('false when the promise is still pending after the limit', async () => {
+    expect(await settlesWithin(new Promise(() => {}), 10)).toBe(false);
   });
 });

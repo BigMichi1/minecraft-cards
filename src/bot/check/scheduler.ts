@@ -3,22 +3,24 @@ import type { RunSummary } from './runner';
 
 export interface Scheduler {
   start(): void;
-  stop(): void;
+  /** Stops the timer; resolves once the in-flight run (if any) has finished, never rejects. */
+  stop(): Promise<void>;
   trigger(): Promise<RunSummary | 'busy'>;
 }
 
 /** Runs `run` now and every `intervalMs`; overlapping runs are skipped, never queued. */
 export function createScheduler(run: () => Promise<RunSummary>, intervalMs: number): Scheduler {
   let timer: ReturnType<typeof setInterval> | undefined;
-  let running = false;
+  let current: Promise<RunSummary> | null = null;
 
   async function trigger(): Promise<RunSummary | 'busy'> {
-    if (running) return 'busy';
-    running = true;
+    if (current) return 'busy';
+    const started = run();
+    current = started;
     try {
-      return await run();
+      return await started;
     } finally {
-      running = false;
+      current = null;
     }
   }
 
@@ -36,9 +38,11 @@ export function createScheduler(run: () => Promise<RunSummary>, intervalMs: numb
       timer = setInterval(() => void tick(), intervalMs);
       void tick();
     },
-    stop() {
+    async stop() {
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
+      // The run logs its own failure (tick) or hands it to the /admin run caller.
+      await current?.catch(() => undefined);
     },
     trigger,
   };

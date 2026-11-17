@@ -29,12 +29,47 @@ describe('createScheduler', () => {
       return summary;
     }, 10);
     sched.start();
-    await Bun.sleep(65);
-    sched.stop();
+    // Poll instead of one fixed sleep: timers run late on a loaded machine.
+    for (let i = 0; i < 300 && calls < 3; i++) await Bun.sleep(10);
+    await sched.stop();
     const seen = calls;
     expect(seen).toBeGreaterThanOrEqual(3);
     await Bun.sleep(40);
     expect(calls).toBe(seen);
+  });
+
+  test('stop resolves only after the in-flight run has finished', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    let finished = false;
+    const sched = createScheduler(async () => {
+      await gate;
+      finished = true;
+      return summary;
+    }, 60_000);
+    const run = sched.trigger();
+    let stopped = false;
+    const stopping = sched.stop().then(() => {
+      stopped = true;
+    });
+    await Bun.sleep(20);
+    expect(stopped).toBe(false);
+    release();
+    await stopping;
+    expect(finished).toBe(true);
+    expect(await run).toBe(summary);
+  });
+
+  test('stop resolves at once when idle and swallows a failing run', async () => {
+    const idle = createScheduler(async () => summary, 60_000);
+    await idle.stop();
+    const failing = createScheduler(async () => {
+      await Bun.sleep(5);
+      throw new Error('boom');
+    }, 60_000);
+    const run = failing.trigger().catch((e: unknown) => e);
+    await failing.stop();
+    expect(await run).toBeInstanceOf(Error);
   });
 
   test('a tick during a slow run is skipped and a failing run does not stop the timer', async () => {
@@ -49,7 +84,7 @@ describe('createScheduler', () => {
     await Bun.sleep(30);
     expect(calls).toBe(1);
     await Bun.sleep(80);
-    sched.stop();
+    await sched.stop();
     expect(calls).toBeGreaterThanOrEqual(2);
   });
 });

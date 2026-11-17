@@ -22,7 +22,7 @@ import { createBlueOceanAdapter } from './shops/blueOcean';
 import { createEbayAdapter } from './shops/ebay';
 import { createSammelEnteAdapter } from './shops/sammelEnte';
 import type { ShopAdapter } from './shops/types';
-import { errorMessage } from './utils/async';
+import { errorMessage, settlesWithin } from './utils/async';
 import { replyWithError } from './utils/interactionReply';
 import logger from './utils/logger';
 
@@ -70,11 +70,16 @@ async function dmAdmin(message: string | MessageCreateOptions): Promise<void> {
   await admin.send(message);
 }
 
+// Set by shutdown(); DMs failing after it are the client going away, not closed DMs.
+let shuttingDown = false;
+/** How long shutdown waits for a check in progress before closing the client and database. */
+const SHUTDOWN_GRACE_MS = 5_000;
+
 const runDeps: RunDeps = {
   adapters,
   embedder,
   threshold: config.imageMatchThreshold,
-  sender: createDiscordSender(client),
+  sender: createDiscordSender(client, { isShuttingDown: () => shuttingDown }),
   alertAdmin: (text) => dmAdmin(text),
   now: Date.now,
   intervalMs: config.checkIntervalMs,
@@ -184,12 +189,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 // SIGINT comes from a terminal; SIGTERM is what `docker stop` sends.
-let shuttingDown = false;
 async function shutdown(reason: string, code: number): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
   logger.info(`Shutting down (${reason})...`);
-  scheduler.stop();
+  if (!(await settlesWithin(scheduler.stop(), SHUTDOWN_GRACE_MS))) {
+    logger.warn(`A check was still running after ${SHUTDOWN_GRACE_MS / 1000} s; stopping anyway`);
+  }
   await client.destroy();
   await closeDatabase();
   process.exit(code);

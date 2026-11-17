@@ -141,4 +141,81 @@ describe('listingManager', () => {
     expect(listingManager.overrideCards('nope', ['1'], 1)).toBeUndefined();
     expect(listingManager.clearHold('nope')).toBeUndefined();
   });
+
+  describe('eBay churn', () => {
+    const HOUR = 60 * 60 * 1000;
+    const ebay12: Listing = {
+      ...blue12,
+      shop: 'ebay',
+      url: 'https://www.ebay.de/itm/1',
+      format: 'fixed_price',
+    };
+
+    test('a missing eBay listing stays available for 24 h, then becomes unavailable', () => {
+      listingManager.upsertFromRun('ebay', [ebay12], 0);
+      listingManager.upsertFromRun('ebay', [], 23 * HOUR);
+      expect(listingManager.getByUrl(ebay12.url)).toMatchObject({
+        available: true,
+        availableSince: 0,
+      });
+      listingManager.upsertFromRun('ebay', [], 24 * HOUR + 1);
+      expect(listingManager.getByUrl(ebay12.url)!.available).toBe(false);
+    });
+
+    test('an eBay item that drops out for one run and returns is not re-notified', () => {
+      userManager.setList('u1', '12');
+      listingManager.upsertFromRun('ebay', [ebay12], 1000);
+      const l = listingManager.getByUrl(ebay12.url)!;
+      listingManager.recordNotified('u1', l.id, l.availableSince!);
+      listingManager.upsertFromRun('ebay', [], 1000 + HOUR);
+      listingManager.upsertFromRun('ebay', [ebay12], 1000 + 2 * HOUR);
+      expect(listingManager.getByUrl(ebay12.url)!.availableSince).toBe(1000);
+      expect(
+        listingManager.pendingNotifications({ now: 1000 + 2 * HOUR }).get('u1')
+      ).toBeUndefined();
+    });
+
+    test('other shops still drop a missing listing at once', () => {
+      listingManager.upsertFromRun('blue-ocean', [blue12], 0);
+      listingManager.upsertFromRun('blue-ocean', [], HOUR);
+      expect(listingManager.getByUrl(blue12.url)!.available).toBe(false);
+    });
+
+    test('an auction that has ended is unavailable, found or missing', () => {
+      userManager.setList('u1', '12');
+      const auction: Listing = {
+        ...ebay12,
+        format: 'auction',
+        auctionEndsAt: 5 * HOUR,
+      };
+      const missing: Listing = { ...auction, url: 'https://www.ebay.de/itm/2' };
+      listingManager.upsertFromRun('ebay', [auction, missing], HOUR);
+      expect(listingManager.pendingNotifications({ now: HOUR }).get('u1')).toHaveLength(2);
+      // Ended but not yet re-fetched: not notified any more.
+      expect(listingManager.pendingNotifications({ now: 6 * HOUR }).get('u1')).toBeUndefined();
+      listingManager.upsertFromRun('ebay', [auction], 6 * HOUR);
+      expect(listingManager.getByUrl(auction.url)).toMatchObject({
+        available: false,
+        availableSince: null,
+      });
+      expect(listingManager.getByUrl(missing.url)!.available).toBe(false);
+    });
+  });
+
+  test('pendingNotifications skips listings not seen since the cutoff', () => {
+    userManager.setList('u1', '12');
+    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    expect(listingManager.pendingNotifications({ seenSince: 1000 }).get('u1')).toHaveLength(1);
+    expect(listingManager.pendingNotifications({ seenSince: 1001 }).get('u1')).toBeUndefined();
+  });
+
+  test('overrideCards marks the listing confirmed by the admin', () => {
+    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    const l = listingManager.getByUrl(blue12.url)!;
+    listingManager.setMatch(l.id, 'unconfirmed', 0.4);
+    expect(listingManager.overrideCards(blue12.url, ['12'], 2000)).toMatchObject({
+      matchStatus: 'confirmed',
+      similarity: null,
+    });
+  });
 });

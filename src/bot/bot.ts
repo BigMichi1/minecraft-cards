@@ -76,6 +76,7 @@ const runDeps: RunDeps = {
   sender: createDiscordSender(client),
   alertAdmin: (text) => dmAdmin(text),
   now: Date.now,
+  intervalMs: config.checkIntervalMs,
 };
 const scheduler = createScheduler(() => runCheck(runDeps), config.checkIntervalMs);
 

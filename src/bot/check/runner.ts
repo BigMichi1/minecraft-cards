@@ -28,6 +28,8 @@ export interface RunDeps {
   sender: NotificationSender;
   alertAdmin: (text: string) => Promise<void>;
   now: () => number;
+  /** The check interval; listings unseen for two of them (a failing shop) are not notified. */
+  intervalMs: number;
 }
 
 const ALERT_EVERY_MS = 24 * 60 * 60 * 1000;
@@ -126,7 +128,10 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
     }
 
     await matchPending(deps, stored, fetched, wanted);
-    const sent = await deps.sender.send(listingManager.pendingNotifications());
+    const now = deps.now();
+    const sent = await deps.sender.send(
+      listingManager.pendingNotifications({ now, seenSince: now - 2 * deps.intervalMs })
+    );
     summary.notified = sent.notified;
     summary.dmFailures = sent.dmFailures;
   }

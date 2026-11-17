@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, notInArray } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
 import type { MatchStatus } from '../matcher/embedder';
 import type { Listing as ShopListing, Money, ShopId } from '../shops/types';
@@ -26,6 +26,23 @@ export type StoredListing = {
 };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * eBay search results churn: an item can miss one search and be back in the next. A missing
+ * eBay listing stays available this long after it was last seen, so it is not re-notified.
+ */
+export const EBAY_MISSING_GRACE_MS = 24 * 60 * 60 * 1000;
+
+export interface PendingOptions {
+  /** Auctions that ended before this are not notified. Defaults to `Date.now()`. */
+  now?: number;
+  /** Listings last seen before this (a shop that keeps failing) are not notified. */
+  seenSince?: number;
+}
+
+function auctionEnded(auctionEndsAt: number | null, now: number): boolean {
+  return auctionEndsAt !== null && auctionEndsAt < now;
+}
 
 function toStored(row: ListingRow, cardIds: CardId[]): StoredListing {
   return {
@@ -99,11 +116,18 @@ function byUrl(tx: Tx, url: string): StoredListing | undefined {
 }
 
 export const listingManager = {
-  /** Insert or update by url; listings of `shop` missing from `found` become unavailable. Call only after a successful fetch. */
+  /**
+   * Insert or update by url; listings of `shop` missing from `found` become unavailable (eBay:
+   * once unseen for EBAY_MISSING_GRACE_MS). Ended auctions are unavailable. Call only after a
+   * successful fetch.
+   */
   upsertFromRun(shop: ShopId, found: ShopListing[], now: number): StoredListing[] {
     return db.transaction((tx) => {
       const ids: number[] = [];
-      for (const item of found) {
+      for (const scraped of found) {
+        const item = auctionEnded(scraped.auctionEndsAt, now)
+          ? { ...scraped, available: false }
+          : scraped;
         const existing = tx.select().from(listings).where(eq(listings.url, item.url)).get();
         const fields = {
           title: item.title,
@@ -166,7 +190,13 @@ export const listingManager = {
           and(
             eq(listings.shop, shop),
             eq(listings.available, true),
-            ids.length > 0 ? notInArray(listings.id, ids) : undefined
+            ids.length > 0 ? notInArray(listings.id, ids) : undefined,
+            shop === 'ebay'
+              ? or(
+                  lt(listings.lastSeenAt, now - EBAY_MISSING_GRACE_MS),
+                  lt(listings.auctionEndsAt, now)
+                )
+              : undefined
           )
         );
       gone.run();
@@ -184,18 +214,32 @@ export const listingManager = {
       .run();
   },
 
-  /** Available, not on hold, sharing a card with the user's list, and not yet notified for this availability period. */
-  pendingNotifications(): Map<string, { listing: StoredListing; cardIds: CardId[] }[]> {
+  /**
+   * Available, not on hold, not an ended auction, seen since `seenSince`, sharing a card with
+   * the user's list, and not yet notified for this availability period.
+   */
+  pendingNotifications(
+    options: PendingOptions = {}
+  ): Map<string, { listing: StoredListing; cardIds: CardId[] }[]> {
+    const now = options.now ?? Date.now();
     return db.transaction((tx) => {
       const rows = tx
         .select()
         .from(listings)
-        .where(and(eq(listings.available, true), eq(listings.onHold, false)))
+        .where(
+          and(
+            eq(listings.available, true),
+            eq(listings.onHold, false),
+            options.seenSince === undefined
+              ? undefined
+              : gte(listings.lastSeenAt, options.seenSince)
+          )
+        )
         .orderBy(listings.id)
         .all();
       const result = new Map<string, { listing: StoredListing; cardIds: CardId[] }[]>();
       for (const listing of load(tx, rows)) {
-        if (listing.availableSince === null) continue;
+        if (listing.availableSince === null || auctionEnded(listing.auctionEndsAt, now)) continue;
         for (const [discordId, cardIds] of userManager.usersWanting(listing.cardIds)) {
           const done = tx
             .select()
@@ -236,7 +280,10 @@ export const listingManager = {
     });
   },
 
-  /** Manual card mapping: survives rescrapes, lifts the hold, resolves reports, re-opens notification for the new cards. */
+  /**
+   * Manual card mapping: survives rescrapes, counts as confirmed by the admin, lifts the hold,
+   * resolves reports, re-opens notification for the new cards.
+   */
   overrideCards(url: string, cardIds: CardId[], now: number): StoredListing | undefined {
     return db.transaction((tx) => {
       const row = tx.select().from(listings).where(eq(listings.url, url)).get();
@@ -245,6 +292,8 @@ export const listingManager = {
       tx.update(listings)
         .set({
           manualOverride: true,
+          matchStatus: 'confirmed',
+          similarity: null,
           onHold: false,
           availableSince: row.available ? now : null,
         })

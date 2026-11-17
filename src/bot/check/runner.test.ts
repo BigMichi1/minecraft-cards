@@ -105,6 +105,7 @@ describe('runCheck', () => {
         alerts.push(text);
       },
       now: () => clock,
+      intervalMs: 1000,
       ...over,
     };
   }
@@ -239,5 +240,19 @@ describe('runCheck', () => {
     expect(alerts).toHaveLength(1);
     await runCheck(depsWith([down()], { alertAdmin }));
     expect(alerts).toHaveLength(1);
+  });
+
+  test('listings of a shop that keeps failing are not notified once stale', async () => {
+    sender.failFor('u1');
+    await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+    const down = () => failing('blue-ocean', new Error('down'));
+    // Seen one and two intervals ago: still retried.
+    expect((await runCheck(depsWith([down()]))).dmFailures).toBe(1);
+    expect((await runCheck(depsWith([down()]))).dmFailures).toBe(1);
+    sender.failFor(null);
+    // Last seen more than two intervals ago: stale, not notified.
+    const stale = await runCheck(depsWith([down()]));
+    expect(stale.notified).toBe(0);
+    expect(stale.dmFailures).toBe(0);
   });
 });

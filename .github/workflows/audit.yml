@@ -32,4 +32,4 @@ jobs:
         run: ./bin/mise install
 
       - name: Audit dependencies
-        run: ./bin/mise run audit
+        run: ./bin/mise run audit:ci

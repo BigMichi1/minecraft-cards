@@ -58,10 +58,16 @@ export const IMAGE_RETRY_MS = 24 * 60 * 60 * 1000;
 /** A shop returning fewer than this share of its recent peak count alerts the admin. */
 const DROP_ALERT_SHARE = 0.5;
 
-/** A window as text: whole days print without decimals, other values with at most one. */
+/**
+ * A window as text: days with at most one decimal (whole days print plainly); below one day it
+ * switches to whole hours.
+ */
 export function formatWindow(ms: number): string {
   const days = ms / (24 * 60 * 60 * 1000);
-  if (days < 1) return `${Math.round(ms / (60 * 60 * 1000))} hours`;
+  if (days < 1) {
+    const hours = Math.round(ms / (60 * 60 * 1000));
+    return hours === 1 ? '1 hour' : `${hours} hours`;
+  }
   const rounded = Math.round(days * 10) / 10;
   return rounded === 1 ? '1 day' : `${rounded} days`;
 }

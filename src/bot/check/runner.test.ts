@@ -421,6 +421,8 @@ describe('runCheck', () => {
     expect(formatWindow(2.5 * day)).toBe('2.5 days');
     expect(formatWindow(10 * day) + formatWindow(day / 3)).toBe('10 days8 hours');
     expect(formatWindow((10 / 3) * day)).toBe('3.3 days');
+    expect(formatWindow(60 * 60 * 1000)).toBe('1 hour');
+    expect(formatWindow(3 * 24 * 60 * 60 * 1000)).toBe('3 days');
   });
 
   test('a lasting drop keeps alerting once a day instead of becoming the new normal', async () => {

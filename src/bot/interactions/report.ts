@@ -232,9 +232,9 @@ const UNSENT_WARN_AFTER_MS = 24 * 60 * 60 * 1000;
 const warnedMissingListing = new Set<number>();
 
 /**
- * Forget which reports were logged (tests: the set outlives each test's data within one worker,
- * and report ids do not restart after a table is emptied, AUTOINCREMENT, so a later test would
- * otherwise inherit earlier warnings).
+ * For tests: the set is module-level and outlives each test's data within one worker. Ids never
+ * repeat (AUTOINCREMENT), so this is not about collisions: it keeps each test independent of
+ * warnings that earlier tests caused.
  */
 export function resetReportWarnings(): void {
   warnedMissingListing.clear();

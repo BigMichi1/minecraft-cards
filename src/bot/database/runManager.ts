@@ -16,9 +16,9 @@ export const SHOP_PEAK_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 const warnedOnce = new Set<string>();
 
 /**
- * Forget which rows were warned about (tests: the set outlives each test's data within one worker,
- * and row ids do not restart after a table is emptied, AUTOINCREMENT, so a later test would
- * otherwise inherit earlier warnings).
+ * For tests: the set is module-level and outlives each test's data within one worker. Ids never
+ * repeat (AUTOINCREMENT), so this is not about collisions: it keeps each test independent of
+ * warnings that earlier tests caused.
  */
 export function resetWarnings(): void {
   warnedOnce.clear();

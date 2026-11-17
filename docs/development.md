@@ -29,7 +29,8 @@ cp .env.example .env          # then set DISCORD_TOKEN and BOT_ADMIN_ID
 | `model:download`                      | Fetch `IMAGE_MODEL` into `MODEL_CACHE_DIR`                  |
 | `measure:threshold`                   | Measure similarity of true/false card pairs (needs network) |
 | `gitleaks`                            | Secret scan                                                 |
-| `audit`                               | `bun audit`                                                 |
+| `audit`                               | `bun audit` (also shows the known, ignored advisory)        |
+| `audit:ci`                            | `bun audit` minus `vars.audit_ignores` (what CI runs)       |
 | `docker-build`                        | Build the production image                                  |
 
 Extra arguments pass through: `./bin/mise run test src/bot/utils/async.test.ts`.
@@ -52,6 +53,6 @@ Extra arguments pass through: `./bin/mise run test src/bot/utils/async.test.ts`.
 ## CI
 
 `test.yml` runs typecheck, lint, format check and the coverage gate; further workflows cover
-CodeQL, DCO, dependency review, secret scanning, Scorecard, the Docker build and a daily
-`bun audit`. The workflows follow [IdleCodeRedeemer](https://github.com/BigMichi1/IdleCodeRedeemer)'s,
+CodeQL, DCO, dependency review, secret scanning, Scorecard, the Docker build and a dependency
+audit (`audit:ci`) on every push to main and daily. The workflows follow [IdleCodeRedeemer](https://github.com/BigMichi1/IdleCodeRedeemer)'s,
 without its Idle-specific jobs.

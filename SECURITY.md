@@ -52,7 +52,8 @@ upgrade to the latest release.
 - Secrets are never committed: Gitleaks runs as a pre-commit hook and, with TruffleHog, in CI.
   `DISCORD_TOKEN`, `EBAY_CLIENT_SECRET` and eBay access tokens are never logged.
 - Dependencies are locked (`bun.lock`, installed frozen), watched by Dependabot, checked by
-  dependency review and a daily `bun audit`; CodeQL and OpenSSF Scorecard run in CI.
+  dependency review and a dependency audit (`./bin/mise run audit:ci`) on every push to main
+  and daily; CodeQL and OpenSSF Scorecard run in CI.
 - Changes to `main` go through pull requests with CODEOWNERS review; commits are signed off
   (DCO).
 - Container images are built in CI, run as a non-root user, and release images are signed with

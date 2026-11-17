@@ -118,9 +118,62 @@ async function readCapped(response: Response, url: string): Promise<Uint8Array> 
   return new Uint8Array(Buffer.concat(chunks));
 }
 
+/** The shops' and eBay's picture hosts; listing pictures come from scraped pages and the API. */
+export const IMAGE_HOSTS: ReadonlySet<string> = new Set([
+  'shop-sammel-ente.de',
+  'cdn.blue-ocean.de',
+  'www.blue-ocean.de',
+  'i.ebayimg.com',
+]);
+const MAX_REDIRECTS = 3;
+
+/** True for an https URL on one of IMAGE_HOSTS, default port, no credentials. */
+export function allowedImageUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return (
+      u.protocol === 'https:' &&
+      IMAGE_HOSTS.has(u.hostname) &&
+      u.port === '' &&
+      u.username === '' &&
+      u.password === ''
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * GET a picture URL only on an allowed host. Redirects are followed by hand (at most
+ * MAX_REDIRECTS), each target checked the same way, so a scraped URL cannot reach anything else.
+ */
+async function fetchImage(fetchFn: FetchFn, imageUrl: string): Promise<Response> {
+  let url = imageUrl;
+  for (let hop = 0; ; hop++) {
+    if (!allowedImageUrl(url)) throw new Error(`image host not allowed: ${url}`);
+    const response = await fetchFn(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      redirect: 'manual',
+    });
+    const location = response.headers.get('Location');
+    if (response.status < 300 || response.status >= 400 || location === null) return response;
+    await response.body?.cancel();
+    if (hop >= MAX_REDIRECTS) {
+      throw new Error(`image ${imageUrl}: more than ${MAX_REDIRECTS} redirects`);
+    }
+    try {
+      url = new URL(location, url).toString();
+    } catch {
+      throw new Error(`image ${imageUrl}: bad redirect location`);
+    }
+  }
+}
+
 /**
  * Local image embedder over `@huggingface/transformers` (`image-feature-extraction`).
- * Model files are downloaded once into `cacheDir`. Rejects when the model cannot load.
+ * Model files are downloaded once into `cacheDir`. Rejects when the model cannot load;
+ * `embed` rejects for a picture outside IMAGE_HOSTS (see fetchImage).
  */
 export async function createTransformersEmbedder(
   opts: { model: string; cacheDir: string },
@@ -135,10 +188,7 @@ export async function createTransformersEmbedder(
   return {
     model: opts.model,
     async embed(imageUrl: string): Promise<Float32Array> {
-      const response = await fetchFn(imageUrl, {
-        headers: { 'User-Agent': USER_AGENT },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      });
+      const response = await fetchImage(fetchFn, imageUrl);
       if (!response.ok) throw new HttpError(response.status, imageUrl);
       const bytes = await readCapped(response, imageUrl);
       return firstVectorNormalised(await extractor(bytes));

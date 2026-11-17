@@ -151,7 +151,6 @@ const FILTERS: Record<number, 'nearest' | 'bilinear' | 'cubic' | 'lanczos3'> = {
   3: 'cubic',
 };
 
-/** Decode `bytes` (JPEG / PNG / WebP / GIF), resize and center-crop it as the processor would. */
 /** Larger pictures are refused before resizing: a resize to the shortest edge can need gigabytes. */
 export const MAX_IMAGE_SIDE = 10_000;
 /** Longer side over shorter side; a 2x4000 strip would otherwise resize to 256x512000. */
@@ -167,6 +166,10 @@ export function checkImageSize(width: number, height: number): void {
   }
 }
 
+/**
+ * Decode `bytes` (JPEG / PNG / WebP / GIF), resize and center-crop it as the processor would.
+ * Throws for a picture refused by checkImageSize, before any pixel is decoded.
+ */
 export async function prepareImage(bytes: Uint8Array, spec: ResizeSpec): Promise<Pixels> {
   // metadata() reads only the header, so the check runs before any pixel is decoded.
   const { width, height } = await new Bun.Image(bytes).metadata();

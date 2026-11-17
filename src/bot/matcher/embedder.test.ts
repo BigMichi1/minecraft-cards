@@ -3,6 +3,7 @@ import { db, initializeDatabase } from '../database/db';
 import { imageEmbeddings } from '../database/schema/index';
 import type { Listing } from '../shops/types';
 import {
+  allowedImageUrl,
   createCachedEmbedder,
   createTransformersEmbedder,
   DEFAULT_IMAGE_MATCH_THRESHOLD,
@@ -163,6 +164,33 @@ describe('matchListing', () => {
   });
 });
 
+const IMG = 'https://shop-sammel-ente.de/media/12.jpg';
+
+describe('allowedImageUrl', () => {
+  test('only https on the shop and eBay image hosts', () => {
+    for (const ok of [
+      'https://shop-sammel-ente.de/media/a.jpg',
+      'https://cdn.blue-ocean.de/a.jpg',
+      'https://www.blue-ocean.de/a.jpg',
+      'https://i.ebayimg.com/images/g/a/s-l225.jpg',
+    ]) {
+      expect(allowedImageUrl(ok)).toBe(true);
+    }
+    for (const bad of [
+      'http://shop-sammel-ente.de/a.jpg',
+      'https://evil.example/a.jpg',
+      'https://i.ebayimg.com.evil.example/a.jpg',
+      'https://shop-sammel-ente.de:8443/a.jpg',
+      'https://user:pw@i.ebayimg.com/a.jpg',
+      'https://127.0.0.1/a.jpg',
+      'file:///etc/passwd',
+      'not a url',
+    ]) {
+      expect(allowedImageUrl(bad)).toBe(false);
+    }
+  });
+});
+
 describe('createTransformersEmbedder', () => {
   const okFetch = async (): Promise<Response> => new Response(new Uint8Array([1, 2]));
 
@@ -186,11 +214,11 @@ describe('createTransformersEmbedder', () => {
       }
     );
     expect(embedder.model).toBe('m');
-    const vec = await embedder.embed('https://img/1.jpg');
+    const vec = await embedder.embed('https://i.ebayimg.com/1.jpg');
     expect(Array.from(vec).map((v) => Number(v.toFixed(5)))).toEqual([0.6, 0.8]);
     expect(seen).toEqual([
       {
-        url: 'https://img/1.jpg',
+        url: 'https://i.ebayimg.com/1.jpg',
         ua: 'minecraft-cards-bot/1.0 (+hourly stock check)',
         bytes: [7, 8],
       },
@@ -208,7 +236,7 @@ describe('createTransformersEmbedder', () => {
         }),
       }
     );
-    expect(Array.from(await embedder.embed('u'))).toEqual([0, 1]);
+    expect(Array.from(await embedder.embed(IMG))).toEqual([0, 1]);
   });
 
   test('a zero vector stays zero instead of becoming NaN', async () => {
@@ -219,7 +247,7 @@ describe('createTransformersEmbedder', () => {
         loadPipeline: async () => async () => ({ data: new Float32Array([0, 0]), dims: [1, 2] }),
       }
     );
-    expect(Array.from(await embedder.embed('u'))).toEqual([0, 0]);
+    expect(Array.from(await embedder.embed(IMG))).toEqual([0, 0]);
   });
 
   test('a failed image download throws with the status', async () => {
@@ -230,7 +258,7 @@ describe('createTransformersEmbedder', () => {
         loadPipeline: async () => async () => ({ data: new Float32Array([1]), dims: [1, 1] }),
       }
     );
-    await expect(embedder.embed('https://img/missing.jpg')).rejects.toThrow(/404/);
+    await expect(embedder.embed('https://cdn.blue-ocean.de/missing.jpg')).rejects.toThrow(/404/);
   });
 
   describe('download cap', () => {
@@ -251,7 +279,9 @@ describe('createTransformersEmbedder', () => {
           loadPipeline: load,
         }
       );
-      await expect(embedder.embed('https://img/big.jpg')).rejects.toThrow(/over 10485760/);
+      await expect(embedder.embed('https://cdn.blue-ocean.de/big.jpg')).rejects.toThrow(
+        /over 10485760/
+      );
     });
 
     test('a streamed body over 10 MB without Content-Length is cut off', async () => {
@@ -267,7 +297,9 @@ describe('createTransformersEmbedder', () => {
         { model: 'm', cacheDir: 'c' },
         { fetchFn: async () => new Response(stream), loadPipeline: load }
       );
-      await expect(embedder.embed('https://img/endless.jpg')).rejects.toThrow(/over 10485760/);
+      await expect(embedder.embed('https://cdn.blue-ocean.de/endless.jpg')).rejects.toThrow(
+        /over 10485760/
+      );
       expect(pulled).toBeLessThan(20);
     });
 
@@ -280,7 +312,7 @@ describe('createTransformersEmbedder', () => {
           loadPipeline: load,
         }
       );
-      expect(await matchListing(blue12, 'ref12', embedder, 0.85)).toEqual({
+      expect(await matchListing({ ...blue12, imageUrl: IMG }, IMG, embedder, 0.85)).toEqual({
         status: 'model_unavailable',
         similarity: null,
       });
@@ -292,8 +324,109 @@ describe('createTransformersEmbedder', () => {
         { model: 'm', cacheDir: 'c' },
         { fetchFn: async () => new Response(new Uint8Array(5000)), loadPipeline: load }
       );
-      expect(Array.from(await embedder.embed('u'))).toEqual([1, 0]);
+      expect(Array.from(await embedder.embed(IMG))).toEqual([1, 0]);
       expect(extractorCalls).toEqual([5000]);
+    });
+  });
+
+  describe('image hosts and redirects', () => {
+    const load = async () => async () => ({ data: new Float32Array([1, 0]), dims: [1, 2] });
+    function routes(map: Record<string, () => Response>) {
+      const seen: { url: string; redirect: RequestInit['redirect'] }[] = [];
+      const fetchFn = async (url: string, init?: RequestInit) => {
+        seen.push({ url, redirect: init?.redirect });
+        const route = map[url];
+        return route ? route() : new Response('nope', { status: 404 });
+      };
+      return { fetchFn, seen };
+    }
+    const redirect = (to: string) => () =>
+      new Response(null, { status: 302, headers: { Location: to } });
+
+    test('a url on another host is refused without a request', async () => {
+      const { fetchFn, seen } = routes({});
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        { fetchFn, loadPipeline: load }
+      );
+      await expect(embedder.embed('https://evil.example/a.jpg')).rejects.toThrow(/not allowed/);
+      await expect(embedder.embed('http://i.ebayimg.com/a.jpg')).rejects.toThrow(/not allowed/);
+      expect(seen).toHaveLength(0);
+    });
+
+    test('a redirect to an allowed host is followed, manually', async () => {
+      const { fetchFn, seen } = routes({
+        'https://www.blue-ocean.de/a.jpg': redirect('https://cdn.blue-ocean.de/a.jpg'),
+        'https://cdn.blue-ocean.de/a.jpg': () => new Response(new Uint8Array([1])),
+      });
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        { fetchFn, loadPipeline: load }
+      );
+      expect(Array.from(await embedder.embed('https://www.blue-ocean.de/a.jpg'))).toEqual([1, 0]);
+      expect(seen).toEqual([
+        { url: 'https://www.blue-ocean.de/a.jpg', redirect: 'manual' },
+        { url: 'https://cdn.blue-ocean.de/a.jpg', redirect: 'manual' },
+      ]);
+    });
+
+    test('a relative redirect resolves against the current url', async () => {
+      const { fetchFn } = routes({
+        'https://i.ebayimg.com/a.jpg': redirect('/b.jpg'),
+        'https://i.ebayimg.com/b.jpg': () => new Response(new Uint8Array([1])),
+      });
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        { fetchFn, loadPipeline: load }
+      );
+      expect(Array.from(await embedder.embed('https://i.ebayimg.com/a.jpg'))).toEqual([1, 0]);
+    });
+
+    test('a redirect to another host is refused', async () => {
+      const { fetchFn, seen } = routes({
+        'https://i.ebayimg.com/a.jpg': redirect('https://169.254.169.254/latest/meta-data'),
+      });
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        { fetchFn, loadPipeline: load }
+      );
+      await expect(embedder.embed('https://i.ebayimg.com/a.jpg')).rejects.toThrow(/not allowed/);
+      expect(seen).toHaveLength(1);
+    });
+
+    test('more than 3 redirects is refused', async () => {
+      const { fetchFn, seen } = routes({
+        'https://i.ebayimg.com/0.jpg': redirect('https://i.ebayimg.com/1.jpg'),
+        'https://i.ebayimg.com/1.jpg': redirect('https://i.ebayimg.com/2.jpg'),
+        'https://i.ebayimg.com/2.jpg': redirect('https://i.ebayimg.com/3.jpg'),
+        'https://i.ebayimg.com/3.jpg': redirect('https://i.ebayimg.com/4.jpg'),
+        'https://i.ebayimg.com/4.jpg': () => new Response(new Uint8Array([1])),
+      });
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        { fetchFn, loadPipeline: load }
+      );
+      await expect(embedder.embed('https://i.ebayimg.com/0.jpg')).rejects.toThrow(/redirects/);
+      expect(seen).toHaveLength(4);
+    });
+
+    test('a refused host is model_unavailable in matchListing', async () => {
+      const { fetchFn } = routes({});
+      const embedder = await createTransformersEmbedder(
+        { model: 'm', cacheDir: 'c' },
+        { fetchFn, loadPipeline: load }
+      );
+      const reasons: string[] = [];
+      expect(
+        await matchListing(
+          { ...blue12, imageUrl: 'https://evil.example/a.jpg' },
+          IMG,
+          embedder,
+          0.85,
+          { onUnavailable: (r) => reasons.push(r) }
+        )
+      ).toEqual({ status: 'model_unavailable', similarity: null });
+      expect(reasons[0]).toContain('not allowed');
     });
   });
 

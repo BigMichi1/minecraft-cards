@@ -50,7 +50,7 @@ export const userManager = {
 
   /** Catalog membership is ignored so ids removed from the catalog can still be removed. */
   removeFromList(discordId: string, input: string): ListChange {
-    const checked = parseKnownCardList(input, false);
+    const checked = parseKnownCardList(input, { checkCatalog: false });
     if (!checked.ok) return checked;
     return db.transaction((tx) => {
       ensureUser(tx, discordId);

@@ -82,7 +82,10 @@ describe('catalogManager', () => {
       reason: 'invalid',
       invalid: ['x', '999'],
     });
-    expect(parseKnownCardList('999', false)).toEqual({ ok: true, ids: ids('999') });
+    expect(parseKnownCardList('999', { checkCatalog: false })).toEqual({
+      ok: true,
+      ids: ids('999'),
+    });
     expect(parseKnownCardList('LE8, 12')).toEqual({ ok: true, ids: ids('12', 'LE8') });
   });
 

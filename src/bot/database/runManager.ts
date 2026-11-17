@@ -5,8 +5,11 @@ import logger from '../utils/logger';
 import { db } from './db';
 import { adminAlerts, runs } from './schema/index';
 
-/** How many past runs `lastShopListings` looks through for one where the shop succeeded. */
+/** How many past runs `shopPeakListings` looks through for successful ones of the shop. */
 const SHOP_HISTORY_RUNS = 50;
+
+/** How many successful runs of a shop its peak listing count is taken over. */
+const SHOP_PEAK_RUNS = 5;
 
 /**
  * Parse a stored summary. Rows written by an older version lack newer fields, so every field
@@ -51,19 +54,39 @@ export const runManager = {
     return summary;
   },
 
-  /** Listings `shop` returned in the latest recent run where its fetch succeeded. */
-  lastShopListings(shop: ShopId): number | undefined {
+  /**
+   * The highest number of listings `shop` returned in its last SHOP_PEAK_RUNS successful runs
+   * (looking through at most SHOP_HISTORY_RUNS runs); undefined when there is none. Unreadable
+   * rows and entries are skipped with a warning.
+   */
+  shopPeakListings(shop: ShopId): number | undefined {
     const rows = db
-      .select({ summary: runs.summary })
+      .select({ id: runs.id, summary: runs.summary })
       .from(runs)
       .orderBy(desc(runs.id))
       .limit(SHOP_HISTORY_RUNS)
       .all();
+    let peak: number | undefined;
+    let successes = 0;
     for (const row of rows) {
-      const entry = parseSummary(row.summary)?.shops[shop];
-      if (entry && entry.error === undefined) return entry.listings;
+      const summary = parseSummary(row.summary);
+      if (!summary) {
+        logger.warn(`run ${row.id}: stored summary is not a run summary`);
+        continue;
+      }
+      const entry: unknown = summary.shops[shop];
+      if (entry === undefined) continue;
+      const listings = (entry as { listings?: unknown; error?: unknown }).listings;
+      if (typeof listings !== 'number') {
+        logger.warn(`run ${row.id}: stored ${shop} entry has no listing count`);
+        continue;
+      }
+      if ((entry as { error?: unknown }).error !== undefined) continue;
+      peak = Math.max(peak ?? listings, listings);
+      successes += 1;
+      if (successes >= SHOP_PEAK_RUNS) break;
     }
-    return undefined;
+    return peak;
   },
 
   /** True (and remembers `now`) when no alert with this key went out within `everyMs`. */

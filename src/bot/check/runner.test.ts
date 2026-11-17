@@ -365,7 +365,7 @@ describe('runCheck', () => {
     });
   });
 
-  test('a shop returning less than half of its last successful count alerts', async () => {
+  test('a shop returning less than half of its recent peak count alerts', async () => {
     const many = Array.from({ length: 10 }, (_, i) => ({
       ...blue12,
       url: `https://www.blue-ocean.de/p/${i + 1}`,
@@ -377,7 +377,39 @@ describe('runCheck', () => {
     expect(alerts).toEqual([]);
     await runCheck(depsWith([ok('blue-ocean', many.slice(0, 2))]));
     expect(alerts).toHaveLength(1);
-    expect(alerts[0]).toContain('2 card listings, down from 5');
+    expect(alerts[0]).toContain('2 card listings, down from 10 at most');
+  });
+
+  test('a lasting drop keeps alerting once a day instead of becoming the new normal', async () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      ...blue12,
+      url: `https://www.blue-ocean.de/p/${i + 1}`,
+    }));
+    await runCheck(depsWith([ok('blue-ocean', many)]));
+    const few = () => ok('blue-ocean', many.slice(0, 2));
+    await runCheck(depsWith([few()]));
+    expect(alerts).toHaveLength(1);
+    await runCheck(depsWith([few()]));
+    expect(alerts).toHaveLength(1);
+    clock += 25 * 60 * 60 * 1000;
+    await runCheck(depsWith([few()]));
+    expect(alerts).toHaveLength(2);
+  });
+
+  test('an unreadable baseline skips only the drop check, with a log', async () => {
+    const peak = spyOn(runManager, 'shopPeakListings').mockImplementation(() => {
+      throw new Error('db locked');
+    });
+    const error = spyOn(logger, 'log');
+    try {
+      const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+      expect(s.shops['blue-ocean']).toEqual({ listings: 1 });
+      expect(listingManager.getByUrl(blue12.url)).toBeDefined();
+      expect(error).toHaveBeenCalled();
+    } finally {
+      peak.mockRestore();
+      error.mockRestore();
+    }
   });
 
   test('a failing alertAdmin does not fail the run', async () => {

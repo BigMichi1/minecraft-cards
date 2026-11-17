@@ -13,12 +13,10 @@ import { errorMessage } from '../utils/async';
 import logger, { logError } from '../utils/logger';
 import { throttledAlert, type AlertFn } from './adminAlert';
 
-export interface ShopSummary {
+export interface ShopSummary extends Pick<FetchResult, 'skippedNoId' | 'skippedInvalid'> {
   /** Card listings the shop returned (available or not). */
   listings: number;
   error?: string;
-  skippedNoId?: number;
-  skippedInvalid?: number;
 }
 
 /**
@@ -57,7 +55,7 @@ export interface RunDeps {
 /** A picture that could not be loaded is tried again at most once per day. */
 export const IMAGE_RETRY_MS = 24 * 60 * 60 * 1000;
 
-/** A shop returning fewer than this share of its last successful count alerts the admin. */
+/** A shop returning fewer than this share of its recent peak count alerts the admin. */
 const DROP_ALERT_SHARE = 0.5;
 
 /**
@@ -118,6 +116,16 @@ async function matchPending(
   }
 }
 
+/** The baseline for the drop check; a failed lookup is logged and only skips that check. */
+function recentPeak(shop: ShopId): number | undefined {
+  try {
+    return runManager.shopPeakListings(shop);
+  } catch (error) {
+    logError(`shop ${shop}: reading the recent listing counts failed, drop check skipped`, error);
+    return undefined;
+  }
+}
+
 /** Fetch one shop and store what it returned; a failure is recorded on the shop, not thrown. */
 async function checkShop(
   deps: RunDeps,
@@ -139,7 +147,7 @@ async function checkShop(
   }
   const found = result.listings;
   try {
-    const previous = runManager.lastShopListings(adapter.id);
+    const peak = recentPeak(adapter.id);
     stored.push(...listingManager.upsertFromRun(adapter.id, found, deps.now()));
     if (found.length > 0 && found.every((l) => !l.available)) {
       // Every card sold out at once is more likely a changed stock marker than real.
@@ -148,11 +156,12 @@ async function checkShop(
         `Shop ${adapter.id}: all ${found.length} card listings read as unavailable — check the stock marker.`
       );
     }
-    if (previous !== undefined && found.length < previous * DROP_ALERT_SHARE) {
-      // A pagination or markup change can leave only part of the shop readable.
+    if (peak !== undefined && found.length < peak * DROP_ALERT_SHARE) {
+      // A pagination or markup change can leave only part of the shop readable. Measured
+      // against the peak of the last successful runs, a lasting drop keeps alerting (daily).
       await alert(
         `shop-drop:${adapter.id}`,
-        `Shop ${adapter.id}: ${found.length} card listings, down from ${previous} in the last successful check — check the pagination and markup.`
+        `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last successful checks — check the pagination and markup.`
       );
     }
     for (const l of found) fetched.set(l.url, l);

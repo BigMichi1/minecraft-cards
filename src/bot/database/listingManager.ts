@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNull, lt, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
-import type { MatchStatus } from '../matcher/matchStatus';
+import type { MatchStatus, ResolvedMatchStatus } from '../matcher/matchStatus';
 import type { ListingFormat, Listing as ShopListing, Money, ShopId } from '../shops/types';
 import { db } from './db';
 import { listingCards, listings, notifications, reports } from './schema/index';
@@ -230,7 +230,12 @@ export const listingManager = {
     });
   },
 
-  setMatch(listingId: number, status: MatchStatus, similarity: number | null, now: number): void {
+  setMatch(
+    listingId: number,
+    status: ResolvedMatchStatus,
+    similarity: number | null,
+    now: number
+  ): void {
     db.update(listings)
       .set({ matchStatus: status, similarity, matchCheckedAt: now })
       .where(eq(listings.id, listingId))

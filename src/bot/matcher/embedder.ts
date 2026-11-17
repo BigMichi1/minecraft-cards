@@ -6,7 +6,7 @@ import { errorMessage } from '../utils/async';
 import { HttpError, REQUEST_TIMEOUT_MS, USER_AGENT } from '../utils/http';
 import logger from '../utils/logger';
 import { prepareImage, type ResizeSpec } from './imageInput';
-import type { MatchStatus } from './matchStatus';
+import type { MatchStatus, ResolvedMatchStatus } from './matchStatus';
 import { cosineSimilarity } from './similarity';
 
 export type { MatchStatus } from './matchStatus';
@@ -305,7 +305,7 @@ export async function matchListing(
   embedder: ImageEmbedder | null,
   threshold: number,
   options: MatchOptions = {}
-): Promise<{ status: MatchStatus; similarity: number | null }> {
+): Promise<{ status: ResolvedMatchStatus; similarity: number | null }> {
   const unavailable = (status: 'model_unavailable' | 'image_unavailable', reason: string) => {
     if (options.onUnavailable) options.onUnavailable(status, reason);
     else logger.warn(`image match unavailable (${status}) for ${listing.url}: ${reason}`);

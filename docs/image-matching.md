@@ -113,17 +113,17 @@ image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
 
 ## Match statuses
 
-| Status              | Meaning                                                                                  |
-| ------------------- | ---------------------------------------------------------------------------------------- |
-| `reference`         | A sammel-ente listing: its picture is the reference                                      |
-| `pending`           | Not compared yet: new, or its picture, cards or id conflict changed                      |
-| `confirmed`         | Picture matches the reference, or the admin mapped the listing (`/admin map`)            |
-| `unconfirmed`       | Below the threshold, a blue-ocean id conflict, or no picture to compare                  |
-| `bundle`            | Several cards in one listing; not compared                                               |
-| `no_reference`      | The card has no reference picture yet; retried every check                               |
-| `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check           |
-| `image_unavailable` | A picture could not be loaded (host, redirect, HTTP, size, decoding); retried once a day |
+| Status              | Meaning                                                                                                                          |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `reference`         | A sammel-ente listing: its picture is the reference                                                                              |
+| `pending`           | Not compared yet: a new single-card listing of another shop than sammel-ente, or one whose picture, cards or id conflict changed |
+| `confirmed`         | Picture matches the reference, or the admin mapped the listing (`/admin map`)                                                    |
+| `unconfirmed`       | Below the threshold, a blue-ocean id conflict, or no picture to compare                                                          |
+| `bundle`            | Several cards in one listing; not compared                                                                                       |
+| `no_reference`      | The card has no reference picture yet; retried every check                                                                       |
+| `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check                                                   |
+| `image_unavailable` | A picture could not be loaded (host, redirect, HTTP, size, decoding); retried once a day                                         |
 
-Only listings of cards someone wants are compared. An admin-mapped listing stays
+Only available listings of cards someone wants are compared. An admin-mapped listing stays
 `confirmed` when its picture changes later. Any other error while matching (the embedding
 cache's database, a bug) fails the check run instead of being taken for a model problem.

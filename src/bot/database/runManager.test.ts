@@ -49,13 +49,43 @@ describe('runManager', () => {
     expect(runManager.last()?.error).toBeUndefined();
   });
 
-  test('lastShopListings skips runs where the shop failed or did not run', () => {
-    expect(runManager.lastShopListings('blue-ocean')).toBeUndefined();
+  test('shopPeakListings skips runs where the shop failed or did not run', () => {
+    expect(runManager.shopPeakListings('blue-ocean')).toBeUndefined();
     runManager.record(summary);
     runManager.record({ ...summary, shops: { 'blue-ocean': { listings: 0, error: 'down' } } });
     runManager.record({ ...summary, shops: {} });
-    expect(runManager.lastShopListings('blue-ocean')).toBe(3);
-    expect(runManager.lastShopListings('ebay')).toBeUndefined();
+    expect(runManager.shopPeakListings('blue-ocean')).toBe(3);
+    expect(runManager.shopPeakListings('ebay')).toBeUndefined();
+  });
+
+  test('shopPeakListings is the highest count of the last 5 successful runs', () => {
+    for (const listings of [90, 100, 10, 20, 30, 40]) {
+      runManager.record({ ...summary, shops: { 'blue-ocean': { listings } } });
+    }
+    // 100 is the oldest of the last 5 successful runs (100, 10, 20, 30, 40) and still counts.
+    expect(runManager.shopPeakListings('blue-ocean')).toBe(100);
+    runManager.record({ ...summary, shops: { 'blue-ocean': { listings: 5 } } });
+    // 90 and 100 have fallen out of the window.
+    expect(runManager.shopPeakListings('blue-ocean')).toBe(40);
+  });
+
+  test('shopPeakListings ignores a corrupted shop entry and warns about an unreadable row', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      runManager.record(summary);
+      db.insert(runs)
+        .values({
+          startedAt: 1,
+          finishedAt: 2,
+          summary: JSON.stringify({ ...summary, shops: { 'blue-ocean': { listings: 'many' } } }),
+        })
+        .run();
+      db.insert(runs).values({ startedAt: 1, finishedAt: 2, summary: 'not json' }).run();
+      expect(runManager.shopPeakListings('blue-ocean')).toBe(3);
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('shouldAlert is true once per period', () => {

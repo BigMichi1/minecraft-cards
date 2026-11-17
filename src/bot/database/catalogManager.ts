@@ -34,7 +34,10 @@ export type CardListResult =
   | { ok: false; reason: 'invalid'; invalid: string[] };
 
 /** Parse a comma separated card list; with `checkCatalog`, ids outside the catalog are invalid. */
-export function parseKnownCardList(input: string, checkCatalog = true): CardListResult {
+export function parseKnownCardList(
+  input: string,
+  { checkCatalog = true }: { checkCatalog?: boolean } = {}
+): CardListResult {
   const parsed = parseCardList(input);
   const known = checkCatalog ? catalogManager.knownIds() : null;
   const unknown = known ? parsed.ids.filter((id) => !known.has(id)) : [];

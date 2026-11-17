@@ -182,24 +182,35 @@ export function createCachedEmbedder(inner: ImageEmbedder): ImageEmbedder {
 export type MatchStatus =
   'reference' | 'confirmed' | 'unconfirmed' | 'no_reference' | 'model_unavailable' | 'bundle';
 
+export interface MatchOptions {
+  /**
+   * Called with the reason when the result is `model_unavailable`. Without it the reason is
+   * logged per listing; the runner collects them and warns once per run instead.
+   */
+  onUnavailable?: (reason: string) => void;
+}
+
 /**
  * Check a listing's picture against the card's reference picture.
  * sammel-ente is the reference shop; listings of several cards are bundles and not compared.
- * A missing or failing model yields `model_unavailable` (logged), never an exception.
+ * A missing or failing model yields `model_unavailable` (reported), never an exception.
  */
 export async function matchListing(
   listing: Listing,
   reference: string | null,
   embedder: ImageEmbedder | null,
-  threshold: number
+  threshold: number,
+  options: MatchOptions = {}
 ): Promise<{ status: MatchStatus; similarity: number | null }> {
+  const unavailable = (reason: string) => {
+    if (options.onUnavailable) options.onUnavailable(reason);
+    else logger.warn(`image match unavailable for ${listing.url}: ${reason}`);
+    return { status: 'model_unavailable' as const, similarity: null };
+  };
   if (listing.shop === 'sammel-ente') return { status: 'reference', similarity: null };
   if (listing.cardIds.length > 1) return { status: 'bundle', similarity: null };
   if (reference === null) return { status: 'no_reference', similarity: null };
-  if (embedder === null) {
-    logger.warn(`image match skipped for ${listing.url}: no image model loaded`);
-    return { status: 'model_unavailable', similarity: null };
-  }
+  if (embedder === null) return unavailable('no image model loaded');
   if (listing.imageUrl === null) return { status: 'unconfirmed', similarity: null };
 
   try {
@@ -211,9 +222,6 @@ export async function matchListing(
     const confirmed = similarity >= threshold && !listing.idConflict;
     return { status: confirmed ? 'confirmed' : 'unconfirmed', similarity };
   } catch (error) {
-    logger.warn(
-      `image match failed for ${listing.url} (${embedder.model}): ${errorMessage(error)}`
-    );
-    return { status: 'model_unavailable', similarity: null };
+    return unavailable(`${embedder.model}: ${errorMessage(error)}`);
   }
 }

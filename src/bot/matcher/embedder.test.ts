@@ -133,6 +133,15 @@ describe('matchListing', () => {
     expect((await matchListing(blue12, 'ref12', null, 0.85)).status).toBe('model_unavailable');
   });
 
+  test('onUnavailable receives the reason instead of a per-listing log line', async () => {
+    const reasons: string[] = [];
+    const onUnavailable = (reason: string) => reasons.push(reason);
+    await matchListing(blue12, 'ref12', null, 0.85, { onUnavailable });
+    await matchListing(blue12, 'ref12', throwingEmbedder, 0.85, { onUnavailable });
+    await matchListing(blue12, 'ref12', fakeSame, 0.85, { onUnavailable });
+    expect(reasons).toEqual(['no image model loaded', 'broken: onnx runtime missing']);
+  });
+
   test('bundles, sammel-ente and missing references skip the comparison', async () => {
     const counting = fakeEmbedder({});
     expect((await matchListing(bundle, 'ref12', counting, 0.85)).status).toBe('bundle');

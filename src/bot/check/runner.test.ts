@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { db, initializeDatabase } from '../database/db';
 import {
   adminAlerts,
@@ -16,6 +16,7 @@ import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { userManager } from '../database/userManager';
 import type { ImageEmbedder } from '../matcher/embedder';
+import logger from '../utils/logger';
 import { ShopLayoutError, type Listing, type ShopAdapter, type ShopId } from '../shops/types';
 import {
   runCheck,
@@ -254,5 +255,90 @@ describe('runCheck', () => {
     const stale = await runCheck(depsWith([down()]));
     expect(stale.notified).toBe(0);
     expect(stale.dmFailures).toBe(0);
+  });
+
+  test('a shop whose card listings are all unavailable alerts the admin but still updates', async () => {
+    const soldOut = [
+      { ...blue12, available: false },
+      { ...blue12, url: 'https://www.blue-ocean.de/p/13', cardIds: ['13'], available: false },
+    ];
+    await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+    const s = await runCheck(depsWith([ok('blue-ocean', soldOut)]));
+    expect(s.shops['blue-ocean']).toEqual({ listings: 2 });
+    expect(listingManager.getByUrl(blue12.url)!.available).toBe(false);
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toContain('blue-ocean');
+    expect(alerts[0]).toContain('all 2');
+    await runCheck(depsWith([ok('blue-ocean', soldOut)]));
+    expect(alerts).toHaveLength(1);
+    expect(runManager.lastAlertAt('shop-all-unavailable:blue-ocean')).not.toBeNull();
+  });
+
+  test('no alert when some listings are available or the shop returned none', async () => {
+    await runCheck(
+      depsWith([ok('blue-ocean', [blue12, { ...blue12, url: 'https://x/2', available: false }])])
+    );
+    await runCheck(depsWith([ok('ebay', [])]));
+    expect(alerts).toHaveLength(0);
+  });
+
+  describe('image matching unavailable', () => {
+    let warn: ReturnType<typeof spyOn>;
+    beforeEach(() => {
+      warn = spyOn(logger, 'warn');
+    });
+    afterEach(() => {
+      warn.mockRestore();
+    });
+
+    const reference = (n: number): Listing => ({
+      ...blue12,
+      shop: 'sammel-ente',
+      url: `https://shop-sammel-ente.de/${n}`,
+      cardIds: [String(n)],
+      cardName: `C${n}`,
+      imageUrl: `https://shop-sammel-ente.de/${n}.jpg`,
+    });
+    const candidate = (n: number): Listing => ({
+      ...blue12,
+      url: `https://www.blue-ocean.de/p/${n}`,
+      cardIds: [String(n)],
+      imageUrl: `https://www.blue-ocean.de/${n}.jpg`,
+    });
+
+    test('without a model, one warning per run instead of one per listing', async () => {
+      userManager.setList('u1', '12, 13, 14');
+      const shops = () => [
+        ok('sammel-ente', [12, 13, 14].map(reference)),
+        ok('blue-ocean', [12, 13, 14].map(candidate)),
+      ];
+      await runCheck(depsWith(shops(), { embedder: null }));
+      const matchWarnings = () =>
+        warn.mock.calls.filter((c: unknown[]) => String(c[0]).includes('image match'));
+      expect(matchWarnings()).toHaveLength(1);
+      expect(String(matchWarnings()[0]![0])).toContain('3 listings');
+      expect(listingManager.getByUrl(candidate(13).url)!.matchStatus).toBe('model_unavailable');
+    });
+
+    test('a failing model also warns once per run', async () => {
+      userManager.setList('u1', '12, 13');
+      const broken: ImageEmbedder = {
+        model: 'broken',
+        embed: async () => {
+          throw new Error('onnx runtime missing');
+        },
+      };
+      await runCheck(
+        depsWith(
+          [ok('sammel-ente', [12, 13].map(reference)), ok('blue-ocean', [12, 13].map(candidate))],
+          { embedder: broken }
+        )
+      );
+      const matchWarnings = warn.mock.calls.filter((c: unknown[]) =>
+        String(c[0]).includes('image match')
+      );
+      expect(matchWarnings).toHaveLength(1);
+      expect(String(matchWarnings[0]![0])).toContain('onnx runtime missing');
+    });
   });
 });

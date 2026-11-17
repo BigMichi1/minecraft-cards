@@ -61,6 +61,9 @@ async function matchPending(
   fetched: Map<string, Listing>,
   wanted: Set<CardId>
 ): Promise<void> {
+  // One warning per run: a missing model would otherwise log a line for every listing.
+  const unavailable: string[] = [];
+  const onUnavailable = (reason: string) => void unavailable.push(reason);
   for (const l of stored) {
     if (!l.available || !needsMatch(l) || !l.cardIds.some((id) => wanted.has(id))) continue;
     const source = fetched.get(l.url);
@@ -73,9 +76,15 @@ async function matchPending(
       { ...source, cardIds: l.cardIds, imageUrl: l.imageUrl },
       reference,
       deps.embedder,
-      deps.threshold
+      deps.threshold,
+      { onUnavailable }
     );
     listingManager.setMatch(l.id, result.status, result.similarity);
+  }
+  if (unavailable.length > 0) {
+    logger.warn(
+      `image match unavailable for ${unavailable.length} listings this run: ${unavailable[0]}`
+    );
   }
 }
 
@@ -110,6 +119,14 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
         continue;
       }
       stored.push(...listingManager.upsertFromRun(adapter.id, found, deps.now()));
+      if (found.length > 0 && found.every((l) => !l.available)) {
+        // Every card sold out at once is more likely a changed stock marker than real.
+        await alert(
+          deps,
+          `shop-all-unavailable:${adapter.id}`,
+          `Shop ${adapter.id}: all ${found.length} card listings read as unavailable — check the stock marker.`
+        );
+      }
       for (const l of found) fetched.set(l.url, l);
       if (adapter.id === 'sammel-ente') {
         catalogManager.updateNamesAndReferences(

@@ -42,15 +42,16 @@ catalogManager.seedIfEmpty();
 logger.info('Card catalog ready');
 
 let embedder: ImageEmbedder | null = null;
+/** Set when the model failed to load; the admin gets one DM about it once Discord is ready. */
+let modelLoadFailure: string | null = null;
 try {
   embedder = createCachedEmbedder(
     await createTransformersEmbedder({ model: config.imageModel, cacheDir: config.modelCacheDir })
   );
   logger.info(`Image model ${config.imageModel} loaded`);
 } catch (error) {
-  logger.error(
-    `Image model ${config.imageModel} could not be loaded, running without image matching: ${errorMessage(error)}`
-  );
+  modelLoadFailure = `Image model ${config.imageModel} could not be loaded, running without image matching: ${errorMessage(error)}`;
+  logger.error(modelLoadFailure);
 }
 
 const adapters: ShopAdapter[] = [createSammelEnteAdapter(), createBlueOceanAdapter()];
@@ -108,6 +109,15 @@ client.on(Events.ClientReady, async (ready) => {
     }
   } catch (error) {
     logger.error(`Registering slash commands failed: ${errorMessage(error)}`);
+  }
+  if (modelLoadFailure) {
+    const text = modelLoadFailure;
+    modelLoadFailure = null;
+    try {
+      await dmAdmin(text);
+    } catch (error) {
+      logger.warn(`Could not tell the admin about the image model: ${errorMessage(error)}`);
+    }
   }
   scheduler.start();
   logger.info(`Stock check scheduled every ${config.checkIntervalMs / 60_000} minutes`);

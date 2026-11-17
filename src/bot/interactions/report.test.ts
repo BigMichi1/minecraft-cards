@@ -173,6 +173,25 @@ describe('report flow', () => {
     expect(spy.calls).toHaveLength(2);
   });
 
+  test('a failed admin DM does not silence the next report on the listing', async () => {
+    const l = makeListing();
+    await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'a'), async () => {
+      throw new Error('dm closed');
+    });
+    expect(db.select().from(reports).get()!.adminNotifiedAt).toBeNull();
+    const spy = adminSpy();
+    await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'b'), spy);
+    expect(spy.calls).toHaveLength(1);
+    await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'c'), spy);
+    expect(spy.calls).toHaveLength(1);
+    const notified = db
+      .select()
+      .from(reports)
+      .all()
+      .map((r) => r.adminNotifiedAt !== null);
+    expect(notified).toEqual([false, true, false]);
+  });
+
   test('modal still thanks the user when notifying the admin fails', async () => {
     const l = makeListing();
     await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'x'), async () => {

@@ -167,12 +167,13 @@ export async function handleReportModal(
       reason: parsed.reason,
       note,
     };
-    // Checked before inserting: only the first open report on a listing alerts the admin.
-    const alreadyOpen = reportManager.hasOpenReport(listing.id);
-    reportManager.create({ ...report, now: Date.now() });
-    if (!alreadyOpen) {
+    // Checked before inserting: the admin hears once per open hold, unless that DM failed.
+    const alreadyNotified = reportManager.hasNotifiedOpenReport(listing.id);
+    const reportId = reportManager.create({ ...report, now: Date.now() });
+    if (!alreadyNotified) {
       try {
         await notifyAdmin(buildAdminReportMessage(report, listing, i.user.tag ?? i.user.username));
+        reportManager.markAdminNotified(reportId, Date.now());
       } catch (err) {
         logger.error(
           `[REPORT] Could not notify the admin of a report on listing ${listing.id}: ${errorMessage(err)}`

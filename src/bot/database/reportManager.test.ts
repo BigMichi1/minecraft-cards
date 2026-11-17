@@ -17,6 +17,41 @@ describe('reportManager', () => {
     catalogManager.seedIfEmpty();
   });
 
+  function makeListing() {
+    return listingManager.upsertFromRun(
+      'blue-ocean',
+      [
+        {
+          shop: 'blue-ocean',
+          url: 'https://www.blue-ocean.de/p/12',
+          title: 't',
+          cardIds: ['12'],
+          cardName: null,
+          imageUrl: null,
+          price: null,
+          available: true,
+          format: 'shop',
+          auctionEndsAt: null,
+          idConflict: false,
+        },
+      ],
+      1
+    )[0]!;
+  }
+
+  test('only an open report whose admin DM went out counts as notified', () => {
+    const l = makeListing();
+    const report = { listingId: l.id, reporterId: 'u1', reason: 'other' as const, note: null };
+    expect(reportManager.hasNotifiedOpenReport(l.id)).toBe(false);
+    const first = reportManager.create({ ...report, now: 1 });
+    expect(reportManager.hasNotifiedOpenReport(l.id)).toBe(false);
+    reportManager.markAdminNotified(first, 7);
+    expect(reportManager.hasNotifiedOpenReport(l.id)).toBe(true);
+    expect(db.select().from(reports).get()!.adminNotifiedAt).toBe(7);
+    db.update(reports).set({ resolvedAt: 9 }).run();
+    expect(reportManager.hasNotifiedOpenReport(l.id)).toBe(false);
+  });
+
   test('create stores the report and puts the listing on hold', () => {
     const [l] = listingManager.upsertFromRun(
       'blue-ocean',
@@ -49,5 +84,6 @@ describe('reportManager', () => {
     expect(row.id).toBe(id);
     expect(row.note).toBe('shows #8');
     expect(row.resolvedAt).toBeNull();
+    expect(row.adminNotifiedAt).toBeNull();
   });
 });

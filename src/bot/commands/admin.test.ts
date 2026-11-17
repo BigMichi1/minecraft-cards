@@ -172,6 +172,48 @@ describe('/admin', () => {
     expect(text).toContain('Notified: 4 · DM failures: 1');
   });
 
+  test('status lists the listings on hold, up to 10', async () => {
+    await adminExecute(fakeAdmin(undefined, 'status'), ctx);
+    expect(lastReply().content).not.toContain('On hold');
+    const stored = listingManager.upsertFromRun(
+      'blue-ocean',
+      Array.from({ length: 12 }, (_, i) => ({
+        ...blue12,
+        url: `https://www.blue-ocean.de/p/${i + 1}`,
+        cardIds: i === 0 ? ['12', 'LE8'] : [String(i + 1)],
+      })),
+      1000
+    );
+    for (const l of stored) listingManager.setOnHold(l.id);
+    await adminExecute(fakeAdmin(undefined, 'status'), ctx);
+    const text = lastReply().content!;
+    expect(text).toContain('No check has run yet.');
+    expect(text).toContain('On hold: 12 listings');
+    expect(text).toContain('https://www.blue-ocean.de/p/1 (#12, #LE8)');
+    expect(text).toContain('https://www.blue-ocean.de/p/10 (#10)');
+    expect(text).not.toContain('https://www.blue-ocean.de/p/11 ');
+    expect(text).toContain('… and 2 more');
+  });
+
+  test('status with long held URLs stays within 2000 characters', async () => {
+    runManager.record(summary);
+    const stored = listingManager.upsertFromRun(
+      'blue-ocean',
+      Array.from({ length: 10 }, (_, i) => ({
+        ...blue12,
+        url: `https://www.blue-ocean.de/${String(i).repeat(400)}`,
+      })),
+      1000
+    );
+    for (const l of stored) listingManager.setOnHold(l.id);
+    await adminExecute(fakeAdmin(undefined, 'status'), ctx);
+    const text = lastReply().content!;
+    expect(text.length).toBeLessThanOrEqual(2000);
+    expect(text).toContain('On hold: 10 listings');
+    expect(text).toContain('Notified: 4 · DM failures: 1');
+    expect(text).toMatch(/… and \d+ more$/);
+  });
+
   test('run defers, then edits in the summary; busy is reported', async () => {
     await adminExecute(fakeAdmin(undefined, 'run'), ctx);
     expect(deferred).toBe(1);

@@ -314,6 +314,16 @@ export const listingManager = {
     });
   },
 
+  /** Listings paused by a report, oldest first. */
+  onHold(): StoredListing[] {
+    return db.transaction((tx) =>
+      load(
+        tx,
+        tx.select().from(listings).where(eq(listings.onHold, true)).orderBy(listings.id).all()
+      )
+    );
+  },
+
   setOnHold(listingId: number): void {
     db.update(listings).set({ onHold: true }).where(eq(listings.id, listingId)).run();
   },

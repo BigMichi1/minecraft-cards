@@ -42,4 +42,4 @@ not whether Discord is reachable. Shop failures and unparseable pages reach the 
 ## First start
 
 Run `/admin catalog import` as the admin to load the card catalog, `/admin run` to check the
-shops once, and `/admin status` to see the last run.
+shops once, and `/admin status` to see the last run and the listings on hold after a report.

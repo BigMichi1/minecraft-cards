@@ -8,6 +8,8 @@ export const reports = sqliteTable('reports', {
   note: text(),
   createdAt: integer().notNull(),
   resolvedAt: integer(),
+  /** When the admin DM about this report went out; null when it was not sent or failed. */
+  adminNotifiedAt: integer(),
 });
 
 export type Report = typeof reports.$inferSelect;

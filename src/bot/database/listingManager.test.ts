@@ -209,6 +209,18 @@ describe('listingManager', () => {
     expect(listingManager.pendingNotifications({ seenSince: 1001 }).get('u1')).toBeUndefined();
   });
 
+  test('onHold lists held listings by id', () => {
+    const [a, b] = listingManager.upsertFromRun(
+      'blue-ocean',
+      [blue12, { ...blue12, url: 'https://x/2' }],
+      1000
+    );
+    expect(listingManager.onHold()).toEqual([]);
+    listingManager.setOnHold(b!.id);
+    listingManager.setOnHold(a!.id);
+    expect(listingManager.onHold().map((l) => l.id)).toEqual([a!.id, b!.id]);
+  });
+
   test('overrideCards marks the listing confirmed by the admin', () => {
     listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
     const l = listingManager.getByUrl(blue12.url)!;

@@ -10,7 +10,7 @@ import { formatCardList, parseCardList } from '../cards/cardId';
 import { parseChecklist } from '../cards/starterCatalog';
 import type { RunSummary } from '../check/runner';
 import { catalogManager } from '../database/catalogManager';
-import { listingManager } from '../database/listingManager';
+import { listingManager, type StoredListing } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { buildPreviewText, importStore } from '../interactions/catalogImport';
 import { errorMessage } from '../utils/async';
@@ -43,7 +43,9 @@ export const data = new SlashCommandBuilder()
       .setDescription('Lift the hold on a listing and resolve its reports')
       .addStringOption((o) => o.setName('url').setDescription('Listing URL').setRequired(true))
   )
-  .addSubcommand((sub) => sub.setName('status').setDescription('Show the last check run'))
+  .addSubcommand((sub) =>
+    sub.setName('status').setDescription('Show the last check run and listings on hold')
+  )
   .addSubcommand((sub) => sub.setName('run').setDescription('Run a check now'))
   .addSubcommandGroup((group) =>
     group
@@ -76,11 +78,35 @@ export function formatSummary(summary: RunSummary): string {
   return lines.join('\n').slice(0, DISCORD_MESSAGE_LIMIT);
 }
 
+const MAX_HOLDS_SHOWN = 10;
+
+/** `On hold: N listings` and up to 10 `url (#ids)` lines, cut to what fits in `room`. */
+function holdsText(held: StoredListing[], room: number): string {
+  let text = `On hold: ${held.length} listings`;
+  let shown = 0;
+  for (const l of held.slice(0, MAX_HOLDS_SHOWN)) {
+    const ids = l.cardIds.map((id) => `#${id}`).join(', ') || 'no cards';
+    const line = `\n- ${l.url} (${ids})`;
+    const rest = held.length - shown - 1;
+    const tail = rest > 0 ? `\n… and ${rest} more` : '';
+    if (text.length + line.length + tail.length > room) break;
+    text += line;
+    shown++;
+  }
+  if (shown < held.length) text += `\n… and ${held.length - shown} more`;
+  return text.slice(0, room);
+}
+
 function statusText(): string {
   const last = runManager.last();
-  if (!last) return 'No check has run yet.';
-  const text = `Last run: <t:${Math.floor(last.finishedAt / 1000)}:R>\n${formatSummary(last)}`;
-  return text.slice(0, DISCORD_MESSAGE_LIMIT);
+  const run = last
+    ? `Last run: <t:${Math.floor(last.finishedAt / 1000)}:R>\n${formatSummary(last)}`
+    : 'No check has run yet.';
+  const held = listingManager.onHold();
+  if (held.length === 0) return run.slice(0, DISCORD_MESSAGE_LIMIT);
+  // With holds to list, the run summary may take at most half, so the holds always get room.
+  const head = run.slice(0, DISCORD_MESSAGE_LIMIT / 2);
+  return `${head}\n\n${holdsText(held, DISCORD_MESSAGE_LIMIT - head.length - 2)}`;
 }
 
 function mapCards(url: string, cardsInput: string): string {

@@ -43,10 +43,12 @@ function needsMatch(l: StoredListing): boolean {
 }
 
 async function alert(deps: RunDeps, key: string, text: string): Promise<void> {
+  const previous = runManager.lastAlertAt(key);
   if (!runManager.shouldAlert(key, deps.now(), ALERT_EVERY_MS)) return;
   try {
     await deps.alertAdmin(text);
   } catch (error) {
+    runManager.releaseAlert(key, previous);
     logger.warn(`admin alert failed (${key}): ${errorMessage(error)}`);
   }
 }

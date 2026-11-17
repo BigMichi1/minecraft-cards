@@ -31,4 +31,14 @@ export const runManager = {
       return true;
     });
   },
+
+  lastAlertAt(key: string): number | undefined {
+    return db.select().from(adminAlerts).where(eq(adminAlerts.key, key)).get()?.lastSentAt;
+  },
+
+  /** Undo a `shouldAlert` whose alert could not be delivered: restore `previous` (undefined removes the key). */
+  releaseAlert(key: string, previous: number | undefined): void {
+    if (previous === undefined) db.delete(adminAlerts).where(eq(adminAlerts.key, key)).run();
+    else db.update(adminAlerts).set({ lastSentAt: previous }).where(eq(adminAlerts.key, key)).run();
+  },
 };

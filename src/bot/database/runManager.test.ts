@@ -36,4 +36,14 @@ describe('runManager', () => {
     expect(runManager.shouldAlert('k', 1500, 500)).toBe(true);
     expect(runManager.shouldAlert('k', 1600, 500)).toBe(false);
   });
+
+  test('releaseAlert restores the previous state', () => {
+    expect(runManager.lastAlertAt('k')).toBeUndefined();
+    runManager.shouldAlert('k', 1000, 500);
+    runManager.releaseAlert('k', undefined);
+    expect(runManager.shouldAlert('k', 1100, 500)).toBe(true);
+    runManager.shouldAlert('k', 2000, 500);
+    runManager.releaseAlert('k', 1100);
+    expect(runManager.lastAlertAt('k')).toBe(1100);
+  });
 });

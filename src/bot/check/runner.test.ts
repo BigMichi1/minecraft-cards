@@ -224,4 +224,20 @@ describe('runCheck', () => {
     );
     expect(s.shops['blue-ocean']!.error).toContain('down');
   });
+
+  test('a failed admin alert gives the 24 h slot back so the next run alerts again', async () => {
+    let fail = true;
+    const alertAdmin = async (text: string) => {
+      if (fail) throw new Error('dms closed');
+      alerts.push(text);
+    };
+    const down = () => failing('blue-ocean', new Error('down'));
+    await runCheck(depsWith([down()], { alertAdmin }));
+    expect(alerts).toHaveLength(0);
+    fail = false;
+    await runCheck(depsWith([down()], { alertAdmin }));
+    expect(alerts).toHaveLength(1);
+    await runCheck(depsWith([down()], { alertAdmin }));
+    expect(alerts).toHaveLength(1);
+  });
 });

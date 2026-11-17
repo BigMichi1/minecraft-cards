@@ -78,6 +78,14 @@ run = "bun run db:generate"
 description = "Open Drizzle Studio against the local database"
 run = "bun run db:studio"
 
+[tasks."measure:threshold"]
+description = "Measure image similarity of true and false card pairs per model (needs network)"
+run = "bun run scripts/measure-threshold.ts"
+
+[tasks."model:download"]
+description = "Download IMAGE_MODEL into MODEL_CACHE_DIR (default ./models) once"
+run = "bun run scripts/download-model.ts"
+
 [tasks.audit]
 description = "Audit dependencies for vulnerabilities"
 run = "bun audit"

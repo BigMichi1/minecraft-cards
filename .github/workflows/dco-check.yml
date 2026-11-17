@@ -13,7 +13,7 @@ permissions:
 jobs:
   dco:
     permissions:
-      contents: write  # for Git to git push
+      contents: read
     name: DCO Sign-Off Check
     runs-on: ubuntu-latest
     steps:
@@ -28,14 +28,26 @@ jobs:
           fetch-depth: 0
 
       - name: Check DCO sign-offs
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
         run: |
-          # Get the list of commits in the PR or push
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            # For PRs, check commits from base to head
-            COMMIT_RANGE="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+          # The commits of the PR, or the commits this push added.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            COMMIT_RANGE="$PR_BASE..$PR_HEAD"
+          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # A new branch has no "before": check the pushed commit itself.
+            if git rev-parse --verify -q "$PUSH_SHA^" >/dev/null; then
+              COMMIT_RANGE="$PUSH_SHA^..$PUSH_SHA"
+            else
+              COMMIT_RANGE="$PUSH_SHA"
+            fi
           else
-            # For pushes, check all new commits
-            COMMIT_RANGE="HEAD~${{ github.event.push.size }}..HEAD"
+            COMMIT_RANGE="$PUSH_BEFORE..$PUSH_SHA"
           fi
 
           # Check for Signed-off-by in commit messages
@@ -54,7 +66,7 @@ jobs:
             echo ""
             echo "The following commits are not signed off:"
             for commit in "${unsigned_commits[@]}"; do
-              echo "  - $(git log --oneline -n 1 $commit)"
+              echo "  - $(git log --oneline -n 1 "$commit")"
             done
             echo ""
             echo "Please sign off on all commits using:"

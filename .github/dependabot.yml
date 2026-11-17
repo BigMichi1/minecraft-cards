@@ -8,11 +8,9 @@ updates:
       day: monday
       time: "03:00"
     open-pull-requests-limit: 5
-    # Packages in these families must move together. When Dependabot bumped
-    # @commitlint/config-conventional on its own, the newer config pulled an
-    # ESM-only dependency the pinned CLI could not require and every commit
-    # failed; @typescript-eslint/parser and its plugin sat two minors apart for
-    # the same reason. Grouping makes each family one PR.
+    # Packages in these families must move together (a config ahead of its CLI,
+    # or a parser ahead of its plugin, breaks the hooks). Grouping makes each
+    # family one PR.
     groups:
       commitlint:
         patterns:
@@ -38,17 +36,13 @@ updates:
     pull-request-branch-name:
       separator: "/"
     rebase-strategy: auto
-    # Syncpack enforces exact pins on every dependency, so `lockfile-only` left
-    # Dependabot with nothing it was allowed to change: the single pinned
-    # version is the only one the manifest range admits. `increase` lets it
-    # rewrite the pin itself, which is how discord.js 14.26.4 sat untouched
-    # while 14.27.0 was published.
+    # Syncpack enforces exact pins on every dependency, so `lockfile-only` would
+    # leave Dependabot nothing to change; `increase` lets it rewrite the pin.
     versioning-strategy: increase
     ignore:
       # typescript-eslint does not support TS 7.0: the plugin throws on load,
-      # which breaks `mise run lint` and with it the pre-commit hook. TS 7.0.2
-      # merged automatically once and had to be reverted. Lift this once
-      # typescript-eslint ships TS 7 support.
+      # which breaks `mise run lint` and with it the pre-commit hook. Lift this
+      # once typescript-eslint ships TS 7 support.
       # https://github.com/typescript-eslint/typescript-eslint/issues/10940
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]

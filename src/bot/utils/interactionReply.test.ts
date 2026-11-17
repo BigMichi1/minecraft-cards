@@ -23,7 +23,7 @@ function fakeInteraction(opts: {
       deferred: opts.deferred ?? false,
       replied: opts.replied ?? false,
       isChatInputCommand: () => true,
-      commandName: 'redeem',
+      commandName: 'missing',
       async editReply(payload: any) {
         calls.push({ method: 'editReply', payload });
         if (opts.editReplyThrows) throw new Error('Unknown interaction');

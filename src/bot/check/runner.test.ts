@@ -421,6 +421,26 @@ describe('runCheck', () => {
     expect(stale.dmFailures).toBe(0);
   });
 
+  test('an eBay listing missing for three intervals (within the 24 h grace) is not notified until seen again', async () => {
+    const ebay12: Listing = {
+      ...blue12,
+      shop: 'ebay',
+      url: 'https://www.ebay.de/itm/1',
+      format: 'fixed_price',
+    };
+    const other: Listing = { ...ebay12, url: 'https://www.ebay.de/itm/2', cardIds: [cid('99')] };
+    userManager.clearList('u1');
+    userManager.setList('u0', '99');
+    await runCheck(depsWith([ok('ebay', [ebay12, other])]));
+    for (let i = 0; i < 3; i++) await runCheck(depsWith([ok('ebay', [other])]));
+    // Still available (grace), but last seen three intervals ago: stale.
+    expect(listingManager.getByUrl(ebay12.url)!.available).toBe(true);
+    userManager.setList('u1', '12');
+    expect((await runCheck(depsWith([ok('ebay', [other])]))).notified).toBe(0);
+    expect((await runCheck(depsWith([ok('ebay', [ebay12, other])]))).notified).toBe(1);
+    expect((await runCheck(depsWith([ok('ebay', [ebay12, other])]))).notified).toBe(0);
+  });
+
   test('a shop whose card listings are all unavailable alerts the admin but still updates', async () => {
     const soldOut = [
       { ...blue12, available: false },

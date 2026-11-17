@@ -78,10 +78,15 @@ describe('notification messages', () => {
     expect(at(msgs, 1).message.embeds).toHaveLength(2);
     const row = (at(msgs, 0).message.components![0] as any).toJSON();
     expect(row.components.map((c: { label: string }) => c.label)).toEqual([
-      'Open in shop',
-      'Kleinanzeigen',
-      '❌ Wrong card',
+      '1️⃣ #12 · blue-ocean',
+      'Kleinanzeigen #12',
+      '❌ Wrong #12',
     ]);
+    const fifth = (at(msgs, 0).message.components![4] as any).toJSON();
+    expect(fifth.components[0].label).toBe('5️⃣ #12 · blue-ocean');
+    expect(embedJson(at(msgs, 0).message, 4).title).toStartWith('5️⃣ ');
+    // Numbering restarts with every message.
+    expect(embedJson(at(msgs, 1).message, 0).title).toStartWith('1️⃣ ');
     expect(row.components[0].url).toBe('https://shop/1');
     expect(row.components[1].url).toBe('https://www.kleinanzeigen.de/s-lego-minecraft-karte-12/k0');
     expect(row.components[2].custom_id).toBe('report:1');
@@ -89,7 +94,7 @@ describe('notification messages', () => {
 
   test('embed title, fields, image and confirmed footer', () => {
     const e = embedJson(atMsg(buildNotificationMessages([item(1)]), 0));
-    expect(e.title).toBe('🟢 Card #12 Squid is available');
+    expect(e.title).toBe('1️⃣ 🟢 Card #12 Squid is available');
     expect(e.image.url).toBe('https://img/1.jpg');
     expect(e.thumbnail).toBeUndefined();
     expect(e.footer.text).toBe('✅ picture matches reference (0.94)');
@@ -103,7 +108,7 @@ describe('notification messages', () => {
       item(1, { cardIds: [cid('45')], matchStatus: 'unconfirmed', similarity: 0.5 }),
       item(2, { matchStatus: 'unconfirmed', similarity: 0.5 }),
     ]);
-    expect(embedJson(at(msgs, 0).message, 0).title).toBe('🟢 Card #45 is available');
+    expect(embedJson(at(msgs, 0).message, 0).title).toBe('1️⃣ 🟢 Card #45 is available');
     const e = embedJson(at(msgs, 0).message, 1);
     expect(e.footer.text).toContain('⚠️ number unconfirmed');
     expect(e.thumbnail.url).toBe(referenceUrl);
@@ -143,7 +148,7 @@ describe('notification messages', () => {
         0
       )
     );
-    expect(e.title).toBe('🟢 Bundle with #12, #45 on eBay');
+    expect(e.title).toBe('1️⃣ 🟢 Bundle with #12, #45 on eBay');
     const price = e.fields.find((x: { name: string }) => x.name === 'Price').value;
     expect(price).toBe('12,50 € · Auction · ends <t:1700000000:R>');
   });
@@ -164,6 +169,16 @@ describe('notification messages', () => {
       )
     );
     expect(e.title.length).toBeLessThanOrEqual(256);
+    const row = (
+      atMsg(buildNotificationMessages([item(1, { cardIds: ids, shop: 'ebay' })]), 0)
+        .components![0] as any
+    ).toJSON();
+    expect(row.components.map((c: { label: string }) => c.label)).toEqual([
+      '1️⃣ Bundle · eBay',
+      'Kleinanzeigen #1',
+      '❌ Wrong bundle',
+    ]);
+    for (const c of row.components) expect(c.label.length).toBeLessThanOrEqual(80);
     expect(e.fields.find((x: { name: string }) => x.name === 'Price').value).toBe('5.00 USD');
   });
 
@@ -177,11 +192,11 @@ describe('notification messages', () => {
     const message = atMsg(msgs, 0);
     const labels = (i: number) =>
       (message.components![i] as any).toJSON().components.map((c: { label: string }) => c.label);
-    expect(labels(0)).toEqual(['Kleinanzeigen', '❌ Wrong card']);
+    expect(labels(0)).toEqual(['1️⃣ Kleinanzeigen #12', '❌ Wrong #12']);
     expect(embedJson(message, 0).url).toBeUndefined();
     expect(embedJson(message, 1).image).toBeUndefined();
-    expect(labels(1)).toContain('Open in shop');
-    expect(labels(2)).toEqual(['Kleinanzeigen', '❌ Wrong card']);
+    expect(labels(1)).toContain('2️⃣ #12 · blue-ocean');
+    expect(labels(2)).toEqual(['3️⃣ Kleinanzeigen #12', '❌ Wrong #12']);
     expect(at(msgs, 0).items.map((x) => x.listing.id)).toEqual([1, 2, 3]);
   });
 

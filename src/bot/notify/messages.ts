@@ -18,6 +18,12 @@ export interface NotificationItem {
 export const ITEMS_PER_MESSAGE = 5;
 const MAX_TITLE = 256;
 const MAX_FIELD = 1024;
+const MAX_LABEL = 80;
+/**
+ * Discord shows all button rows below all embeds, so each embed title and its row carry the
+ * same position marker (one per item of a message).
+ */
+const POSITION_MARKERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'] as const;
 
 const SHOP_NAMES: Record<ShopId, string> = {
   'sammel-ente': 'sammel-ente',
@@ -52,15 +58,18 @@ function formatPrice(price: Money): string {
   return `${amount} ${price.currency}`;
 }
 
-function title(item: NotificationItem): string {
+function title(item: NotificationItem, marker: string): string {
   const { listing, cardIds } = item;
   if (cardIds.length > 1) {
     const ids = cardIds.map((id) => `#${id}`).join(', ');
-    return truncate(`🟢 Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
+    return truncate(`${marker} 🟢 Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
   }
   const [id] = cardIds;
   const name = id === undefined ? undefined : catalogManager.getCard(id)?.name;
-  return truncate(`🟢 Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`, MAX_TITLE);
+  return truncate(
+    `${marker} 🟢 Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`,
+    MAX_TITLE
+  );
 }
 
 function footer(listing: StoredListing): string | null {
@@ -87,7 +96,7 @@ function footer(listing: StoredListing): string | null {
   }
 }
 
-function buildEmbed(item: NotificationItem): EmbedBuilder {
+function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
   const { listing } = item;
   const priceParts: string[] = [];
   if (listing.price) priceParts.push(formatPrice(listing.price));
@@ -95,7 +104,7 @@ function buildEmbed(item: NotificationItem): EmbedBuilder {
     priceParts.push(`Auction · ends <t:${Math.floor(listing.auctionEndsAt / 1000)}:R>`);
   }
   if (listing.format === 'fixed_price') priceParts.push('Buy It Now');
-  const embed = new EmbedBuilder().setTitle(title(item)).addFields(
+  const embed = new EmbedBuilder().setTitle(title(item, marker)).addFields(
     { name: 'Shop', value: truncate(SHOP_NAMES[listing.shop], MAX_FIELD), inline: true },
     {
       name: 'Price',
@@ -117,29 +126,45 @@ function buildEmbed(item: NotificationItem): EmbedBuilder {
   return embed;
 }
 
-function buildRow(item: NotificationItem): ActionRowBuilder<ButtonBuilder> {
-  const buttons: ButtonBuilder[] = [];
-  const listingUrl = validUrl(item.listing.url);
+/**
+ * Link to the listing (`#12 · sammel-ente`, `Bundle · eBay`), Kleinanzeigen search for the
+ * (first) card, report button. The first button carries the item's position marker.
+ */
+function buildRow(item: NotificationItem, marker: string): ActionRowBuilder<ButtonBuilder> {
+  const { listing, cardIds } = item;
+  const [first] = cardIds;
+  const bundle = cardIds.length > 1;
+  const shop = SHOP_NAMES[listing.shop];
+  const buttons: { label: string; build: (label: string) => ButtonBuilder }[] = [];
+  const listingUrl = validUrl(listing.url);
   if (listingUrl) {
-    buttons.push(
-      new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Open in shop').setURL(listingUrl)
-    );
+    buttons.push({
+      label: bundle ? `Bundle · ${shop}` : `#${first ?? '?'} · ${shop}`,
+      build: (label) =>
+        new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(listingUrl),
+    });
   }
-  if (item.cardIds[0]) {
-    buttons.push(
+  if (first) {
+    buttons.push({
+      label: `Kleinanzeigen #${first}`,
+      build: (label) =>
+        new ButtonBuilder()
+          .setStyle(ButtonStyle.Link)
+          .setLabel(label)
+          .setURL(kleinanzeigenSearchUrl(first)),
+    });
+  }
+  buttons.push({
+    label: bundle ? '❌ Wrong bundle' : `❌ Wrong #${first ?? '?'}`,
+    build: (label) =>
       new ButtonBuilder()
-        .setStyle(ButtonStyle.Link)
-        .setLabel('Kleinanzeigen')
-        .setURL(kleinanzeigenSearchUrl(item.cardIds[0]))
-    );
-  }
-  buttons.push(
-    new ButtonBuilder()
-      .setStyle(ButtonStyle.Secondary)
-      .setLabel('❌ Wrong card')
-      .setCustomId(`report:${item.listing.id}`)
+        .setStyle(ButtonStyle.Secondary)
+        .setLabel(label)
+        .setCustomId(`report:${listing.id}`),
+  });
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    buttons.map((b, i) => b.build(truncate(i === 0 ? `${marker} ${b.label}` : b.label, MAX_LABEL)))
   );
-  return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
 export interface NotificationMessage<T extends NotificationItem = NotificationItem> {
@@ -148,15 +173,22 @@ export interface NotificationMessage<T extends NotificationItem = NotificationIt
   items: T[];
 }
 
-/** One message per 5 items (Discord allows 10 embeds and 5 action rows per message). */
+/**
+ * One message per 5 items (Discord allows 10 embeds and 5 action rows per message). Embed n
+ * and button row n start with the same position marker.
+ */
 export function buildNotificationMessages<T extends NotificationItem>(
   items: T[]
 ): NotificationMessage<T>[] {
   const messages: NotificationMessage<T>[] = [];
   for (let i = 0; i < items.length; i += ITEMS_PER_MESSAGE) {
     const chunk = items.slice(i, i + ITEMS_PER_MESSAGE);
+    const marker = (n: number) => POSITION_MARKERS[n] ?? `${n + 1}.`;
     messages.push({
-      message: { embeds: chunk.map(buildEmbed), components: chunk.map(buildRow) },
+      message: {
+        embeds: chunk.map((item, n) => buildEmbed(item, marker(n))),
+        components: chunk.map((item, n) => buildRow(item, marker(n))),
+      },
       items: chunk,
     });
   }

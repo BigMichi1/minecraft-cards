@@ -31,7 +31,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         {
           name: 'Wrong card?',
           value:
-            'If a notification shows the wrong card, press the wrong-card button on that message to report it.',
+            'If a notification shows the wrong card, press ❌ Wrong in the row with the same number (1️⃣, 2️⃣, …) as that card.',
         },
         {
           name: 'Good to know',

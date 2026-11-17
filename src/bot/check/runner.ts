@@ -50,6 +50,8 @@ export interface RunDeps {
   now: () => number;
   /** The check interval; listings unseen for two of them (a failing shop) are not notified. */
   intervalMs: number;
+  /** Retry the admin DMs of reports whose DM failed (interactions/report.ts); never rejects. */
+  retryReports?: () => Promise<unknown>;
 }
 
 /** A picture that could not be loaded is tried again at most once per day. */
@@ -214,6 +216,11 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
     summary.error = errorMessage(error);
     logError('check run failed', error);
     await alert('run-error', `Check run failed: ${summary.error}`);
+  }
+  try {
+    await deps.retryReports?.();
+  } catch (error) {
+    logError('retrying report DMs failed', error);
   }
 
   summary.finishedAt = deps.now();

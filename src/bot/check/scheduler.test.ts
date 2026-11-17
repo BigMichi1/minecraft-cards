@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
+import logger from '../utils/logger';
 import { createScheduler } from './scheduler';
 import type { RunSummary } from './runner';
 
@@ -70,6 +71,35 @@ describe('createScheduler', () => {
     const run = failing.trigger().catch((e: unknown) => e);
     await failing.stop();
     expect(await run).toBeInstanceOf(Error);
+  });
+
+  test('trigger after stop does not start a run', async () => {
+    let calls = 0;
+    const sched = createScheduler(async () => {
+      calls++;
+      return summary;
+    }, 60_000);
+    await sched.stop();
+    expect(await sched.trigger()).toBe('stopping');
+    expect(calls).toBe(0);
+  });
+
+  test('a failing scheduled run is logged with its stack', async () => {
+    const log = spyOn(logger, 'log');
+    try {
+      const sched = createScheduler(async () => {
+        throw new Error('boom');
+      }, 60_000);
+      sched.start();
+      for (let i = 0; i < 100 && log.mock.calls.length === 0; i++) await Bun.sleep(5);
+      await sched.stop();
+      const call = (log.mock.calls as unknown[][]).find((c) =>
+        String(c[1]).includes('scheduled check failed: boom')
+      );
+      expect(call?.[2]).toHaveProperty('stack');
+    } finally {
+      log.mockRestore();
+    }
   });
 
   test('a tick during a slow run is skipped and a failing run does not stop the timer', async () => {

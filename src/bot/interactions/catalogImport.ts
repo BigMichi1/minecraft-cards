@@ -2,9 +2,8 @@ import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import { catalogManager, type ImportPreview } from '../database/catalogManager';
-import { errorMessage } from '../utils/async';
 import { replyWithError } from '../utils/interactionReply';
-import logger from '../utils/logger';
+import { logError } from '../utils/logger';
 import { joinWithinLimit } from '../utils/messageLimit';
 
 const TTL_MS = 10 * 60_000;
@@ -12,6 +11,8 @@ const EXPIRED = 'This import expired, run the command again.';
 
 export interface ImportStore {
   put(ids: CardId[]): string;
+  /** The pending ids, without consuming the token; undefined when unknown or expired. */
+  peek(token: string): CardId[] | undefined;
   /** Returns the pending ids once; the token is consumed. */
   take(token: string): CardId[] | undefined;
 }
@@ -25,6 +26,10 @@ export function createImportStore(now: () => number): ImportStore {
       const token = crypto.randomUUID();
       pending.set(token, { ids, expiresAt: t + TTL_MS });
       return token;
+    },
+    peek(token) {
+      const entry = pending.get(token);
+      return entry && entry.expiresAt > now() ? entry.ids : undefined;
     },
     take(token) {
       const entry = pending.get(token);
@@ -72,19 +77,29 @@ export async function handleCatalogButton(
     const sep = i.customId.indexOf(':');
     const action = i.customId.slice(0, sep);
     const token = i.customId.slice(sep + 1);
-    const ids = store.take(token);
+    const ids = store.peek(token);
     if (!ids) {
+      store.take(token);
       await i.update({ content: EXPIRED, components: [] });
       return;
     }
     if (action === 'catalog-save') {
-      catalogManager.applyImport(ids);
-      await i.update({ content: 'Catalog saved.', components: [] });
-    } else {
-      await i.update({ content: 'Import cancelled.', components: [] });
+      try {
+        catalogManager.applyImport(ids);
+      } catch (err) {
+        // The token stays: the buttons still work for another try.
+        logError('[CATALOG IMPORT] saving failed', err);
+        await replyWithError(i, 'Import failed', 'Saving the catalog failed. Press Save again.');
+        return;
+      }
     }
+    store.take(token);
+    await i.update({
+      content: action === 'catalog-save' ? 'Catalog saved.' : 'Import cancelled.',
+      components: [],
+    });
   } catch (err) {
-    logger.error(`[CATALOG IMPORT] button failed: ${errorMessage(err)}`);
+    logError('[CATALOG IMPORT] button failed', err);
     await replyWithError(i, 'Import failed', 'Something went wrong. Please try again later.');
   }
 }

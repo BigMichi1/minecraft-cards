@@ -16,14 +16,14 @@ import { runManager } from '../database/runManager';
 import { buildPreviewText, importStore } from '../interactions/catalogImport';
 import { errorMessage } from '../utils/async';
 import { replyWithError } from '../utils/interactionReply';
-import logger from '../utils/logger';
+import { logError } from '../utils/logger';
 import { DISCORD_MESSAGE_LIMIT, joinWithinLimit } from '../utils/messageLimit';
 
 const LIST_OPTION_MAX_LENGTH = 6000;
 
 export interface AdminContext {
   adminId: string;
-  trigger: () => Promise<RunSummary | 'busy'>;
+  trigger: () => Promise<RunSummary | 'busy' | 'stopping'>;
 }
 
 export const data = new SlashCommandBuilder()
@@ -75,8 +75,10 @@ export function formatSummary(summary: RunSummary): string {
     let line = `${shop}: ${s.listings} listings`;
     if (s.error) line += ` — error: ${s.error}`;
     if (s.skippedNoId) line += ` (skipped ${s.skippedNoId} without card number)`;
+    if (s.skippedInvalid) line += ` (skipped ${s.skippedInvalid} without link or title)`;
     return line;
   });
+  if (summary.error) lines.push(`Run failed: ${summary.error}`);
   lines.push(`Notified: ${summary.notified} · DM failures: ${summary.dmFailures}`);
   return lines.join('\n').slice(0, DISCORD_MESSAGE_LIMIT);
 }
@@ -195,17 +197,27 @@ export async function execute(
       case 'run': {
         // A check takes minutes (shops + images); acknowledge within Discord's 3 s window.
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-        const result = await ctx.trigger();
-        await interaction.editReply({
-          content: result === 'busy' ? 'A check is already running.' : formatSummary(result),
-        });
+        let content: string;
+        try {
+          const result = await ctx.trigger();
+          content =
+            result === 'busy'
+              ? 'A check is already running.'
+              : result === 'stopping'
+                ? 'The bot is shutting down; no check was started.'
+                : formatSummary(result);
+        } catch (error) {
+          logError('[ADMIN COMMAND] /admin run failed', error);
+          content = `Check failed: ${errorMessage(error)}`.slice(0, DISCORD_MESSAGE_LIMIT);
+        }
+        await interaction.editReply({ content });
         return;
       }
       default:
         throw new Error(`Unknown /admin subcommand: ${sub}`);
     }
   } catch (error) {
-    logger.error(`[ADMIN COMMAND] Error: ${errorMessage(error)}`);
+    logError('[ADMIN COMMAND] failed', error);
     await replyWithError(interaction, 'Error', 'Something went wrong running the admin command.');
   }
 }

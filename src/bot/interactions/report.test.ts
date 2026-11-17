@@ -1,15 +1,18 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction, MessageCreateOptions, ModalSubmitInteraction } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
 import { cards, listingCards, listings, reports } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
+import { reportManager } from '../database/reportManager';
+import logger from '../utils/logger';
 import {
   buildAdminReportMessage,
   handleReportButton,
   handleReportModal,
   handleReportReason,
+  retryUnsentReports,
 } from './report';
 import { cid } from '../../test/cardIds';
 
@@ -193,13 +196,71 @@ describe('report flow', () => {
     expect(notified).toEqual([false, true, false]);
   });
 
-  test('modal still thanks the user when notifying the admin fails', async () => {
+  test('when notifying the admin fails the user is told the truth', async () => {
     const l = makeListing();
     await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'x'), async () => {
       throw new Error('dm closed');
     });
     expect(db.select().from(reports).all()).toHaveLength(1);
-    expect(edits[0].content).toContain('admin has been notified');
+    expect(edits[0].content).not.toContain('admin has been notified');
+    expect(edits[0].content).toContain('paused');
+    expect(edits[0].content).toContain('try again');
+  });
+
+  test('a DM that went out but could not be recorded still thanks the user', async () => {
+    const l = makeListing();
+    const mark = spyOn(reportManager, 'markAdminNotified').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+    const log = spyOn(logger, 'log');
+    try {
+      const spy = adminSpy();
+      await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'x'), spy);
+      expect(spy.calls).toHaveLength(1);
+      expect(edits[0].content).toContain('admin has been notified');
+      expect(
+        log.mock.calls.some((c: unknown[]) => String(c[1]).includes('could not be recorded'))
+      ).toBe(true);
+    } finally {
+      mark.mockRestore();
+      log.mockRestore();
+    }
+  });
+
+  describe('retryUnsentReports', () => {
+    test('DMs the admin about open reports whose DM failed, once', async () => {
+      const l = makeListing();
+      await handleReportModal(fakeModal(`report-modal:${l.id}:wrong_number`, 'x'), async () => {
+        throw new Error('dm closed');
+      });
+      const spy = adminSpy();
+      expect(await retryUnsentReports(spy)).toBe(1);
+      expect(spy.calls).toHaveLength(1);
+      expect(db.select().from(reports).get()!.adminNotifiedAt).not.toBeNull();
+      expect(await retryUnsentReports(spy)).toBe(0);
+      expect(spy.calls).toHaveLength(1);
+    });
+
+    test('a failing retry leaves the report for the next run and never throws', async () => {
+      const l = makeListing();
+      const failing = async () => {
+        throw new Error('dm closed');
+      };
+      await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'x'), failing);
+      expect(await retryUnsentReports(failing)).toBe(0);
+      expect(db.select().from(reports).get()!.adminNotifiedAt).toBeNull();
+    });
+
+    test('a resolved report is not retried', async () => {
+      const l = makeListing();
+      await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'x'), async () => {
+        throw new Error('dm closed');
+      });
+      listingManager.clearHold(l.url);
+      const spy = adminSpy();
+      expect(await retryUnsentReports(spy)).toBe(0);
+      expect(spy.calls).toHaveLength(0);
+    });
   });
 
   test('modal for a vanished listing or bad id never throws', async () => {

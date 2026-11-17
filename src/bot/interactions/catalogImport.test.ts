@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { ButtonInteraction } from 'discord.js';
 import { catalogManager } from '../database/catalogManager';
 import { db, initializeDatabase } from '../database/db';
@@ -67,6 +67,22 @@ describe('handleCatalogButton', () => {
     expect([...catalogManager.knownIds()].sort()).toEqual(ids('1', '2'));
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
     expect(updates[1].content).toBe('This import expired, run the command again.');
+  });
+
+  test('a failing save keeps the token, so pressing Save again works', async () => {
+    const store = createImportStore(() => clock);
+    const token = store.put([cid('1'), cid('2')]);
+    const apply = spyOn(catalogManager, 'applyImport').mockImplementationOnce(() => {
+      throw new Error('database is locked');
+    });
+    try {
+      await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
+      expect(replies[0].embeds[0].toJSON().description).toContain('Press Save again');
+      await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
+      expect(updates.at(-1).content).toBe('Catalog saved.');
+    } finally {
+      apply.mockRestore();
+    }
   });
 
   test('cancel stores nothing', async () => {

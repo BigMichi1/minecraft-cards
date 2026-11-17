@@ -170,6 +170,13 @@ describe('runCheck', () => {
     expect((await runCheck(depsWith([ok('blue-ocean', [blue12])]))).notified).toBe(0);
   });
 
+  test('every run retries the admin DMs of reports that failed, even with no wanted cards', async () => {
+    userManager.clearList('u1');
+    let retries = 0;
+    await runCheck(depsWith([], { retryReports: async () => void retries++ }));
+    expect(retries).toBe(1);
+  });
+
   test('no wanted cards means no fetch but the run is recorded', async () => {
     userManager.clearList('u1');
     const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));

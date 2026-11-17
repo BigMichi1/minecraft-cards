@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { STARTER_CHECKLIST } from '../cards/starterCatalog';
@@ -20,7 +20,8 @@ import {
 } from '../database/schema/index';
 import { userManager } from '../database/userManager';
 import type { Listing } from '../shops/types';
-import { data, execute as adminExecute, type AdminContext } from './admin';
+import logger from '../utils/logger';
+import { data, execute as adminExecute, formatSummary, type AdminContext } from './admin';
 import { cid, ids } from '../../test/cardIds';
 
 const blue12: Listing = {
@@ -228,6 +229,37 @@ describe('/admin', () => {
     ctx.trigger = async () => 'busy';
     await adminExecute(fakeAdmin(undefined, 'run'), ctx);
     expect(lastReply().content).toBe('A check is already running.');
+    ctx.trigger = async () => 'stopping';
+    await adminExecute(fakeAdmin(undefined, 'run'), ctx);
+    expect(lastReply().content).toBe('The bot is shutting down; no check was started.');
+  });
+
+  test('a check that rejects after the deferral is one edit naming the error', async () => {
+    const log = spyOn(logger, 'log');
+    try {
+      ctx.trigger = async () => {
+        throw new Error('database is locked');
+      };
+      await adminExecute(fakeAdmin(undefined, 'run'), ctx);
+      expect(deferred).toBe(1);
+      expect(replies).toEqual([{ content: 'Check failed: database is locked' }]);
+      const call = (log.mock.calls as unknown[][]).find((c) => String(c[1]).includes('/admin run'));
+      expect(call?.[2]).toHaveProperty('stack');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('the summary names skipped invalid items and a failed run', () => {
+    expect(
+      formatSummary({
+        ...summary,
+        shops: { ebay: { listings: 1, skippedInvalid: 3 } },
+        error: 'gateway gone',
+      })
+    ).toBe(
+      'ebay: 1 listings (skipped 3 without link or title)\nRun failed: gateway gone\nNotified: 4 · DM failures: 1'
+    );
   });
 
   describe('catalog import', () => {

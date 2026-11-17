@@ -13,8 +13,7 @@ import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { reportManager, type ReportReason } from '../database/reportManager';
 import { validUrl } from '../notify/messages';
-import { errorMessage } from '../utils/async';
-import logger from '../utils/logger';
+import logger, { logError } from '../utils/logger';
 import { replyWithError } from '../utils/interactionReply';
 
 const REASONS: Record<ReportReason, string> = {
@@ -26,6 +25,46 @@ const MAX_NOTE = 500;
 const MAX_FIELD = 1024;
 const NO_LISTING = 'This listing no longer exists.';
 const THANKS = "Thanks — the admin has been notified. This listing is paused until it's checked.";
+const THANKS_UNSENT =
+  "Thanks — this listing is paused until it's checked. The admin could not be reached just now; the bot will try again with the next check.";
+
+type NotifyAdmin = (msg: MessageCreateOptions) => Promise<void>;
+
+/**
+ * DM the admin about one report and record it. True when the DM went out (even if recording
+ * it then failed: the admin knows, at worst the next check DMs again).
+ */
+async function sendReport(
+  notifyAdmin: NotifyAdmin,
+  report: {
+    id: number;
+    listingId: number;
+    reporterId: string;
+    reason: ReportReason;
+    note: string | null;
+  },
+  listing: StoredListing,
+  reporterTag: string
+): Promise<boolean> {
+  try {
+    await notifyAdmin(buildAdminReportMessage(report, listing, reporterTag));
+  } catch (err) {
+    logError(
+      `[REPORT] Could not notify the admin of report ${report.id} on listing ${listing.id}`,
+      err
+    );
+    return false;
+  }
+  try {
+    reportManager.markAdminNotified(report.id, Date.now());
+  } catch (err) {
+    logError(
+      `[REPORT] The admin DM for report ${report.id} went out but could not be recorded`,
+      err
+    );
+  }
+  return true;
+}
 
 function isReason(value: string | undefined): value is ReportReason {
   return value !== undefined && Object.hasOwn(REASONS, value);
@@ -75,7 +114,7 @@ export async function handleReportButton(i: ButtonInteraction): Promise<void> {
       flags: MessageFlags.Ephemeral,
     });
   } catch (err) {
-    logger.error(`[REPORT] button failed: ${errorMessage(err)}`);
+    logError('[REPORT] button failed', err);
     await replyWithError(i, 'Report failed', 'Something went wrong. Please try again later.');
   }
 }
@@ -102,7 +141,7 @@ export async function handleReportReason(i: ButtonInteraction): Promise<void> {
       );
     await i.showModal(modal);
   } catch (err) {
-    logger.error(`[REPORT] reason failed: ${errorMessage(err)}`);
+    logError('[REPORT] reason failed', err);
     await replyWithError(i, 'Report failed', 'Something went wrong. Please try again later.');
   }
 }
@@ -149,7 +188,7 @@ export function buildAdminReportMessage(
 
 export async function handleReportModal(
   i: ModalSubmitInteraction,
-  notifyAdmin: (msg: MessageCreateOptions) => Promise<void>
+  notifyAdmin: NotifyAdmin
 ): Promise<void> {
   try {
     const parsed = parseId(i.customId, true);
@@ -170,19 +209,36 @@ export async function handleReportModal(
     // Checked before inserting: the admin hears once per open hold, unless that DM failed.
     const alreadyNotified = reportManager.hasNotifiedOpenReport(listing.id);
     const reportId = reportManager.create({ ...report, now: Date.now() });
-    if (!alreadyNotified) {
-      try {
-        await notifyAdmin(buildAdminReportMessage(report, listing, i.user.tag ?? i.user.username));
-        reportManager.markAdminNotified(reportId, Date.now());
-      } catch (err) {
-        logger.error(
-          `[REPORT] Could not notify the admin of a report on listing ${listing.id}: ${errorMessage(err)}`
-        );
-      }
-    }
-    await i.editReply({ content: THANKS });
+    const adminKnows =
+      alreadyNotified ||
+      (await sendReport(
+        notifyAdmin,
+        { ...report, id: reportId },
+        listing,
+        i.user.tag ?? i.user.username
+      ));
+    await i.editReply({ content: adminKnows ? THANKS : THANKS_UNSENT });
   } catch (err) {
-    logger.error(`[REPORT] modal failed: ${errorMessage(err)}`);
+    logError('[REPORT] modal failed', err);
     await replyWithError(i, 'Report failed', 'Something went wrong. Please try again later.');
   }
+}
+
+/**
+ * Retry the admin DM of open reports whose DM failed (reportManager.unsentOpen); called every
+ * check run. Returns how many went out; never throws.
+ */
+export async function retryUnsentReports(notifyAdmin: NotifyAdmin): Promise<number> {
+  let sent = 0;
+  try {
+    for (const report of reportManager.unsentOpen()) {
+      const listing = listingManager.getById(report.listingId);
+      if (!listing) continue;
+      if (await sendReport(notifyAdmin, report, listing, report.reporterId)) sent++;
+    }
+  } catch (err) {
+    logError('[REPORT] retrying unsent reports failed', err);
+  }
+  if (sent > 0) logger.info(`[REPORT] sent ${sent} report DMs that had failed before`);
+  return sent;
 }

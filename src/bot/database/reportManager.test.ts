@@ -53,6 +53,21 @@ describe('reportManager', () => {
     expect(reportManager.hasNotifiedOpenReport(l.id)).toBe(false);
   });
 
+  test('unsentOpen lists the latest open report per listing the admin has not heard of', () => {
+    const l = makeListing();
+    const report = { listingId: l.id, reporterId: 'u1', reason: 'other' as const, note: null };
+    expect(reportManager.unsentOpen()).toEqual([]);
+    reportManager.create({ ...report, now: 1 });
+    const second = reportManager.create({ ...report, note: 'b', now: 2 });
+    expect(reportManager.unsentOpen().map((r) => r.id)).toEqual([second]);
+    reportManager.markAdminNotified(second, 3);
+    expect(reportManager.unsentOpen()).toEqual([]);
+    db.update(reports).set({ resolvedAt: 4 }).run();
+    reportManager.create({ ...report, now: 5 });
+    db.update(reports).set({ resolvedAt: 6 }).run();
+    expect(reportManager.unsentOpen()).toEqual([]);
+  });
+
   test('create stores the report and puts the listing on hold', () => {
     const [l] = listingManager.upsertFromRun(
       'blue-ocean',

@@ -5,9 +5,11 @@ import { adminAlerts, runs } from './schema/index';
 import { runManager } from './runManager';
 import type { RunSummary } from '../check/runner';
 
+const NOW = 10_000_000_000;
+
 const summary: RunSummary = {
-  startedAt: 1,
-  finishedAt: 2,
+  startedAt: NOW,
+  finishedAt: NOW + 1,
   shops: { 'blue-ocean': { listings: 3 } },
   notified: 1,
   dmFailures: 0,
@@ -50,23 +52,29 @@ describe('runManager', () => {
   });
 
   test('shopPeakListings skips runs where the shop failed or did not run', () => {
-    expect(runManager.shopPeakListings('blue-ocean')).toBeUndefined();
+    expect(runManager.shopPeakListings('blue-ocean', NOW)).toBeUndefined();
     runManager.record(summary);
     runManager.record({ ...summary, shops: { 'blue-ocean': { listings: 0, error: 'down' } } });
     runManager.record({ ...summary, shops: {} });
-    expect(runManager.shopPeakListings('blue-ocean')).toBe(3);
-    expect(runManager.shopPeakListings('ebay')).toBeUndefined();
+    expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
+    expect(runManager.shopPeakListings('ebay', NOW)).toBeUndefined();
   });
 
-  test('shopPeakListings is the highest count of the last 5 successful runs', () => {
-    for (const listings of [90, 100, 10, 20, 30, 40]) {
-      runManager.record({ ...summary, shops: { 'blue-ocean': { listings } } });
+  test('shopPeakListings is the highest count within the last 3 days, however many runs', () => {
+    const hour = 60 * 60 * 1000;
+    // Hourly runs: 100 at hour 0, then 40 runs of 10.
+    runManager.record({ ...summary, startedAt: NOW, shops: { 'blue-ocean': { listings: 100 } } });
+    for (let h = 1; h <= 40; h += 1) {
+      runManager.record({
+        ...summary,
+        startedAt: NOW + h * hour,
+        shops: { 'blue-ocean': { listings: 10 } },
+      });
     }
-    // 100 is the oldest of the last 5 successful runs (100, 10, 20, 30, 40) and still counts.
-    expect(runManager.shopPeakListings('blue-ocean')).toBe(100);
-    runManager.record({ ...summary, shops: { 'blue-ocean': { listings: 5 } } });
-    // 90 and 100 have fallen out of the window.
-    expect(runManager.shopPeakListings('blue-ocean')).toBe(40);
+    expect(runManager.shopPeakListings('blue-ocean', NOW + 40 * hour)).toBe(100);
+    // 72 h after the 100 it leaves the window.
+    expect(runManager.shopPeakListings('blue-ocean', NOW + 72 * hour)).toBe(100);
+    expect(runManager.shopPeakListings('blue-ocean', NOW + 72 * hour + 1)).toBe(10);
   });
 
   test('shopPeakListings ignores a corrupted shop entry and warns about an unreadable row', () => {
@@ -75,14 +83,48 @@ describe('runManager', () => {
       runManager.record(summary);
       db.insert(runs)
         .values({
-          startedAt: 1,
-          finishedAt: 2,
+          startedAt: NOW,
+          finishedAt: NOW,
           summary: JSON.stringify({ ...summary, shops: { 'blue-ocean': { listings: 'many' } } }),
         })
         .run();
-      db.insert(runs).values({ startedAt: 1, finishedAt: 2, summary: 'not json' }).run();
-      expect(runManager.shopPeakListings('blue-ocean')).toBe(3);
+      db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: 'not json' }).run();
+      expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
       expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a null, string or listing-less shop entry is dropped with a warning, not thrown on', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      runManager.record(summary);
+      const bad = { 'blue-ocean': null, ebay: 'down', 'sammel-ente': { error: 'x' } };
+      db.insert(runs)
+        .values({
+          startedAt: NOW,
+          finishedAt: NOW,
+          summary: JSON.stringify({ ...summary, shops: bad }),
+        })
+        .run();
+      expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
+      expect(runManager.shopPeakListings('ebay', NOW)).toBeUndefined();
+      expect(runManager.last()?.shops).toEqual({});
+      expect(warn).toHaveBeenCalledTimes(3);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('an unreadable row warns once per row, not on every read', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: 'not json' }).run();
+      runManager.shopPeakListings('blue-ocean', NOW);
+      runManager.shopPeakListings('blue-ocean', NOW);
+      runManager.last();
+      expect(warn).toHaveBeenCalledTimes(1);
     } finally {
       warn.mockRestore();
     }

@@ -117,9 +117,9 @@ async function matchPending(
 }
 
 /** The baseline for the drop check; a failed lookup is logged and only skips that check. */
-function recentPeak(shop: ShopId): number | undefined {
+function recentPeak(shop: ShopId, now: number): number | undefined {
   try {
-    return runManager.shopPeakListings(shop);
+    return runManager.shopPeakListings(shop, now);
   } catch (error) {
     logError(`shop ${shop}: reading the recent listing counts failed, drop check skipped`, error);
     return undefined;
@@ -147,7 +147,7 @@ async function checkShop(
   }
   const found = result.listings;
   try {
-    const peak = recentPeak(adapter.id);
+    const peak = recentPeak(adapter.id, deps.now());
     stored.push(...listingManager.upsertFromRun(adapter.id, found, deps.now()));
     if (found.length > 0 && found.every((l) => !l.available)) {
       // Every card sold out at once is more likely a changed stock marker than real.
@@ -158,10 +158,11 @@ async function checkShop(
     }
     if (peak !== undefined && found.length < peak * DROP_ALERT_SHARE) {
       // A pagination or markup change can leave only part of the shop readable. Measured
-      // against the peak of the last successful runs, a lasting drop keeps alerting (daily).
+      // against the peak of the successful runs of the last 3 days (longer than the 24 h
+      // throttle), a lasting drop keeps alerting daily until it leaves the window.
       await alert(
         `shop-drop:${adapter.id}`,
-        `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last successful checks — check the pagination and markup.`
+        `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last 3 days — check the pagination and markup.`
       );
     }
     for (const l of found) fetched.set(l.url, l);

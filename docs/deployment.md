@@ -6,6 +6,15 @@ The Docker image is built by `Dockerfile` and published to
 `ghcr.io/bigmichi1/minecraft-cards` by `.github/workflows/docker.yml` (tags `latest`, `main`,
 release versions, `sha-<short>`); release images are signed with Cosign.
 
+Verify a release image with Cosign v2.6 or later (the release notes carry the same command for
+the exact version; the image name is lowercase):
+
+```bash
+cosign verify ghcr.io/bigmichi1/minecraft-cards: \
+  '^https://github.com/BigMichi1/minecraft-cards/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com < version > --certificate-identity-regexp
+```
+
 - **Build stage** installs the pinned toolchain through `bin/mise`, the locked dependencies, and
   downloads the image model into `/app/models` (needs network at build time).
 - **Production stage** runs `bun run src/bot/bot.ts` rather than a compiled binary:
@@ -50,10 +59,11 @@ Podman works the same way: `podman build -t minecraft-cards .`, then
 The container healthcheck is `pgrep -f "[b]ot/bot\.ts"` (the bracket keeps the check from
 matching itself): it reports whether the process lives, not whether Discord is reachable.
 
-These reach the admin as DMs. Throttled alerts go out at most once a day per kind and shop:
-shop failures and unparseable pages, a shop whose card listings all read as unavailable (a
-changed stock marker), a shop returning less than half of its recent peak count (the highest of
-its last 5 successful runs: a pagination or markup change; a lasting drop keeps alerting daily),
+These reach the admin as DMs. Throttled alerts go out at most once a day per kind (per shop for
+shop alerts): shop failures and unparseable pages, a shop whose card listings all read as
+unavailable (a changed stock marker), a shop returning less than half of its peak count (the
+highest over its successful runs of the last 3 days: a pagination or markup change; a lasting
+drop keeps alerting daily until it leaves that window),
 a check run that failed, a run where every notification DM failed, and notifications that could
 not be built. Failed slash command registration and an image model that failed to load are DMed
 once per start, not throttled. A wrong-card report whose admin DM failed is sent again with the

@@ -180,6 +180,28 @@ describe('/admin', () => {
     expect(text).toContain('Notified: 4 · DM failures: 1');
   });
 
+  test('status with a stored run whose shop entries are corrupt does not throw', async () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      db.insert(runs)
+        .values({
+          startedAt: 1_700_000_000_000,
+          finishedAt: 1_700_000_001_000,
+          summary: JSON.stringify({
+            ...summary,
+            shops: { 'blue-ocean': null, ebay: { listings: 5 } },
+          }),
+        })
+        .run();
+      await adminExecute(fakeAdmin(undefined, 'status'), ctx);
+      const text = lastReply().content!;
+      expect(text).toContain('ebay: 5 listings');
+      expect(text).not.toContain('blue-ocean');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('status lists the listings on hold, up to 10', async () => {
     await adminExecute(fakeAdmin(undefined, 'status'), ctx);
     expect(lastReply().content).not.toContain('On hold');

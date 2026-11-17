@@ -429,16 +429,40 @@ describe('runCheck', () => {
     expect(alerts).toHaveLength(2);
   });
 
+  test('a lasting drop at the hourly cadence alerts again after the 24 h throttle', async () => {
+    const hour = 60 * 60 * 1000;
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      ...blue12,
+      url: `https://www.blue-ocean.de/p/${i + 1}`,
+    }));
+    await runCheck(depsWith([ok('blue-ocean', many)]));
+    const alertHours: number[] = [];
+    for (let h = 1; h <= 30; h += 1) {
+      clock += hour;
+      const before = alerts.length;
+      await runCheck(depsWith([ok('blue-ocean', many.slice(0, 2))]));
+      if (alerts.length > before) alertHours.push(h);
+    }
+    // First low run alerts; the throttle holds for 24 h; the peak (10) is still inside the
+    // 3-day window although far more than 5 low runs have happened since.
+    expect(alertHours).toEqual([1, 25]);
+  });
+
   test('an unreadable baseline skips only the drop check, with a log', async () => {
     const peak = spyOn(runManager, 'shopPeakListings').mockImplementation(() => {
       throw new Error('db locked');
     });
     const error = spyOn(logger, 'log');
     try {
-      const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+      const soldOut = [{ ...blue12, available: false }];
+      const s = await runCheck(depsWith([ok('blue-ocean', soldOut)]));
       expect(s.shops['blue-ocean']).toEqual({ listings: 1 });
       expect(listingManager.getByUrl(blue12.url)).toBeDefined();
       expect(error).toHaveBeenCalled();
+      expect(error.mock.calls.flat().join(' ')).toContain('drop check skipped');
+      // The all-unavailable alert is independent of the baseline and still fires in that run.
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toContain('all 1');
     } finally {
       peak.mockRestore();
       error.mockRestore();

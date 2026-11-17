@@ -122,7 +122,7 @@ image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
 | `bundle`            | Several cards in one listing; not compared                                                                                       |
 | `no_reference`      | The card has no reference picture yet; retried every check                                                                       |
 | `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check                                                   |
-| `image_unavailable` | A picture could not be loaded (host, redirect, HTTP, size, decoding); retried once a day                                         |
+| `image_unavailable` | A picture could not be loaded (network, host, redirect, HTTP, size, decoding); retried once a day                                |
 
 Only available listings of cards someone wants are compared. An admin-mapped listing stays
 `confirmed` when its picture changes later. Any other error while matching (the embedding

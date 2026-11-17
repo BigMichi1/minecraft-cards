@@ -65,6 +65,7 @@ describe('parseSammelEntePage', () => {
     expect(parseSammelEntePage('<html>Just a moment...</html>')).toEqual({
       listings: [],
       lastPage: 1,
+      productCount: 0,
     });
   });
 });
@@ -83,7 +84,7 @@ describe('createSammelEnteAdapter', () => {
     const { fetchFn, calls } = fakeFetch({
       '?p=1': readFixture('sammel-ente-p1.html'),
       '?p=11': readFixture('sammel-ente-p11.html'),
-      '?p=': '<html><body></body></html>',
+      '?p=': readFixture('sammel-ente-p11.html'),
     });
     const sleeps: number[] = [];
     const adapter = createSammelEnteAdapter(fetchFn, {
@@ -99,6 +100,18 @@ describe('createSammelEnteAdapter', () => {
     expect(sleeps).toEqual(Array(10).fill(1500));
     expect(listings.some((l) => l.cardIds[0] === 'XXL1')).toBe(true);
     expect(listings.some((l) => l.cardIds[0] === '12')).toBe(true);
+  });
+
+  test('a bot wall on a later page rejects instead of returning partial listings', async () => {
+    const { fetchFn } = fakeFetch({
+      '?p=1': readFixture('sammel-ente-p1.html'),
+      '?p=2': '<html>Just a moment...</html>',
+    });
+    const error = await createSammelEnteAdapter(fetchFn, noDelay)
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toContain('page 2');
   });
 
   test('an HTTP failure on a later page rejects the whole run', async () => {

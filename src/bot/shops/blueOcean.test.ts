@@ -43,6 +43,7 @@ describe('parseBlueOceanPage', () => {
     expect(parseBlueOceanPage(readFixture('blue-ocean-p99.html'))).toEqual({
       listings: [],
       productCount: 0,
+      isCategoryPage: true,
     });
   });
 
@@ -110,6 +111,18 @@ describe('createBlueOceanAdapter', () => {
     expect(sleeps).toEqual([1500, 1500]);
     expect(listings.some((l) => l.cardIds[0] === '12')).toBe(true);
     expect(listings.some((l) => l.cardIds[0] === '93')).toBe(true);
+  });
+
+  test('a bot wall on a later page rejects instead of ending pagination', async () => {
+    const { fetchFn } = fakeFetch({
+      '?p=1': readFixture('blue-ocean-p1.html'),
+      '?p=2': '<html>Just a moment...</html>',
+    });
+    const error = await createBlueOceanAdapter(fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toContain('page 2');
   });
 
   test('stops at the page cap when the shop never runs out of products', async () => {

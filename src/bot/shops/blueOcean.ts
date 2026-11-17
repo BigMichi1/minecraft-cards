@@ -34,7 +34,11 @@ function idFromImage(src: string | undefined): string | null {
  * grid, cards or not, so the caller can tell an exhausted pagination from a page of
  * non-card products.
  */
-export function parseBlueOceanPage(html: string): { listings: Listing[]; productCount: number } {
+export function parseBlueOceanPage(html: string): {
+  listings: Listing[];
+  productCount: number;
+  isCategoryPage: boolean;
+} {
   const $ = cheerio.load(html);
   const listings: Listing[] = [];
   let productCount = 0;
@@ -77,7 +81,9 @@ export function parseBlueOceanPage(html: string): { listings: Listing[]; product
       idConflict: urlId !== null && imageId !== null && urlId !== imageId,
     });
   });
-  return { listings, productCount };
+  // `.cms-page` wraps every real blue-ocean page, including an empty page past the end;
+  // a bot wall or maintenance page lacks it.
+  return { listings, productCount, isCategoryPage: $('.cms-page').length > 0 };
 }
 
 export function createBlueOceanAdapter(
@@ -99,7 +105,12 @@ export function createBlueOceanAdapter(
           logger.error(`blue-ocean page ${page} failed: ${errorMessage(error)}`);
           throw error;
         }
-        if (parsed.productCount === 0) break;
+        if (parsed.productCount === 0) {
+          if (!parsed.isCategoryPage) {
+            throw new ShopLayoutError(`blue-ocean: page ${page} is not a category page`);
+          }
+          break;
+        }
         for (const listing of parsed.listings) byUrl.set(listing.url, listing);
       }
       if (byUrl.size === 0) {

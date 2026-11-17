@@ -21,8 +21,12 @@ function parsePrice(text: string): Listing['price'] {
   return { cents: euros * 100 + Number.parseInt(match[2] ?? '0', 10), currency: 'EUR' };
 }
 
-/** Parse one category page. `lastPage` is the highest `?p=N` in the pagination (1 when none). */
-export function parseSammelEntePage(html: string): { listings: Listing[]; lastPage: number } {
+/** Parse one category page. `productCount` counts every product box, cards or not. `lastPage` is the highest `?p=N` in the pagination (1 when none). */
+export function parseSammelEntePage(html: string): {
+  listings: Listing[];
+  lastPage: number;
+  productCount: number;
+} {
   const $ = cheerio.load(html);
 
   let lastPage = 1;
@@ -32,7 +36,8 @@ export function parseSammelEntePage(html: string): { listings: Listing[]; lastPa
   });
 
   const listings: Listing[] = [];
-  $('.card.product-box').each((_, el) => {
+  const boxes = $('.card.product-box');
+  boxes.each((_, el) => {
     const box = $(el);
     const link = box.find('a.product-name').first();
     const href = link.attr('href');
@@ -56,7 +61,7 @@ export function parseSammelEntePage(html: string): { listings: Listing[]; lastPa
       idConflict: false,
     });
   });
-  return { listings, lastPage };
+  return { listings, lastPage, productCount: boxes.length };
 }
 
 export function createSammelEnteAdapter(
@@ -75,6 +80,10 @@ export function createSammelEnteAdapter(
         await sleep(delayMs);
         try {
           const parsed = parseSammelEntePage(await fetchText(`${BASE_URL}?p=${page}`, fetchFn));
+          if (parsed.productCount === 0) {
+            // A real category page always has product boxes up to lastPage.
+            throw new ShopLayoutError(`sammel-ente: page ${page} of ${lastPage} has no products`);
+          }
           for (const listing of parsed.listings) byUrl.set(listing.url, listing);
         } catch (error) {
           logger.error(`sammel-ente page ${page} failed: ${errorMessage(error)}`);

@@ -74,7 +74,7 @@ Measured with transformers.js 4.3.2 on CPU; embedding two shop images (download 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",
 URLs ending `-tcc-1`). The blue-ocean parser reads card ids from those URLs too (for
 example `1` from `…-tcc-1`), so the 250 of 456 blue-ocean listings that are not series 3
-still get a card id, which is not the series 3 card of that number. The measurement script filters them out by title; the shop adapter does not yet.
+still get a card id, which is not the series 3 card of that number. The measurement script and the blue-ocean adapter both filter them out by title (`isOnFireCardTitle`: the title must contain "LEGO Minecraft TCC" and "On Fire").
 
 ## Compiled binary (`bun build --compile`)
 

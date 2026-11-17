@@ -1,0 +1,64 @@
+name: Tests & Coverage
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test & Coverage
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # pento/lcov-coverage-check: list workflow runs and download baseline artifact
+      pull-requests: write # pento/lcov-coverage-check: post/update coverage comment on PRs
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned toolchain (mise)
+        run: ./bin/mise install
+
+      - name: Install dependencies
+        run: ./bin/mise run install
+
+      - name: Type check
+        run: ./bin/mise run typecheck
+
+      - name: Lint
+        # Nothing ran ESLint in CI, so a rule violation only surfaced in the
+        # pre-commit hook -- and never at all for a change pushed from a
+        # different machine or merged by Dependabot.
+        run: ./bin/mise run lint
+
+      - name: Check formatting
+        # format:check was broken for long enough that 37 files drifted without
+        # anything noticing, and a Prettier minor bump later landed on main red.
+        run: ./bin/mise run format:check
+
+      - name: Run tests with coverage
+        run: ./bin/mise run test:coverage
+
+      # Stores lcov-baseline artifact on main; retrieves it and posts a coverage
+      # diff comment on PRs. Falls back to summary-only on first run or fork PRs.
+      - name: Report coverage
+        uses: pento/lcov-coverage-check@2cab51dfe13b23eb37aaec0c8963869c25e139d9 # v3.2.0
+        with:
+          path: "src/"
+          ignore-patterns: |
+            **/*.test.ts
+            **/test/**
+          github-token: ${{ secrets.GITHUB_TOKEN }}

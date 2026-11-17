@@ -1,0 +1,40 @@
+# Docker Compose example for the pre-built Minecraft Cards Bot image
+# (GitHub Container Registry).
+#
+# Usage:
+# 1. Copy this file: cp docker-compose.example.yml docker-compose.yml
+# 2. Set DISCORD_TOKEN, BOT_ADMIN_ID (and optionally the rest) in .env or the shell
+# 3. Run: docker-compose up -d
+#
+# The data directory must be writable by uid 10001 (the image's non-root user):
+#   mkdir -p data && sudo chown 10001:10001 data
+
+services:
+  minecraft-cards:
+    # Tags: latest, main, 1.0.0 / 1.0 / 1 (releases), sha-<short-sha>
+    image: ghcr.io/bigmichi1/minecraft-cards:latest
+    container_name: minecraft-cards
+    restart: unless-stopped
+
+    environment:
+      # Required
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      BOT_ADMIN_ID: ${BOT_ADMIN_ID}
+      # Optional: register slash commands in one guild (instant) instead of globally
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      # Optional: eBay is disabled with a startup warning unless both are set
+      EBAY_CLIENT_ID: ${EBAY_CLIENT_ID:-}
+      EBAY_CLIENT_SECRET: ${EBAY_CLIENT_SECRET:-}
+      CHECK_INTERVAL_MINUTES: ${CHECK_INTERVAL_MINUTES:-60}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Set in the image: DB_PATH=/app/data/cards.db, MODEL_CACHE_DIR=/app/models
+
+    volumes:
+      # Persist the SQLite database across container restarts
+      - ./data:/app/data
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

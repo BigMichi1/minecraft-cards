@@ -1,0 +1,35 @@
+# Full dependency audit against the current advisory database. Runs on main's
+# own status and daily, so a new advisory against an installed package shows up
+# within a day even with no pushes.
+name: Dependency Audit
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: Audit dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install pinned toolchain (mise)
+        run: ./bin/mise install
+
+      - name: Audit dependencies
+        run: ./bin/mise run audit

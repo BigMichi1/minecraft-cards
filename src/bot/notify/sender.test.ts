@@ -37,14 +37,16 @@ function seedListing(n: number): StoredListing {
   return stored;
 }
 
-function fakeClient(opts: { failFor?: string } = {}) {
+function fakeClient(opts: { failFor?: string; failAll?: boolean } = {}) {
   const sent: { user: string; opts: unknown }[] = [];
   return {
     sent,
     users: {
       fetch: async (id: string) => ({
         send: async (o: unknown) => {
-          if (id === opts.failFor) throw new Error('Cannot send messages to this user');
+          if (opts.failAll || id === opts.failFor) {
+            throw new Error('Cannot send messages to this user');
+          }
           sent.push({ user: id, opts: o });
         },
       }),
@@ -119,5 +121,58 @@ describe('createDiscordSender', () => {
     ]);
     expect(await sender.send(pending)).toEqual({ notified: 2, dmFailures: 0 });
     expect(client.sent.map((s) => s.user)).toEqual(['u1', 'u2']);
+  });
+
+  test('sends at most 5 messages per user per run and says how many follow', async () => {
+    const items = Array.from({ length: 40 }, (_, i) => ({
+      listing: seedListing(i + 1),
+      cardIds: ['12'],
+    }));
+    const client = fakeClient();
+    const sender = createDiscordSender(client, { sleep: async () => {} });
+    expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 25, dmFailures: 0 });
+    expect(client.sent).toHaveLength(5);
+    const recorded = db.select().from(notifications).all();
+    expect(recorded.map((r) => r.listingId).sort((a, b) => a - b)).toEqual(
+      items.slice(0, 25).map((i) => i.listing.id)
+    );
+    const contents = client.sent.map((s) => (s.opts as { content?: string }).content);
+    expect(contents.slice(0, 4)).toEqual([undefined, undefined, undefined, undefined]);
+    expect(contents[4]).toBe('…and 15 more listings will follow in the next checks.');
+  });
+
+  test('exactly 25 items need no trailer', async () => {
+    const items = Array.from({ length: 25 }, (_, i) => ({
+      listing: seedListing(i + 1),
+      cardIds: ['12'],
+    }));
+    const client = fakeClient();
+    const sender = createDiscordSender(client, { sleep: async () => {} });
+    await sender.send(new Map([['u1', items]]));
+    expect(client.sent.map((s) => (s.opts as { content?: string }).content)).toEqual(
+      Array(5).fill(undefined)
+    );
+  });
+
+  test('a DM that fails while shutting down does not mark the user', async () => {
+    const l = seedListing(1);
+    const client = fakeClient({ failAll: true });
+    const sender = createDiscordSender(client, {
+      sleep: async () => {},
+      now: () => 4242,
+      isShuttingDown: () => true,
+    });
+    expect(await sender.send(new Map([['u1', [{ listing: l, cardIds: ['12'] }]]]))).toEqual({
+      notified: 0,
+      dmFailures: 0,
+    });
+    expect(
+      db
+        .select()
+        .from(users)
+        .all()
+        .find((u) => u.discordId === 'u1')?.dmFailedAt
+    ).toBeNull();
+    expect(db.select().from(notifications).all()).toHaveLength(0);
   });
 });

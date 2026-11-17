@@ -15,7 +15,7 @@ export interface NotificationItem {
   cardIds: CardId[];
 }
 
-const ITEMS_PER_MESSAGE = 5;
+export const ITEMS_PER_MESSAGE = 5;
 const MAX_TITLE = 256;
 const MAX_FIELD = 1024;
 
@@ -66,7 +66,10 @@ function title(item: NotificationItem): string {
 function footer(listing: StoredListing): string | null {
   switch (listing.matchStatus) {
     case 'confirmed':
-      return `✅ picture matches reference (${(listing.similarity ?? 0).toFixed(2)})`;
+      // `/admin map` confirms without a picture comparison.
+      return listing.similarity === null
+        ? '✅ checked by the admin'
+        : `✅ picture matches reference (${listing.similarity.toFixed(2)})`;
     case 'unconfirmed':
       return '⚠️ number unconfirmed — compare with the reference';
     case 'bundle':
@@ -87,6 +90,7 @@ function buildEmbed(item: NotificationItem): EmbedBuilder {
   if (listing.format === 'auction' && listing.auctionEndsAt !== null) {
     priceParts.push(`Auction · ends <t:${Math.floor(listing.auctionEndsAt / 1000)}:R>`);
   }
+  if (listing.format === 'fixed_price') priceParts.push('Buy It Now');
   const embed = new EmbedBuilder().setTitle(title(item)).addFields(
     { name: 'Shop', value: truncate(SHOP_NAMES[listing.shop], MAX_FIELD), inline: true },
     {

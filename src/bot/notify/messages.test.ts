@@ -181,4 +181,24 @@ describe('notification messages', () => {
     expect(labels(2)).toEqual(['Kleinanzeigen', '❌ Wrong card']);
     expect(at(msgs, 0).items.map((x) => x.listing.id)).toEqual([1, 2, 3]);
   });
+
+  test('an admin-mapped listing reads as checked by the admin', () => {
+    const e = embedJson(
+      atMsg(buildNotificationMessages([item(1, { matchStatus: 'confirmed', similarity: null })]), 0)
+    );
+    expect(e.footer.text).toBe('✅ checked by the admin');
+  });
+
+  test('a fixed-price eBay listing says Buy It Now', () => {
+    const e = embedJson(
+      atMsg(
+        buildNotificationMessages([
+          item(1, { shop: 'ebay', format: 'fixed_price', price: { cents: 149, currency: 'EUR' } }),
+        ]),
+        0
+      )
+    );
+    const price = e.fields.find((x: { name: string }) => x.name === 'Price').value;
+    expect(price).toBe('1,49 € · Buy It Now');
+  });
 });

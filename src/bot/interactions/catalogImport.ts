@@ -94,10 +94,20 @@ export async function handleCatalogButton(
       }
     }
     store.take(token);
-    await i.update({
-      content: action === 'catalog-save' ? 'Catalog saved.' : 'Import cancelled.',
-      components: [],
-    });
+    const saved = action === 'catalog-save';
+    try {
+      await i.update({ content: saved ? 'Catalog saved.' : 'Import cancelled.', components: [] });
+    } catch (err) {
+      // The work is done; only the message could not be updated, so do not say it failed.
+      logError('[CATALOG IMPORT] updating the message failed', err);
+      await replyWithError(
+        i,
+        saved ? 'Catalog saved' : 'Import cancelled',
+        saved
+          ? 'The catalog was saved, but this message could not be updated.'
+          : 'The import was cancelled, but this message could not be updated.'
+      );
+    }
   } catch (err) {
     logError('[CATALOG IMPORT] button failed', err);
     await replyWithError(i, 'Import failed', 'Something went wrong. Please try again later.');

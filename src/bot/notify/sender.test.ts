@@ -100,6 +100,8 @@ function dmFailedAt(discordId: string): number | null | undefined {
     .find((u) => u.discordId === discordId)?.dmFailedAt;
 }
 
+const noAlert = async () => {};
+
 describe('createDiscordSender', () => {
   beforeAll(() => {
     initializeDatabase();
@@ -121,6 +123,7 @@ describe('createDiscordSender', () => {
     const client = fakeClient({ failFor: 'u1' });
     const sleeps: number[] = [];
     const sender = createDiscordSender(client, {
+      alert: noAlert,
       sleep: async (ms) => void sleeps.push(ms),
       now: () => 4242,
     });
@@ -139,7 +142,10 @@ describe('createDiscordSender', () => {
     const items = Array.from({ length: 6 }, (_, i) => pending(seedListing(i + 1)));
     const client = fakeClient();
     const sleeps: number[] = [];
-    const sender = createDiscordSender(client, { sleep: async (ms) => void sleeps.push(ms) });
+    const sender = createDiscordSender(client, {
+      alert: noAlert,
+      sleep: async (ms) => void sleeps.push(ms),
+    });
     expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 6, dmFailures: 0 });
     expect(client.sent).toHaveLength(2);
     expect(sleeps).toEqual([500]);
@@ -151,7 +157,7 @@ describe('createDiscordSender', () => {
     const good = seedListing(2);
     bad.url = `https://shop/${'x'.repeat(600)}`;
     const client = fakeClient();
-    const sender = createDiscordSender(client, { sleep: async () => {} });
+    const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
     const batch = new Map([
       ['u1', [pending(bad)]],
       ['u2', [pending(good)]],
@@ -163,7 +169,7 @@ describe('createDiscordSender', () => {
   test('sends at most 5 messages per user per run and says how many follow', async () => {
     const items = Array.from({ length: 40 }, (_, i) => pending(seedListing(i + 1)));
     const client = fakeClient();
-    const sender = createDiscordSender(client, { sleep: async () => {} });
+    const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
     expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 25, dmFailures: 0 });
     expect(client.sent).toHaveLength(5);
     const recorded = db.select().from(notifications).all();
@@ -178,7 +184,7 @@ describe('createDiscordSender', () => {
   test('exactly 25 items need no trailer', async () => {
     const items = Array.from({ length: 25 }, (_, i) => pending(seedListing(i + 1)));
     const client = fakeClient();
-    const sender = createDiscordSender(client, { sleep: async () => {} });
+    const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
     await sender.send(new Map([['u1', items]]));
     expect(client.sent.map((s) => (s.opts as { content?: string }).content)).toEqual(
       Array(5).fill(undefined)
@@ -189,6 +195,7 @@ describe('createDiscordSender', () => {
     const l = seedListing(1);
     const client = fakeClient({ failAll: true });
     const sender = createDiscordSender(client, {
+      alert: noAlert,
       sleep: async () => {},
       now: () => 4242,
       isShuttingDown: () => true,
@@ -209,7 +216,11 @@ describe('createDiscordSender', () => {
   test('a send failing after the first message keeps the sent items recorded and the rest pending', async () => {
     const items = Array.from({ length: 12 }, (_, i) => pending(seedListing(i + 1)));
     const client = fakeClient({ failOnSend: 2 });
-    const sender = createDiscordSender(client, { sleep: async () => {}, now: () => 4242 });
+    const sender = createDiscordSender(client, {
+      alert: noAlert,
+      sleep: async () => {},
+      now: () => 4242,
+    });
     expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 5, dmFailures: 1 });
     const recorded = db.select().from(notifications).all();
     expect(recorded.map((r) => r.listingId).sort((a, b) => a - b)).toEqual(
@@ -286,7 +297,7 @@ describe('createDiscordSender', () => {
     });
     const error = spyOn(logger, 'log');
     try {
-      const sender = createDiscordSender(client, { sleep: async () => {} });
+      const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
       expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 0, dmFailures: 0 });
       expect(client.sent).toHaveLength(1);
       expect(error.mock.calls.some((c) => String(c[1]).includes('database is locked'))).toBe(true);

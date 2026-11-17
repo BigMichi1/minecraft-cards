@@ -16,7 +16,10 @@ export interface ShutdownDeps {
 }
 
 export interface Shutdown {
-  /** Stop everything and exit with `code` (1 when a step failed); a second call does nothing. */
+  /**
+   * Stop everything and exit with `code` (1 when a step failed). A later call stops nothing
+   * twice, but raises the exit code to the larger of the two.
+   */
   shutdown(reason: string, code: number): Promise<void>;
   /** True once shutdown() was called; DMs failing then are the client going away. */
   isShuttingDown(): boolean;
@@ -28,12 +31,13 @@ export interface Shutdown {
  */
 export function createShutdown(deps: ShutdownDeps): Shutdown {
   let shuttingDown = false;
+  let exitCode = 0;
   return {
     isShuttingDown: () => shuttingDown,
     async shutdown(reason, code) {
+      exitCode = Math.max(exitCode, code);
       if (shuttingDown) return;
       shuttingDown = true;
-      let exitCode = code;
       const step = async (name: string, run: () => Promise<unknown>) => {
         try {
           await run();

@@ -85,7 +85,7 @@ describe('loadConfig', () => {
 
   test('rejects an interval that rounds to zero milliseconds', () => {
     expect(() => loadConfig({ ...REQUIRED, CHECK_INTERVAL_MINUTES: '0.000001' })).toThrow(
-      ConfigError
+      'must be at least 1 millisecond'
     );
   });
 

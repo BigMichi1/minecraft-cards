@@ -121,6 +121,10 @@ describe('notification messages', () => {
       f({ matchStatus: 'bundle', cardIds: [cid('12'), cid('45')], shop: 'ebay' }).footer.text
     ).toBe('ℹ️ bundle — check the listing');
     expect(f({ matchStatus: 'no_reference' }).footer.text).toBe('ℹ️ no reference picture yet');
+    expect(f({ matchStatus: 'pending' }).footer.text).toBe('ℹ️ picture not checked yet');
+    expect(f({ matchStatus: 'image_unavailable' }).footer.text).toBe(
+      'ℹ️ picture could not be loaded'
+    );
     expect(f({ matchStatus: 'model_unavailable' }).footer.text).toBe(
       'ℹ️ picture check unavailable'
     );

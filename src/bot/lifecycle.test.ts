@@ -39,6 +39,20 @@ describe('createShutdown', () => {
     expect(order.filter((o) => o.startsWith('exit'))).toEqual(['exit 0']);
   });
 
+  test('a later call during the shutdown raises the exit code but runs nothing twice', async () => {
+    let release = () => {};
+    const { deps, order } = shutdownDeps({
+      stopScheduler: () => new Promise<void>((resolve) => (release = resolve)),
+      graceMs: 1000,
+    });
+    const s = createShutdown(deps);
+    const first = s.shutdown('SIGTERM', 0);
+    await s.shutdown('uncaught exception', 1);
+    release();
+    await first;
+    expect(order).toEqual(['client', 'database', 'exit 1']);
+  });
+
   test('a check still running after the grace time does not hold up the exit', async () => {
     const warn = spyOn(logger, 'warn');
     try {

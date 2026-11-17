@@ -5,6 +5,7 @@ import { db, initializeDatabase } from '../database/db';
 import { cards } from '../database/schema/index';
 import { createImportStore, handleCatalogButton } from './catalogImport';
 import { cid, ids } from '../../test/cardIds';
+import logger from '../utils/logger';
 
 let clock = 0;
 let updates: any[] = [];
@@ -82,6 +83,27 @@ describe('handleCatalogButton', () => {
       expect(updates.at(-1).content).toBe('Catalog saved.');
     } finally {
       apply.mockRestore();
+    }
+  });
+
+  test('a message that cannot be updated after the save is reported as saved, not failed', async () => {
+    const store = createImportStore(() => clock);
+    const token = store.put([cid('1'), cid('2')]);
+    const button = fakeButton(`catalog-save:${token}`);
+    (button as unknown as { update: () => Promise<void> }).update = async () => {
+      throw new Error('unknown interaction');
+    };
+    const log = spyOn(logger, 'log');
+    try {
+      await handleCatalogButton(button, { adminId: 'admin' }, store);
+      expect([...catalogManager.knownIds()].sort()).toEqual(ids('1', '2'));
+      const embed = replies[0].embeds[0].toJSON();
+      expect(embed.description).toBe(
+        'The catalog was saved, but this message could not be updated.'
+      );
+      expect(log).toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
     }
   });
 

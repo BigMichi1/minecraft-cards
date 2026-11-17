@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { db, initializeDatabase } from '../database/db';
 import {
@@ -177,6 +178,26 @@ describe('runCheck', () => {
     expect(retries).toBe(1);
   });
 
+  test('a rejecting retryReports is logged and does not fail the run', async () => {
+    const log = spyOn(logger, 'log');
+    try {
+      const s = await runCheck(
+        depsWith([ok('blue-ocean', [blue12])], {
+          retryReports: async () => {
+            throw new Error('reports table locked');
+          },
+        })
+      );
+      expect(s.error).toBeUndefined();
+      expect(runManager.last()).toEqual(s);
+      expect(
+        log.mock.calls.some((c: unknown[]) => String(c[1]).includes('retrying report DMs failed'))
+      ).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   test('no wanted cards means no fetch but the run is recorded', async () => {
     userManager.clearList('u1');
     const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));
@@ -267,6 +288,18 @@ describe('runCheck', () => {
     clock += IMAGE_RETRY_MS;
     await runCheck(depsWith(shops(), { embedder: flaky }));
     expect(attempts).toBe(2);
+  });
+
+  test('a legacy image_unavailable row without a check time is retried at once', async () => {
+    const shops = () => [ok('sammel-ente', [ente12]), ok('blue-ocean', [blue12])];
+    await runCheck(depsWith(shops(), { embedder: null }));
+    const row = listingManager.getByUrl(blue12.url)!;
+    db.update(listings)
+      .set({ matchStatus: 'image_unavailable', matchCheckedAt: null })
+      .where(eq(listings.id, row.id))
+      .run();
+    await runCheck(depsWith(shops()));
+    expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
   });
 
   test('matches new listing images once and stores the result', async () => {

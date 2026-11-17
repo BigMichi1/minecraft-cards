@@ -12,6 +12,7 @@ import type { ButtonInteraction, MessageCreateOptions, ModalSubmitInteraction } 
 import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { reportManager, type ReportReason } from '../database/reportManager';
+import { runManager } from '../database/runManager';
 import { validUrl } from '../notify/messages';
 import logger, { logError } from '../utils/logger';
 import { replyWithError } from '../utils/interactionReply';
@@ -224,17 +225,33 @@ export async function handleReportModal(
   }
 }
 
+/** A report still unsent after this long is warned about, once per this period. */
+const UNSENT_WARN_AFTER_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Retry the admin DM of open reports whose DM failed (reportManager.unsentOpen); called every
- * check run. Returns how many went out; never throws.
+ * check run. Returns how many went out; never throws. A report that stays unsent for over a
+ * day logs one warning per day.
  */
-export async function retryUnsentReports(notifyAdmin: NotifyAdmin): Promise<number> {
+export async function retryUnsentReports(
+  notifyAdmin: NotifyAdmin,
+  now: number = Date.now()
+): Promise<number> {
   let sent = 0;
   try {
     for (const report of reportManager.unsentOpen()) {
       const listing = listingManager.getById(report.listingId);
       if (!listing) continue;
-      if (await sendReport(notifyAdmin, report, listing, report.reporterId)) sent++;
+      if (await sendReport(notifyAdmin, report, listing, report.reporterId)) {
+        sent++;
+      } else if (
+        now - report.createdAt >= UNSENT_WARN_AFTER_MS &&
+        runManager.shouldAlert(`report-unsent:${report.id}`, now, UNSENT_WARN_AFTER_MS)
+      ) {
+        logger.warn(
+          `[REPORT] report ${report.id} on listing ${listing.id} has not reached the admin for over a day`
+        );
+      }
     }
   } catch (err) {
     logError('[REPORT] retrying unsent reports failed', err);

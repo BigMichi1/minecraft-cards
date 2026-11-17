@@ -24,7 +24,7 @@ export interface SenderOptions {
   /** True once the bot is stopping: a DM failing then is the shutdown, not closed DMs. */
   isShuttingDown?: () => boolean;
   /** Throttled admin alert for failures that are not one user's closed DMs. */
-  alert?: AlertFn;
+  alert: AlertFn;
 }
 
 const PAUSE_MS = 500;
@@ -54,14 +54,11 @@ type UserOutcome = 'sent' | 'dm-closed' | 'failed' | 'interrupted';
  * - Every attempted user failing (two or more users, or any failure that is not closed DMs)
  *   alerts the admin, as does a message that cannot be built.
  */
-export function createDiscordSender(
-  client: DmClient,
-  options: SenderOptions = {}
-): NotificationSender {
+export function createDiscordSender(client: DmClient, options: SenderOptions): NotificationSender {
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = options.now ?? Date.now;
   const isShuttingDown = options.isShuttingDown ?? (() => false);
-  const alert: AlertFn = options.alert ?? (async () => {});
+  const { alert } = options;
 
   return {
     async send(pending: PendingNotifications) {

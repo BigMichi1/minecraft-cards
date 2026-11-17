@@ -52,7 +52,12 @@ function intervalMs(env: Env): number {
     throw new ConfigError(`CHECK_INTERVAL_MINUTES must be a positive number, got "${raw}"`);
   }
   const ms = Math.round(minutes * 60_000);
-  if (ms < 1 || ms > MAX_TIMER_MS) {
+  if (ms < 1) {
+    throw new ConfigError(
+      `CHECK_INTERVAL_MINUTES must be at least 1 millisecond (0.0000167 minutes), got "${raw}"`
+    );
+  }
+  if (ms > MAX_TIMER_MS) {
     throw new ConfigError(
       `CHECK_INTERVAL_MINUTES must be at most ${Math.floor(MAX_TIMER_MS / 60_000)} (about 24 days), got "${raw}"`
     );

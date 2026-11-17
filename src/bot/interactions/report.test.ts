@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction, MessageCreateOptions, ModalSubmitInteraction } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
-import { cards, listingCards, listings, reports } from '../database/schema/index';
+import { cards, listingCards, listings, reports, adminAlerts } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { reportManager } from '../database/reportManager';
@@ -102,6 +102,7 @@ describe('report flow', () => {
     edits = [];
     deferrals = 0;
     db.delete(reports).run();
+    db.delete(adminAlerts).run();
     db.delete(listingCards).run();
     db.delete(listings).run();
     db.delete(cards).run();
@@ -249,6 +250,64 @@ describe('report flow', () => {
       await handleReportModal(fakeModal(`report-modal:${l.id}:other`, 'x'), failing);
       expect(await retryUnsentReports(failing)).toBe(0);
       expect(db.select().from(reports).get()!.adminNotifiedAt).toBeNull();
+    });
+
+    test('a report unsent for over a day warns once per day', async () => {
+      const l = makeListing();
+      const failing = async () => {
+        throw new Error('dm closed');
+      };
+      const day = 24 * 60 * 60 * 1000;
+      const reportId = reportManager.create({
+        listingId: l.id,
+        reporterId: 'u1',
+        reason: 'other',
+        note: null,
+        now: 1_000,
+      });
+      const warn = spyOn(logger, 'warn');
+      const escalations = () =>
+        warn.mock.calls.filter((c: unknown[]) => String(c[0]).includes(`report ${reportId}`));
+      try {
+        await retryUnsentReports(failing, 1_000 + day - 1);
+        expect(escalations()).toHaveLength(0);
+        await retryUnsentReports(failing, 1_000 + day);
+        expect(escalations()).toHaveLength(1);
+        await retryUnsentReports(failing, 1_000 + day + 60_000);
+        expect(escalations()).toHaveLength(1);
+        await retryUnsentReports(failing, 1_000 + 2 * day + 1);
+        expect(escalations()).toHaveLength(2);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('a DM that went out but could not be recorded is retried once, then no more', async () => {
+      const l = makeListing();
+      reportManager.create({
+        listingId: l.id,
+        reporterId: 'u1',
+        reason: 'other',
+        note: null,
+        now: 1_000,
+      });
+      const mark = spyOn(reportManager, 'markAdminNotified').mockImplementationOnce(() => {
+        throw new Error('database is locked');
+      });
+      const log = spyOn(logger, 'log');
+      try {
+        const spy = adminSpy();
+        // The DM went out but was not recorded: the next run DMs again (a duplicate is accepted
+        // over a lost report), records it, and no run after that sends anything.
+        expect(await retryUnsentReports(spy)).toBe(1);
+        expect(await retryUnsentReports(spy)).toBe(1);
+        expect(await retryUnsentReports(spy)).toBe(0);
+        expect(spy.calls).toHaveLength(2);
+        expect(db.select().from(reports).get()!.adminNotifiedAt).not.toBeNull();
+      } finally {
+        mark.mockRestore();
+        log.mockRestore();
+      }
     });
 
     test('a resolved report is not retried', async () => {

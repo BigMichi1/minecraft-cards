@@ -57,11 +57,12 @@ describe('parseSammelEntePage', () => {
       `<div class="card product-box"><a class="product-name" href="/x">${title}</a></div>`;
     const parsed = parseSammelEntePage(
       box('LEGO Minecraft Serie 3 | #Mystery') +
+        box('LEGO Minecraft Serie 3 |#abc') +
         box('LEGO Minecraft Serie 3 | #000 Zero') +
         box('LEGO Minecraft Serie 3 Booster') +
         box('Puzzle-Paket #1 (154 - 162)')
     );
-    expect(parsed).toMatchObject({ productCount: 4, skippedNoId: 2, skippedInvalid: 0 });
+    expect(parsed).toMatchObject({ productCount: 5, skippedNoId: 3, skippedInvalid: 0 });
     expect(parsed.listings).toEqual([]);
   });
 

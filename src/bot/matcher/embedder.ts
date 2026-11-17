@@ -295,7 +295,7 @@ export interface MatchOptions {
  * Check a listing's picture against the card's reference picture.
  * sammel-ente is the reference shop; listings of several cards are bundles and not compared.
  * No model loaded, or a ModelError, yields `model_unavailable`; a picture that cannot be
- * loaded (ImageUnavailableError: host, redirect, HTTP, size, decoding) yields
+ * loaded (ImageUnavailableError: network, host, redirect, HTTP, size, decoding) yields
  * `image_unavailable`. Both are reported through `onUnavailable`. Any other error (the
  * embedding cache's database, a bug) is rethrown.
  */

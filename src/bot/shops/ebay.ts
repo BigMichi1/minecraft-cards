@@ -164,7 +164,8 @@ export function createEbayAdapter(opts: {
    * HttpError for a failed answer, with eBay's own error text: the `error`/`error_description`
    * of an OAuth answer or the messages of an API `errors` list, never other fields (a token
    * answer carries the access token); an answer with none of those gives its `message` or
-   * `title`, else the names of its fields, never its values. A body that is not JSON is kept as text.
+   * `title`, else the names of its fields, never its values. A body that is not JSON is kept as
+   * text; a JSON array or a JSON value that is not an object is named, not echoed.
    */
   async function failure(response: Response, url: string): Promise<HttpError> {
     const text = await response.text().catch(() => '');
@@ -175,7 +176,9 @@ export function createEbayAdapter(opts: {
     } catch {
       // Not JSON: an HTML error page or plain text, kept as it is.
     }
-    if (typeof json === 'object' && json !== null) {
+    if (Array.isArray(json)) {
+      detail = 'answer is a JSON array';
+    } else if (typeof json === 'object' && json !== null) {
       const body = json as {
         error?: string;
         error_description?: string;
@@ -186,7 +189,9 @@ export function createEbayAdapter(opts: {
       const parts = [
         body.error,
         body.error_description,
-        ...(Array.isArray(body.errors) ? body.errors : []).map((e) => e?.longMessage ?? e?.message),
+        ...(Array.isArray(body.errors) ? body.errors : []).map((e) =>
+          [e?.longMessage, e?.message].find((part) => typeof part === 'string')
+        ),
       ].filter((part): part is string => typeof part === 'string');
       if (parts.length === 0) {
         // A gateway or WAF answer: its message or title, else only the names of its fields.

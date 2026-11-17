@@ -261,6 +261,35 @@ describe('createEbayAdapter', () => {
     expect(withFields.message).not.toContain('down');
   });
 
+  test('failure bodies that are not JSON objects, or have odd fields, are not echoed', async () => {
+    const failRaw = async (tokenBody: string) => {
+      const fake = makeFetch({ tokenStatus: 503, tokenBody });
+      const adapter = createEbayAdapter({
+        clientId: 'id',
+        clientSecret: 'topsecret',
+        fetchFn: fake.fetchFn,
+      });
+      return (await adapter.fetchListings().catch((e: unknown) => e)) as HttpError;
+    };
+    const asString = await failRaw(JSON.stringify('v^1.1#leaked'));
+    expect(asString.message).toContain('JSON but not an object');
+    expect(asString.message).not.toContain('leaked');
+    const asArray = await failRaw(JSON.stringify(['v^1.1#leaked']));
+    expect(asArray.message).toContain('answer is a JSON array');
+    expect(asArray.message).not.toContain('leaked');
+    const withTitle = await failRaw(JSON.stringify({ title: 'Bad Gateway' }));
+    expect(withTitle.message).toContain('Bad Gateway');
+    const errorsString = await failRaw(
+      JSON.stringify({ errors: 'x', access_token: 'v^1.1#leaked' })
+    );
+    expect(errorsString.message).toContain('fields: errors, access_token');
+    expect(errorsString.message).not.toContain('leaked');
+    const oddLong = await failRaw(
+      JSON.stringify({ errors: [{ longMessage: 5, message: 'Use the message' }] })
+    );
+    expect(oddLong.message).toContain('Use the message');
+  });
+
   test("a search failure keeps at most 300 characters of eBay's error message", async () => {
     const fake = makeFetch({
       searchStatus: 400,

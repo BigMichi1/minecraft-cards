@@ -1,6 +1,6 @@
 # Builder stage: installs the pinned toolchain via the vendored Mise launcher,
 # the locked dependencies, and downloads the image-matching model once.
-FROM debian:13.7-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS builder
+FROM debian:13.7-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS builder
 
 WORKDIR /app
 
@@ -43,7 +43,7 @@ RUN bin/mise run model:download
 # needs sharp and onnxruntime-node native addons that do not work once
 # embedded in the binary; see docs/image-matching.md). So this stage carries the
 # mise-installed Bun, the production node_modules and the TypeScript source.
-FROM debian:13.7-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS production
+FROM debian:13.7-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS production
 
 WORKDIR /app
 

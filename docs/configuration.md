@@ -2,7 +2,8 @@
 
 The bot reads its settings from environment variables once at startup (`src/bot/config.ts`).
 A missing or invalid value stops the bot with a message naming the variable, never its value.
-`.env.example` documents each one.
+`DB_PATH`, `MIGRATIONS_PATH` and `LOG_LEVEL` are read by `src/bot/database/db.ts` and
+`src/bot/utils/logger.ts` when they load. `.env.example` documents each one.
 
 | Variable                 | Default                                 | Meaning                                                                                           |
 | ------------------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------- |

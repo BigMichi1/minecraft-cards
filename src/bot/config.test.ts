@@ -22,7 +22,6 @@ describe('loadConfig', () => {
     expect(loadConfig(REQUIRED)).toEqual({
       discordToken: 't',
       botAdminId: '1',
-      dbPath: './data/cards.db',
       checkIntervalMs: 3_600_000,
       ebay: null,
       imageModel: DEFAULT_IMAGE_MODEL,
@@ -36,6 +35,7 @@ describe('loadConfig', () => {
       loadConfig({
         ...REQUIRED,
         DISCORD_GUILD_ID: '42',
+        // Read by database/db.ts when it loads, not part of Config.
         DB_PATH: '/tmp/x.db',
         CHECK_INTERVAL_MINUTES: '15',
         EBAY_CLIENT_ID: 'id',
@@ -48,7 +48,6 @@ describe('loadConfig', () => {
       discordToken: 't',
       guildId: '42',
       botAdminId: '1',
-      dbPath: '/tmp/x.db',
       checkIntervalMs: 900_000,
       ebay: { clientId: 'id', clientSecret: 'secret' },
       imageModel: 'Xenova/clip-vit-base-patch32',

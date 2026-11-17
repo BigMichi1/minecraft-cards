@@ -2,13 +2,13 @@ import { DEFAULT_IMAGE_MATCH_THRESHOLD, DEFAULT_IMAGE_MODEL } from './matcher/em
 
 /**
  * Bot settings read once at startup. Holds secrets (`discordToken`, `ebay.clientSecret`):
- * never log a whole Config object.
+ * never log a whole Config object. `DB_PATH`, `MIGRATIONS_PATH` and `LOG_LEVEL` are not here:
+ * `database/db.ts` and `utils/logger.ts` read them when they load, before config does.
  */
 export interface Config {
   discordToken: string;
   guildId?: string;
   botAdminId: string;
-  dbPath: string;
   checkIntervalMs: number;
   ebay: { clientId: string; clientSecret: string } | null;
   imageModel: string;
@@ -26,7 +26,6 @@ export class ConfigError extends Error {
 
 type Env = Record<string, string | undefined>;
 
-const DEFAULT_DB_PATH = './data/cards.db';
 const DEFAULT_CHECK_INTERVAL_MINUTES = 60;
 const DEFAULT_MODEL_CACHE_DIR = './models';
 
@@ -75,7 +74,6 @@ export function loadConfig(env: Env): Config {
     discordToken,
     ...(guildId === undefined ? {} : { guildId }),
     botAdminId,
-    dbPath: optional(env, 'DB_PATH') ?? DEFAULT_DB_PATH,
     checkIntervalMs: intervalMs(env),
     ebay: clientId && clientSecret ? { clientId, clientSecret } : null,
     imageModel: optional(env, 'IMAGE_MODEL') ?? DEFAULT_IMAGE_MODEL,

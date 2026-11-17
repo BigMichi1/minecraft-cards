@@ -32,7 +32,7 @@ export function kleinanzeigenSearchUrl(cardId: CardId): string {
 const MAX_URL = 512;
 
 /** Discord rejects non-http(s) and over-long URLs; a bad one must never break a whole batch. */
-function validUrl(url: string | null | undefined): string | null {
+export function validUrl(url: string | null | undefined): string | null {
   if (!url || url.length > MAX_URL) return null;
   try {
     const { protocol } = new URL(url);

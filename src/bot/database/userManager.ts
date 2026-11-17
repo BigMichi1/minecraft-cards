@@ -104,17 +104,19 @@ export const userManager = {
     });
   },
 
-  /** True once if a DM failure was recorded, clearing it. */
-  takeDmFailure(discordId: string): boolean {
-    return db.transaction((tx) => {
-      const row = tx
+  /** True when a DM to this user failed and they have not been told yet. */
+  hasDmFailure(discordId: string): boolean {
+    return (
+      db
         .select({ id: users.discordId })
         .from(users)
         .where(and(eq(users.discordId, discordId), isNotNull(users.dmFailedAt)))
-        .get();
-      if (!row) return false;
-      tx.update(users).set({ dmFailedAt: null }).where(eq(users.discordId, discordId)).run();
-      return true;
-    });
+        .get() !== undefined
+    );
+  },
+
+  /** Forget a recorded DM failure (the user has seen the notice). */
+  clearDmFailure(discordId: string): void {
+    db.update(users).set({ dmFailedAt: null }).where(eq(users.discordId, discordId)).run();
   },
 };

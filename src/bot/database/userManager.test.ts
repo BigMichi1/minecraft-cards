@@ -79,12 +79,14 @@ describe('userManager', () => {
     expect(userManager.usersWanting([])).toEqual(new Map());
   });
 
-  test('markDmFailed and takeDmFailure', () => {
+  test('markDmFailed, hasDmFailure and clearDmFailure', () => {
     userManager.setList('u1', '12');
     userManager.markDmFailed('u1', 1);
-    expect(userManager.takeDmFailure('u1')).toBe(true);
-    expect(userManager.takeDmFailure('u1')).toBe(false);
-    expect(userManager.takeDmFailure('nobody')).toBe(false);
+    expect(userManager.hasDmFailure('u1')).toBe(true);
+    expect(userManager.hasDmFailure('u1')).toBe(true);
+    userManager.clearDmFailure('u1');
+    expect(userManager.hasDmFailure('u1')).toBe(false);
+    expect(userManager.hasDmFailure('nobody')).toBe(false);
   });
 
   test('empty or separator-only input is rejected and changes nothing', () => {

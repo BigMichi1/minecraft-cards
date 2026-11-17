@@ -1,6 +1,6 @@
 import { EmbedBuilder, MessageFlags, SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import logger from '../utils/logger';
+import { logError } from '../utils/logger';
 import { replyWithError } from '../utils/interactionReply';
 
 export const data = new SlashCommandBuilder()
@@ -42,7 +42,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
   } catch (error) {
-    logger.error('[HELP COMMAND] Error:', error);
+    logError('[HELP COMMAND] failed', error);
     await replyWithError(interaction, 'Error', 'An error occurred while displaying help.');
   }
 }

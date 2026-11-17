@@ -1,5 +1,6 @@
-import { Client, Events, GatewayIntentBits, MessageFlags } from 'discord.js';
-import type { ChatInputCommandInteraction, MessageCreateOptions } from 'discord.js';
+import { Client, Events, GatewayIntentBits } from 'discord.js';
+import type { MessageCreateOptions } from 'discord.js';
+import { throttledAlert } from './check/adminAlert';
 import { runCheck, type RunDeps } from './check/runner';
 import { createScheduler } from './check/scheduler';
 import * as adminCommand from './commands/admin';
@@ -10,8 +11,14 @@ import { catalogManager } from './database/catalogManager';
 import { closeDatabase, initializeDatabase } from './database/db';
 import { userManager } from './database/userManager';
 import { handleCatalogButton } from './interactions/catalogImport';
-import { handleReportButton, handleReportModal, handleReportReason } from './interactions/report';
+import {
+  handleReportButton,
+  handleReportModal,
+  handleReportReason,
+  retryUnsentReports,
+} from './interactions/report';
 import { buttonRoute, isReportModal } from './interactions/router';
+import { createShutdown, runChatCommand, type ChatCommand } from './lifecycle';
 import {
   createCachedEmbedder,
   createTransformersEmbedder,
@@ -22,11 +29,9 @@ import { createBlueOceanAdapter } from './shops/blueOcean';
 import { createEbayAdapter } from './shops/ebay';
 import { createSammelEnteAdapter } from './shops/sammelEnte';
 import type { ShopAdapter } from './shops/types';
-import { errorMessage, settlesWithin } from './utils/async';
+import { errorMessage } from './utils/async';
 import { replyWithError } from './utils/interactionReply';
-import logger from './utils/logger';
-
-const DM_FAILURE_NOTICE = "I couldn't send you a DM — please allow DMs from server members.";
+import logger, { logError } from './utils/logger';
 
 let config: Config;
 try {
@@ -51,7 +56,7 @@ try {
   logger.info(`Image model ${config.imageModel} loaded`);
 } catch (error) {
   modelLoadFailure = `Image model ${config.imageModel} could not be loaded, running without image matching: ${errorMessage(error)}`;
-  logger.error(modelLoadFailure);
+  logError(`Image model ${config.imageModel} could not be loaded`, error);
 }
 
 const adapters: ShopAdapter[] = [createSammelEnteAdapter(), createBlueOceanAdapter()];
@@ -70,27 +75,39 @@ async function dmAdmin(message: string | MessageCreateOptions): Promise<void> {
   await admin.send(message);
 }
 
-// Set by shutdown(); DMs failing after it are the client going away, not closed DMs.
-let shuttingDown = false;
 /** How long shutdown waits for a check in progress before closing the client and database. */
 const SHUTDOWN_GRACE_MS = 5_000;
 
+// The scheduler is created below; shutdown only runs once the process is up.
+let stopScheduler: () => Promise<void> = async () => {};
+const { shutdown, isShuttingDown } = createShutdown({
+  stopScheduler: () => stopScheduler(),
+  destroyClient: () => client.destroy(),
+  closeDatabase,
+  exit: (code) => process.exit(code),
+  graceMs: SHUTDOWN_GRACE_MS,
+});
+
+const alertAdmin = (text: string) => dmAdmin(text);
 const runDeps: RunDeps = {
   adapters,
   embedder,
   threshold: config.imageMatchThreshold,
-  sender: createDiscordSender(client, { isShuttingDown: () => shuttingDown }),
-  alertAdmin: (text) => dmAdmin(text),
+  sender: createDiscordSender(client, {
+    isShuttingDown,
+    alert: throttledAlert(alertAdmin, Date.now),
+  }),
+  alertAdmin,
   now: Date.now,
   intervalMs: config.checkIntervalMs,
+  retryReports: () => retryUnsentReports(dmAdmin),
 };
 const scheduler = createScheduler(() => runCheck(runDeps), config.checkIntervalMs);
+stopScheduler = () => scheduler.stop();
 
-// Commands are imported statically: dynamic scanning breaks the compiled bundle.
-const commands: Record<
-  string,
-  { data: { name: string }; execute: (i: ChatInputCommandInteraction) => Promise<void> }
-> = {
+// Commands are imported statically, so `bun run build` can still bundle the bot into one
+// binary (a dynamic directory scan would not be bundled).
+const commands: Record<string, ChatCommand> = {
   [adminCommand.data.name]: {
     data: adminCommand.data,
     execute: (i) =>
@@ -113,7 +130,14 @@ client.on(Events.ClientReady, async (ready) => {
       logger.info(`Registered ${commandData.length} global commands`);
     }
   } catch (error) {
-    logger.error(`Registering slash commands failed: ${errorMessage(error)}`);
+    logError('Registering slash commands failed', error);
+    try {
+      await dmAdmin(
+        `Registering the slash commands failed, so they may be missing or outdated: ${errorMessage(error)}`
+      );
+    } catch (dmError) {
+      logError('Could not tell the admin about the command registration', dmError, 'warn');
+    }
   }
   if (modelLoadFailure) {
     const text = modelLoadFailure;
@@ -121,47 +145,21 @@ client.on(Events.ClientReady, async (ready) => {
     try {
       await dmAdmin(text);
     } catch (error) {
-      logger.warn(`Could not tell the admin about the image model: ${errorMessage(error)}`);
+      logError('Could not tell the admin about the image model', error, 'warn');
     }
   }
   scheduler.start();
   logger.info(`Stock check scheduled every ${config.checkIntervalMs / 60_000} minutes`);
 });
 
-/** True once if a DM to this user failed since they last ran a command; never throws. */
-function takeDmFailure(userId: string): boolean {
-  try {
-    return userManager.takeDmFailure(userId);
-  } catch (error) {
-    logger.warn(`Reading the DM failure flag for ${userId} failed: ${errorMessage(error)}`);
-    return false;
-  }
-}
-
-async function runChatCommand(interaction: ChatInputCommandInteraction): Promise<void> {
-  const command = commands[interaction.commandName];
-  if (!command) return;
-  const dmFailed = takeDmFailure(interaction.user.id);
-  logger.info(`[COMMAND] /${interaction.commandName} from ${interaction.user.tag}`);
-  try {
-    await command.execute(interaction);
-  } catch (error) {
-    logger.error(`[COMMAND] /${interaction.commandName} failed: ${errorMessage(error)}`);
-    await replyWithError(interaction, 'Command failed', 'Something went wrong. Please try again.');
-  }
-  if (dmFailed && (interaction.replied || interaction.deferred)) {
-    try {
-      await interaction.followUp({ content: DM_FAILURE_NOTICE, flags: MessageFlags.Ephemeral });
-    } catch (error) {
-      logger.warn(`Could not send the DM failure notice: ${errorMessage(error)}`);
-    }
-  }
-}
-
 client.on(Events.InteractionCreate, async (interaction) => {
   try {
     if (interaction.isChatInputCommand()) {
-      await runChatCommand(interaction);
+      await runChatCommand(interaction, {
+        commands,
+        hasDmFailure: (id) => userManager.hasDmFailure(id),
+        clearDmFailure: (id) => userManager.clearDmFailure(id),
+      });
     } else if (interaction.isButton()) {
       switch (buttonRoute(interaction.customId)) {
         case 'report':
@@ -181,7 +179,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await handleReportModal(interaction, dmAdmin);
     }
   } catch (error) {
-    logger.error(`[INTERACTION] unhandled error: ${errorMessage(error)}`);
+    logError('[INTERACTION] unhandled error', error);
     if (interaction.isRepliable()) {
       await replyWithError(interaction, 'Something went wrong', 'Please try again later.');
     }
@@ -189,33 +187,23 @@ client.on(Events.InteractionCreate, async (interaction) => {
 });
 
 // SIGINT comes from a terminal; SIGTERM is what `docker stop` sends.
-async function shutdown(reason: string, code: number): Promise<void> {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  logger.info(`Shutting down (${reason})...`);
-  if (!(await settlesWithin(scheduler.stop(), SHUTDOWN_GRACE_MS))) {
-    logger.warn(`A check was still running after ${SHUTDOWN_GRACE_MS / 1000} s; stopping anyway`);
-  }
-  await client.destroy();
-  await closeDatabase();
-  process.exit(code);
-}
-
 process.on('SIGINT', () => void shutdown('SIGINT', 0));
 process.on('SIGTERM', () => void shutdown('SIGTERM', 0));
 
 // Without these, a rejection inside an async discord.js listener can take the
 // process down with no diagnostic.
 process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled promise rejection:', reason);
+  logError('Unhandled promise rejection', reason);
 });
+// After an uncaught exception the process state is unknown: log it and stop.
 process.on('uncaughtException', (error) => {
-  logger.error('Uncaught exception:', error);
+  logError('Uncaught exception', error);
+  void shutdown('uncaught exception', 1);
 });
 
 try {
   await client.login(config.discordToken);
 } catch (error) {
-  logger.error(`Discord login failed: ${errorMessage(error)}`);
+  logError('Discord login failed', error);
   await shutdown('login failed', 1);
 }

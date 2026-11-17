@@ -36,7 +36,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         {
           name: 'Good to know',
           value:
-            'Allow DMs from server members, otherwise the bot cannot reach you. The bot checks the shops every hour.',
+            'Allow DMs from server members, otherwise the bot cannot reach you. The bot checks the shops every hour (the admin can change the interval).',
         }
       );
 

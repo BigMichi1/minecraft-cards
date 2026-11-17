@@ -24,7 +24,7 @@ run = "bun run dev"
 env = { NODE_ENV = "development" }
 
 [tasks.build]
-description = "Build the minified standalone executable (dist-bundle/bot)"
+description = "Build the minified standalone executable (dist-bundle/bot); it cannot load the image model (docs/image-matching.md), production uses bun run"
 run = "bun run build"
 
 [tasks."prod:build"]

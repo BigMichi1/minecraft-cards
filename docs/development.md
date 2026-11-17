@@ -1,7 +1,8 @@
 # Development
 
 Everything runs through the vendored Mise launcher `./bin/mise`, which pins Bun, gitleaks,
-ripgrep and jq into `.mise/`. Do not call `bun run`, `npm` or `npx` directly; a missing task
+ripgrep and jq into `.mise/`. `.mise.toml` also pins `claude` (Claude Code) and `python`: the
+maintainer's own toolchain, not used by the bot, its tests or CI. Do not call `bun run`, `npm` or `npx` directly; a missing task
 belongs in `.mise.toml`.
 
 ## Setup
@@ -33,10 +34,16 @@ Extra arguments pass through: `./bin/mise run test src/bot/utils/async.test.ts`.
 
 ## Rules
 
-- Every non-test source file in `src/` has a matching `*.test.ts` beside it.
+- Every non-test source file in `src/` has a matching `*.test.ts` beside it. Exempt:
+  `src/bot/bot.ts` (entrypoint wiring; its logic is in tested modules such as `lifecycle.ts`),
+  `src/bot/database/schema/*.ts` (covered by the smoke test `src/bot/database/db.test.ts`),
+  and the test helpers in `src/test/`.
+- Tests build card ids with `cid()` / `ids()` from `src/test/cardIds.ts`: `CardId` is a
+  branded string.
 - Conventional Commits with scopes `bot`, `cards`, `database`, `shops`, `ebay`, `matcher`,
   `notify`, `commands`, `admin`, `ci`, `docs`, `docker`; commit with `git commit -s`
-  (see `DCO.md`). Hooks run gitleaks, eslint, commitlint and a DCO check; never `--no-verify`.
+  (see `DCO.md`). Hooks run gitleaks, eslint (check only; fix with `lint:fix` and stage the
+  result), commitlint and a DCO check; never `--no-verify`.
 - Commands are imported statically in `bot.ts`.
 - Shell scripts and hooks are POSIX `sh`.
 
@@ -44,5 +51,5 @@ Extra arguments pass through: `./bin/mise run test src/bot/utils/async.test.ts`.
 
 `test.yml` runs typecheck, lint, format check and the coverage gate; further workflows cover
 CodeQL, DCO, dependency review, secret scanning, Scorecard, the Docker build and a daily
-`bun audit`. The workflows are copied from IdleCodeRedeemer with the Idle-specific jobs
-(`deps:submit`, `audit:pr`) left out.
+`bun audit`. The workflows follow [IdleCodeRedeemer](https://github.com/BigMichi1/IdleCodeRedeemer)'s,
+without its Idle-specific jobs.

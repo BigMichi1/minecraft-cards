@@ -21,7 +21,6 @@ COPY package.json ./
 # bun.lock must be present for the frozen install below; without it the image
 # silently resolves fresh versions and drifts from the committed lockfile.
 COPY bun.lock ./
-COPY .env.example .env
 COPY bin/mise ./bin/mise
 
 RUN bin/mise install

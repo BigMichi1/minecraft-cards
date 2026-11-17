@@ -22,8 +22,9 @@ for DINOv2-small); the directory is gitignored.
 series 3 listings ("On Fire" in the title), and pairs them with sammel-ente by card id:
 
 - **true pairs**: blue-ocean card _n_ against sammel-ente card _n_;
-- **false pairs**: blue-ocean card _n_ against sammel-ente card _n + 1_ (the next shared
-  id). Neighbouring cards are often parts of one panorama, so this is the hard case.
+- **false pairs**: blue-ocean card _n_ against the sammel-ente card of the next card id both
+  shops have, in sorted order (usually _n + 1_; the last one wraps to the first).
+  Neighbouring cards are often parts of one panorama, so this is the hard case.
 
 251 sammel-ente listings, 206 blue-ocean series 3 listings (456 in total), 203 shared card
 ids, so 203 true and 203 false pairs.
@@ -75,9 +76,11 @@ Measured with transformers.js 4.3.2 on CPU; embedding two shop images (download 
 ## Data quality finding
 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",
-URLs ending `-tcc-1`). The blue-ocean parser reads card ids from those URLs too (for
-example `1` from `…-tcc-1`), so the 250 of 456 blue-ocean listings that are not series 3
-still get a card id, which is not the series 3 card of that number. The blue-ocean parser filters them out by title (`isOnFireCardTitle`: the title must contain "LEGO Minecraft TCC" and "On Fire"), and the measurement script reads blue-ocean through it.
+URLs ending `-tcc-1`). Card ids come from the URL suffix, so those listings would get a
+card id too (for example `1` from `…-tcc-1`) that is not the series 3 card of that number;
+in the measurement 250 of 456 blue-ocean listings were such cards. The blue-ocean parser
+drops them by title (`isOnFireCardTitle`: the title must contain "LEGO Minecraft TCC" and
+"On Fire"), and the measurement script reads blue-ocean through it.
 
 ## Compiled binary (`bun build --compile`)
 
@@ -92,11 +95,12 @@ Spike: a script that embeds one image, built with `bun build --compile` and run.
   template-literal `require` of its `.node` binding into static requires, the binary gets
   as far as `libonnxruntime.so.1: cannot open shared object file`. With
   `LD_LIBRARY_PATH` pointing at `node_modules/onnxruntime-node/bin/napi-v6/linux/x64` it
-  embeds the image correctly (512-dim, norm 1.0000), also from another working directory.
+  embeds the image correctly (512-dim with the CLIP model the spike used; DINOv2-small gives
+  384), norm 1.0000, also from another working directory.
 
 So a compiled binary is possible only with a custom `Bun.build` plugin plus shipping
-`libonnxruntime.so.1` beside it. Task 15 should use the `bun run` image variant (source +
-`node_modules` in the image), which needs none of that.
+`libonnxruntime.so.1` beside it. The Docker image therefore runs `bun run src/bot/bot.ts`
+with the source and `node_modules` in the image, which needs none of that.
 
 ## Input limits
 
@@ -105,5 +109,21 @@ Remote pictures are bounded before they reach the model: downloads over 10 MB ar
 pictures over 10000 px on a side or more elongated than 10:1 are refused from their header,
 before decoding or resizing. Pictures are fetched only over https from the shop and eBay
 image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
-`i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts. All of
-these surface as `model_unavailable`.
+`i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
+
+## Match statuses
+
+| Status              | Meaning                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------- |
+| `reference`         | A sammel-ente listing: its picture is the reference                                      |
+| `pending`           | Not compared yet: new, or its picture, cards or id conflict changed                      |
+| `confirmed`         | Picture matches the reference, or the admin mapped the listing (`/admin map`)            |
+| `unconfirmed`       | Below the threshold, a blue-ocean id conflict, or no picture to compare                  |
+| `bundle`            | Several cards in one listing; not compared                                               |
+| `no_reference`      | The card has no reference picture yet; retried every check                               |
+| `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check           |
+| `image_unavailable` | A picture could not be loaded (host, redirect, HTTP, size, decoding); retried once a day |
+
+Only listings of cards someone wants are compared. An admin-mapped listing stays
+`confirmed` when its picture changes later. Any other error while matching (the embedding
+cache's database, a bug) fails the check run instead of being taken for a model problem.

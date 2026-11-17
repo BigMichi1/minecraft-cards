@@ -12,8 +12,8 @@ A missing or invalid value stops the bot with a message naming the variable, nev
 | `DISCORD_GUILD_ID`       | unset                                   | Register slash commands in this guild (instant); unset registers globally (up to an hour)         |
 | `DB_PATH`                | `./data/cards.db`                       | SQLite database file (`/app/data/cards.db` in the image)                                          |
 | `MIGRATIONS_PATH`        | `src/bot/database/migrations`           | Migration folder; set in the Docker image                                                         |
-| `CHECK_INTERVAL_MINUTES` | `60`                                    | Minutes between shop checks. Keep it at an hour or more                                           |
-| `EBAY_CLIENT_ID`         | unset                                   | eBay Browse API application keyset; eBay is skipped with a startup warning unless both are set    |
+| `CHECK_INTERVAL_MINUTES` | `60`                                    | Minutes between shop checks, at most 35791 (a timer's limit). Keep it at an hour or more          |
+| `EBAY_CLIENT_ID`         | unset                                   | eBay Browse API application keyset: set both, or neither (eBay off); only one is a startup error  |
 | `EBAY_CLIENT_SECRET`     | unset                                   |                                                                                                   |
 | `IMAGE_MODEL`            | `Xenova/dinov2-small`                   | Hugging Face model for the picture check                                                          |
 | `IMAGE_MATCH_THRESHOLD`  | `0.78`                                  | Cosine similarity (0 to 1, exclusive) that confirms a listing; re-measure when changing the model |

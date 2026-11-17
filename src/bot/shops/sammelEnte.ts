@@ -10,7 +10,7 @@ const BASE_URL = 'https://shop-sammel-ente.de/Minecraft/Serie-3/';
 const PAGE_DELAY_MS = 1500;
 const MAX_PAGES = 60;
 
-// "LEGO Minecraft Serie 3 | #012 Squid" -> id "012", name "Squid". Puzzle packs
+// "LEGO Minecraft Serie 3 | #012 Squid" -> id "12" (canonical, normalizeCardId), name "Squid". Puzzle packs
 // ("... Puzzle-Paket #1 (154 - 162)") have no pipe, boosters and starter packs no "#".
 const TITLE_PATTERN = /\|\s*#((?:LE|XXL)?\d+)\s+(\S.*)$/i;
 

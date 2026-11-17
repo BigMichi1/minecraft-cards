@@ -21,7 +21,7 @@ export interface ResizeSpec {
   do_center_crop?: boolean;
   size?: { shortest_edge?: number; width?: number; height?: number };
   crop_size?: number | { width: number; height: number };
-  /** PIL resampling id: 0 nearest, 2 bilinear, 3 bicubic. */
+  /** PIL resampling id: 0 nearest, 1 Lanczos, 2 bilinear, 3 bicubic (default 2). */
   resample?: number;
 }
 

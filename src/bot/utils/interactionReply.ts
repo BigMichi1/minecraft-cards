@@ -6,11 +6,11 @@ import { errorMessage } from './async';
 /**
  * Report an error to the user from inside a catch block.
  *
- * Most commands called `interaction.editReply(...)` directly in their catch. If
- * the original failure *was* the `deferReply()` — an expired interaction token,
- * a Discord outage — then `editReply` rejects too, the catch block throws a
- * second time, and the user is left with "The application did not respond" while
- * an unhandled rejection propagates out of an async listener.
+ * Calling `interaction.editReply(...)` directly in a catch fails when the original
+ * failure *was* the `deferReply()` (an expired interaction token, a Discord outage):
+ * `editReply` rejects too, the catch block throws a second time, and the user sees
+ * "The application did not respond" while an unhandled rejection leaves the async
+ * listener.
  *
  * This picks the right method for the interaction's current state and never
  * throws: a failure to deliver the error report is logged, not raised.

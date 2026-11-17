@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { MessageFlags } from 'discord.js';
+import { MessageFlags, PermissionFlagsBits } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { STARTER_CHECKLIST } from '../cards/starterCatalog';
 import type { RunSummary } from '../check/runner';
@@ -117,6 +117,12 @@ describe('/admin', () => {
   test('declares map, clear, status, run and the catalog import group', () => {
     const json = data.toJSON();
     expect(json.options?.map((o) => o.name)).toEqual(['map', 'clear', 'status', 'run', 'catalog']);
+  });
+
+  test('is hidden from members without the Administrator permission', () => {
+    expect(data.toJSON().default_member_permissions).toBe(
+      PermissionFlagsBits.Administrator.toString()
+    );
   });
 
   test('non-admins are refused and nothing runs', async () => {

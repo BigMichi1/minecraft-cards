@@ -17,6 +17,12 @@ release versions, `sha-<short>`); release images are signed with Cosign.
 
 The server is x86_64; the image has not been built for arm64.
 
+## Discord application
+
+In the Discord Developer Portal, under **Bot**, turn **Public Bot** off, so only you can add
+the bot to a server. `/admin` is registered with the Administrator default permission (hidden
+from other members); the bot still accepts it only from `BOT_ADMIN_ID`.
+
 ## Run
 
 ```sh

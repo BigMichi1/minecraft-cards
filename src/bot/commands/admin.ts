@@ -3,6 +3,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   MessageFlags,
+  PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
@@ -28,6 +29,8 @@ export interface AdminContext {
 export const data = new SlashCommandBuilder()
   .setName('admin')
   .setDescription('Bot administration')
+  // Hidden from non-administrators in the command picker; execute() still checks adminId.
+  .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
   .addSubcommand((sub) =>
     sub
       .setName('map')

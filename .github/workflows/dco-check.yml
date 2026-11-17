@@ -1,0 +1,88 @@
+name: DCO Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    permissions:
+      contents: read
+    name: DCO Sign-Off Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden the runner (Audit all outbound calls)
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check DCO sign-offs
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_SHA: ${{ github.sha }}
+        run: |
+          # The commits of the PR, or the commits this push added.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            COMMIT_RANGE="$PR_BASE..$PR_HEAD"
+          elif [ -z "$PUSH_BEFORE" ] || [ "$PUSH_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            # A new branch has no "before": check the pushed commit itself.
+            if git rev-parse --verify -q "$PUSH_SHA^" >/dev/null; then
+              COMMIT_RANGE="$PUSH_SHA^..$PUSH_SHA"
+            else
+              COMMIT_RANGE="$PUSH_SHA"
+            fi
+          else
+            COMMIT_RANGE="$PUSH_BEFORE..$PUSH_SHA"
+          fi
+
+          # Merge commits are skipped: Kodiak brings PR branches up to date by
+          # merging main in, and those merge commits carry no Signed-off-by.
+          # They add no authored content; the commits they merge are checked.
+          # Captured first: a failing rev-list inside a process substitution
+          # would go unnoticed and pass the check with nothing checked.
+          if ! commits="$(git rev-list --no-merges "$COMMIT_RANGE")"; then
+            echo "::error::git rev-list failed for $COMMIT_RANGE; cannot verify DCO sign-offs"
+            exit 1
+          fi
+
+          # Check for Signed-off-by in commit messages
+          unsigned_commits=()
+          while IFS= read -r commit; do
+            [ -n "$commit" ] || continue
+            if ! git log --format=%B -n 1 "$commit" | grep -q "^Signed-off-by:"; then
+              unsigned_commits+=("$commit")
+            fi
+          done <<< "$commits"
+
+          if [ ${#unsigned_commits[@]} -gt 0 ]; then
+            echo "❌ DCO Check Failed"
+            echo ""
+            echo "The following commits are not signed off:"
+            for commit in "${unsigned_commits[@]}"; do
+              echo "  - $(git log --oneline -n 1 "$commit")"
+            done
+            echo ""
+            echo "Please sign off on all commits using:"
+            echo "  git commit --amend -s"
+            echo "  git push --force-with-lease"
+            echo ""
+            echo "For more information, see DCO.md"
+            exit 1
+          fi
+
+          echo "✅ All commits are properly signed off"

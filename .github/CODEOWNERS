@@ -1,0 +1,18 @@
+# Default: all changes require approval from the maintainer
+* @BigMichi1
+
+# Security-critical files
+.github/ @BigMichi1
+eslint.config.mjs @BigMichi1
+tsconfig.bot.json @BigMichi1
+.mise.toml @BigMichi1
+
+# Source, database migrations and docs
+src/ @BigMichi1
+docs/ @BigMichi1
+
+# Root configuration files
+Dockerfile @BigMichi1
+docker-compose.example.yml @BigMichi1
+package.json @BigMichi1
+.env.example @BigMichi1

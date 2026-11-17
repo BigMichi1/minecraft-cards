@@ -1,0 +1,111 @@
+[tools]
+bun = "1.4.4"
+claude = "2.1.326"
+gitleaks = "8.30.1"
+rg = "15.2.0"
+jq = "1.8.2"
+python = "3.15.0"
+
+[tasks.install]
+description = "Install dependencies with Bun"
+run = "bun install"
+
+[tasks."ci:install"]
+description = "Install all dependencies exactly as locked (fails if bun.lock is stale)"
+run = "bun install --frozen-lockfile"
+
+[tasks."prod:install"]
+description = "Install production dependencies only with Bun"
+run = "bun install --production --frozen-lockfile --ignore-scripts"
+
+[tasks.dev]
+description = "Run bot in development mode with TypeScript support"
+run = "bun run dev"
+env = { NODE_ENV = "development" }
+
+[tasks.build]
+description = "Build the minified standalone executable (dist-bundle/bot); it cannot load the image model (docs/image-matching.md), production uses bun run"
+run = "bun run build"
+
+[tasks."prod:build"]
+description = "Alias for build, with NODE_ENV=production"
+run = "bun run build"
+env = { NODE_ENV = "production" }
+
+[tasks.typecheck]
+description = "Type-check TypeScript source without emitting files"
+run = "bun run typecheck"
+
+[tasks.test]
+description = "Run all tests"
+run = "bun test"
+
+[tasks."test:coverage"]
+description = "Run all tests with LCOV coverage report (output: coverage/lcov.info)"
+run = "bun test --coverage --coverage-reporter=lcov"
+
+[tasks.lint]
+description = "Check code quality with ESLint"
+run = "bun run lint"
+
+[tasks."lint:fix"]
+description = "Auto-fix ESLint issues"
+run = "bun run lint:fix"
+
+[tasks.format]
+description = "Format sources with Prettier and sync package.json with Syncpack"
+run = "bun run format"
+
+[tasks."format:check"]
+description = "Check formatting without writing changes"
+run = "bun run format:check"
+
+[tasks.gitleaks]
+description = "Scan for secrets with Gitleaks"
+run = "gitleaks detect --source . --config .gitleaks.toml --verbose"
+
+[tasks.commitlint]
+# No --edit here: the commit-msg hook appends its own `--edit <path>`.
+# Callers pass the flag: `mise run commitlint --edit` or `--edit <path>`.
+description = "Validate a commit message (pass --edit or --edit <path>)"
+run = "bunx commitlint"
+
+[tasks."db:generate"]
+description = "Generate a Drizzle migration from the schema in src/bot/database/schema"
+run = "bun run db:generate"
+
+[tasks."db:studio"]
+description = "Open Drizzle Studio against the local database"
+run = "bun run db:studio"
+
+[tasks."measure:threshold"]
+description = "Measure image similarity of true and false card pairs per model (needs network)"
+run = "bun run scripts/measure-threshold.ts"
+
+[tasks."model:download"]
+description = "Download IMAGE_MODEL into MODEL_CACHE_DIR (default ./models) once"
+run = "bun run scripts/download-model.ts"
+
+[tasks.audit]
+description = "Audit dependencies for vulnerabilities"
+run = "bun audit"
+
+[tasks.outdated]
+description = "Check for outdated dependencies"
+run = "bun outdated"
+
+[tasks.docker-build]
+description = "Build Docker image"
+run = "docker build -t minecraft-cards ."
+
+[tasks.docker-up]
+description = "Start bot with Docker Compose"
+run = "docker-compose up -d"
+
+[tasks.docker-down]
+description = "Stop bot with Docker Compose"
+run = "docker-compose down"
+
+[tasks.docker-logs]
+description = "View Docker bot logs"
+run = "docker-compose logs -f minecraft-cards"

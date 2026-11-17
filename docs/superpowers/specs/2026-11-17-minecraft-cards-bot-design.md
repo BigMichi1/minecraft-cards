@@ -125,7 +125,7 @@ JSON APIs were not used.
 1. Collect the union of all users' wanted card numbers. If empty, skip shops.
 2. **Fetch shops** sequentially with a small delay between pages. Each shop adapter
    returns `Listing[]`: `{ shop, cardNumber | null, title, url, imageUrl, price,
-   available }`.
+available }`.
    - sammel-ente: card number from `#NNN` in the title.
    - blue-ocean: card number from URL suffix (cross-checked with image filename `P<n>`;
      if both present and disagree, the listing is marked unconfirmed).
@@ -165,15 +165,18 @@ DM at most once per shop per day. Other shops still run.
 Embed:
 
 ```
-🟢 Card #12 Squid is available
+1️⃣ 🟢 Card #12 Squid is available
 Shop: blue-ocean · Price: 0,99 € · Auf Lager
 [listing image]
 ✅ picture matches reference (0.94)        ← or ⚠️ number unconfirmed (+ reference image)
-[Open in shop]  [Kleinanzeigen search]  [❌ Wrong card]
+[1️⃣ #12 · blue-ocean]  [Kleinanzeigen #12]  [❌ Wrong #12]
 ```
 
-- "Open in shop": link button to the listing URL.
-- Kleinanzeigen search: link button to a Kleinanzeigen search URL for
+- Discord shows all button rows below all embeds of a message, so each embed title and its
+  row start with the same position marker (1️⃣ to 5️⃣), and the buttons name their card
+  (bundles: `Bundle · eBay`, `❌ Wrong bundle`). Labels stay within Discord's 80 characters.
+- `#12 · blue-ocean`: link button to the listing URL.
+- `Kleinanzeigen #12`: link button to a Kleinanzeigen search URL for
   `lego minecraft karte <number>` (exact query format left to builder).
 - Card name comes from the sammel-ente reference catalog.
 

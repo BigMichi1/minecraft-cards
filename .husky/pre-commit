@@ -1,0 +1,26 @@
+#!/bin/sh
+
+# Get the project root directory
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Scan for secrets with Gitleaks via local bin/mise
+echo "🔐 Scanning for secrets with Gitleaks..."
+# `if !` rather than a later `$?` check: under `sh -e` a failing command exits at once, before
+# the advice below could print.
+if ! "$PROJECT_ROOT/bin/mise" run gitleaks; then
+  echo "❌ ERROR: Gitleaks detected secrets!"
+  echo "   Please remove secrets before committing."
+  exit 1
+fi
+
+# Check with ESLint through mise. Plain lint, not lint:fix: fixes made here would not be
+# staged, so the commit would not contain them. Fix with `./bin/mise run lint:fix`, then
+# stage and commit again.
+echo "✨ Running linters..."
+cd "$PROJECT_ROOT"
+if ! "$PROJECT_ROOT/bin/mise" run lint; then
+  echo "❌ ERROR: Linting failed! Run ./bin/mise run lint:fix, stage the fixes and commit again."
+  exit 1
+fi
+
+echo "✅ Pre-commit checks passed!"

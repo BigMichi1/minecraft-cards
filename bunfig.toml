@@ -1,0 +1,5 @@
+[test]
+preload = ["./src/test/setup.ts"]
+# Coverage measures bot code only: not tests, test helpers and fixtures, or the
+# tooling in scripts/.
+coveragePathIgnorePatterns = ["**/*.test.ts", "**/test/**", "**/scripts/**"]

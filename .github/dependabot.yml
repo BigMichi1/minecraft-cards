@@ -1,0 +1,84 @@
+version: 2
+updates:
+  # Bun dependencies
+  - package-ecosystem: bun
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+    open-pull-requests-limit: 5
+    # Packages in these families must move together (a config ahead of its CLI,
+    # or a parser ahead of its plugin, breaks the hooks). Grouping makes each
+    # family one PR.
+    groups:
+      commitlint:
+        patterns:
+          - "commitlint"
+          - "@commitlint/*"
+      typescript-eslint:
+        patterns:
+          - "@typescript-eslint/*"
+      prettier:
+        patterns:
+          - "prettier"
+          - "prettier-plugin-*"
+    reviewers:
+      - BigMichi1
+      - Copilot
+    labels:
+      - "dependencies"
+      - "automerge"
+      - "bun"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+    pull-request-branch-name:
+      separator: "/"
+    rebase-strategy: auto
+    # Syncpack enforces exact pins on every dependency, so `lockfile-only` would
+    # leave Dependabot nothing to change; `increase` lets it rewrite the pin.
+    versioning-strategy: increase
+    ignore:
+      # typescript-eslint does not support TS 7.0: the plugin throws on load,
+      # which breaks `mise run lint` and with it the pre-commit hook. Lift this
+      # once typescript-eslint ships TS 7 support.
+      # https://github.com/typescript-eslint/typescript-eslint/issues/10940
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:00"
+    # All github/codeql-action/* steps must run the same version; separate PRs
+    # per sub-action produce a version mismatch that fails the CodeQL analysis.
+    groups:
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+    reviewers:
+      - BigMichi1
+      - Copilot
+    labels:
+      - "dependencies"
+      - "automerge"
+      - "github_actions"
+
+  # Docker dependencies
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "05:00"
+    reviewers:
+      - BigMichi1
+      - Copilot
+    labels:
+      - "dependencies"
+      - "automerge"
+      - "docker"

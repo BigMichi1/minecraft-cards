@@ -1,0 +1,337 @@
+name: Generate Release Attestation & Manifest
+
+on:
+  release:
+    types: [published]
+  # Regenerates the attestation of an existing release, e.g. when this workflow
+  # failed at tag time: a re-run replays the workflow file of the tagged commit,
+  # a dispatch uses the default branch's.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attest (e.g. v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  attestation:
+    name: Create Signed Release Attestation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # edits the release: attestation assets and the notes block
+      id-token: write   # keyless Cosign signing
+
+    steps:
+      - name: Harden the runner
+        uses: step-security/harden-runner@ccd8616d44fd3846e67624a50d5aad6d37bf2d25 # v2.22.1
+        with:
+          egress-policy: audit
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0  # Full history for git log
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          # Pinned to v2: this workflow uploads sign-blob's separate signature
+          # and certificate files, while cosign v3 defaults to its bundle format.
+          cosign-release: 'v2.6.1'
+
+      # The release payload is absent on workflow_dispatch, so both the tag and
+      # the asset upload URL are resolved once here and read from outputs below.
+      - name: Resolve Release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          EVENT_UPLOAD_URL: ${{ github.event.release.upload_url }}
+          EVENT_RELEASE_ID: ${{ github.event.release.id }}
+        run: |
+          set -e
+          TAG="${INPUT_TAG:-$EVENT_TAG}"
+          if [ -z "$TAG" ]; then
+            echo "::error::No release tag available from the event or the dispatch input"
+            exit 1
+          fi
+
+          if [ -n "$EVENT_UPLOAD_URL" ]; then
+            UPLOAD_URL="$EVENT_UPLOAD_URL"
+            RELEASE_ID="$EVENT_RELEASE_ID"
+          else
+            UPLOAD_URL="$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq .upload_url)"
+            RELEASE_ID="$(gh api "repos/${{ github.repository }}/releases/tags/$TAG" --jq .id)"
+          fi
+
+          # github.sha is the default branch's HEAD on a dispatch, not the
+          # release's commit: resolve the tag's own commit (`commits/<tag>`
+          # dereferences an annotated tag).
+          COMMIT_SHA="$(gh api "repos/${{ github.repository }}/commits/$TAG" --jq .sha)"
+
+          # OCI references must be lowercase; github.repository is not.
+          IMAGE="ghcr.io/$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')"
+
+          # The tags docker.yml pushes (docker/metadata-action, type=semver): the version always;
+          # <major>.<minor> unless it is a pre-release (those only get the version tag); <major>
+          # unless it is a pre-release or major 0 (docker.yml disables the 0 tag).
+          VERSION="${TAG#v}"
+          TAGS_JSON="$(jq -cn --arg v "$VERSION" '
+            ($v | split(".")) as $p
+            | [$v]
+              + (if ($v | contains("-")) then []
+                 else [($p[0] + "." + $p[1])] + (if $p[0] == "0" then [] else [$p[0]] end)
+                 end)')"
+
+          {
+            echo "tag=$TAG"
+            echo "upload_url=$UPLOAD_URL"
+            echo "release_id=$RELEASE_ID"
+            echo "commit_sha=$COMMIT_SHA"
+            echo "image=$IMAGE"
+            echo "tags=$TAGS_JSON"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Generate Release Manifest
+        id: manifest
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          TAGS_JSON: ${{ steps.release.outputs.tags }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -e
+
+          # Parse version from tag (v0.1.0 -> 0.1.0)
+          VERSION="${RELEASE_TAG#v}"
+          BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+          # Built with jq, not a heredoc, so every value is escaped and the
+          # output is valid JSON by construction.
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg version "$VERSION" \
+            --arg date "$BUILD_DATE" \
+            --arg repository "${{ github.repository }}" \
+            --arg commit_sha "${{ steps.release.outputs.commit_sha }}" \
+            --arg commit_url "${{ github.server_url }}/${{ github.repository }}/commit/${{ steps.release.outputs.commit_sha }}" \
+            --arg run_id "${{ github.run_id }}" \
+            --arg run_url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --arg trigger "$EVENT_NAME" \
+            --arg image "$IMAGE" \
+            --argjson tags "$TAGS_JSON" \
+            '{
+              version: "1.0.0",
+              attestation_type: "release-manifest",
+              release: {
+                tag: $tag,
+                version: $version,
+                date: $date,
+                repository: $repository,
+                commit_sha: $commit_sha,
+                commit_url: $commit_url
+              },
+              attestation_run: {
+                workflow: "release-attestation.yml",
+                run_id: $run_id,
+                run_url: $run_url,
+                trigger: $trigger
+              },
+              artifacts: {
+                docker_images: [
+                  {
+                    image: $image,
+                    built_by: "docker.yml",
+                    tags: $tags,
+                    signing_method: "cosign-keyless",
+                    signing_issuer: "https://token.actions.githubusercontent.com",
+                    verification_instructions: ("cosign verify " + $image + ":" + $version + " --certificate-identity-regexp \u0027^https://github.com/" + $repository + "/\u0027 --certificate-oidc-issuer https://token.actions.githubusercontent.com")
+                  }
+                ]
+              },
+              cryptographic_signatures: {
+                method: "Cosign (Keyless OIDC)",
+                issuer: "https://token.actions.githubusercontent.com",
+                certificate_identity_regexp: ("^https://github.com/" + $repository + "/"),
+                verification_tool: "cosign verify / cosign verify-blob"
+              },
+              security: {
+                vulnerability_scanning: "bun audit",
+                dependency_management: "bun.lock (frozen)",
+                secret_scanning: "Gitleaks + TruffleHog"
+              }
+            }' > attestation.json
+
+          jq . attestation.json
+
+      - name: Sign Attestation with Cosign
+        env:
+          COSIGN_YES: 1
+        run: |
+          # Sign the attestation file using Cosign keyless signing
+          echo "🔐 Signing attestation file with Cosign..."
+          cosign sign-blob \
+            --output-signature attestation.sig \
+            --output-certificate attestation.crt \
+            attestation.json
+
+          echo "✅ Attestation signed successfully"
+          echo ""
+          echo "Attestation file: attestation.json"
+          echo "Signature file: attestation.sig"
+          echo "Certificate: attestation.crt"
+
+      - name: Verify Attestation Signature
+        run: |
+          echo "✅ Verifying attestation signature..."
+          cosign verify-blob \
+            --signature attestation.sig \
+            --certificate attestation.crt \
+            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            attestation.json
+
+      # Asset names must be unique within a release, so re-attesting an existing
+      # release fails with "Validation Failed" unless the previous files are
+      # removed first. No-op on a first publish.
+      - name: Remove Existing Attestation Assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          set -e
+          for name in attestation.json attestation.sig attestation.crt; do
+            asset_id="$(gh api "repos/${{ github.repository }}/releases/$RELEASE_ID/assets" \
+              --jq ".[] | select(.name == \"$name\") | .id")"
+            if [ -n "$asset_id" ]; then
+              echo "Removing existing $name (asset $asset_id)"
+              gh api --method DELETE "repos/${{ github.repository }}/releases/assets/$asset_id"
+            fi
+          done
+
+      - name: Upload Attestation to Release
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.release.outputs.upload_url }}
+          asset_path: attestation.json
+          asset_name: attestation.json
+          asset_content_type: application/json
+
+      - name: Upload Attestation Signature to Release
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.release.outputs.upload_url }}
+          asset_path: attestation.sig
+          asset_name: attestation.sig
+          asset_content_type: application/octet-stream
+
+      - name: Upload Attestation Certificate to Release
+        uses: actions/upload-release-asset@e8f9f06c4b078e705bd2ea027f0926603fc9b4d5 # v1.0.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.release.outputs.upload_url }}
+          asset_path: attestation.crt
+          asset_name: attestation.crt
+          asset_content_type: application/x-x509-ca-cert
+
+      # Appends the verification block to the release body (releases have no
+      # comment thread). The marker lets a re-run replace its own block instead
+      # of adding a second one.
+      - name: Append Verification Instructions to Release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+          IMAGE: ${{ steps.release.outputs.image }}
+          TAGS_JSON: ${{ steps.release.outputs.tags }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const releaseId = Number(process.env.RELEASE_ID);
+            const tag = process.env.RELEASE_TAG;
+            const image = process.env.IMAGE;
+            const version = tag.replace(/^v/, '');
+            const tags = JSON.parse(process.env.TAGS_JSON);
+            const tagList = tags.map((t) => `- \`${image}:${t}\``).join('\n');
+            const MARKER = '<!-- release-attestation -->';
+
+            const comment = `${MARKER}
+            ## 🔐 Release Signed & Verified
+
+            This release has been cryptographically signed using **Cosign (Keyless OIDC)**.
+
+            ### Release Assets
+
+            **Docker Images** (Published to GitHub Container Registry):
+            ${tagList}
+
+            All images are signed and can be verified using Cosign.
+
+            ### Verify Artifacts
+
+            Install Cosign v2.6 or later (https://docs.sigstore.dev/cosign/system_config/installation/), then:
+
+            \`\`\`bash
+            # Verify the Docker image signature (keyless)
+            cosign verify ${image}:${version} \\
+              --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \\
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+            # Verify the attestation file against its signature and certificate
+            cosign verify-blob attestation.json \\
+              --signature attestation.sig --certificate attestation.crt \\
+              --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \\
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            \`\`\`
+
+            ### Attestation Files
+
+            Signed attestation files are attached to this release:
+            - **attestation.json** - Complete release attestation with metadata
+            - **attestation.sig** - Cosign signature
+            - **attestation.crt** - Cosign certificate
+
+            All assets are signed using GitHub Actions OIDC token with keyless signing (no secrets stored).
+
+            ✅ **Build Details**:
+            - Images built by: [\`.github/workflows/docker.yml\`](.github/workflows/docker.yml)
+            - Attestation run: [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - Commit: [\`${{ steps.release.outputs.commit_sha }}\`](${{ github.server_url }}/${{ github.repository }}/commit/${{ steps.release.outputs.commit_sha }})
+            `;
+
+            const { data: release } = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId
+            });
+
+            // Replace an existing block rather than skipping, so a re-attestation
+            // corrects stale details instead of leaving them published.
+            const existing = release.body ?? '';
+            const markerAt = existing.indexOf(MARKER);
+            const body =
+              markerAt === -1
+                ? `${existing}\n\n${comment}`
+                : `${existing.slice(0, markerAt).trimEnd()}\n\n${comment}`;
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: releaseId,
+              body
+            });
+            core.info(
+              markerAt === -1
+                ? `Appended verification instructions to ${tag}.`
+                : `Replaced the verification block on ${tag}.`
+            );

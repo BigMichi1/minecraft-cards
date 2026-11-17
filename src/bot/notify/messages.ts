@@ -1,0 +1,196 @@
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  type MessageCreateOptions,
+} from 'discord.js';
+import type { CardId } from '../cards/cardId';
+import { catalogManager } from '../database/catalogManager';
+import type { StoredListing } from '../database/listingManager';
+import type { Money, ShopId } from '../shops/types';
+
+export interface NotificationItem {
+  listing: StoredListing;
+  cardIds: CardId[];
+}
+
+export const ITEMS_PER_MESSAGE = 5;
+const MAX_TITLE = 256;
+const MAX_FIELD = 1024;
+const MAX_LABEL = 80;
+/**
+ * Discord shows all button rows below all embeds, so each embed title and its row carry the
+ * same position marker (one per item of a message).
+ */
+const POSITION_MARKERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'] as const;
+
+const SHOP_NAMES: Record<ShopId, string> = {
+  'sammel-ente': 'sammel-ente',
+  'blue-ocean': 'blue-ocean',
+  ebay: 'eBay',
+};
+
+export function kleinanzeigenSearchUrl(cardId: CardId): string {
+  return `https://www.kleinanzeigen.de/s-lego-minecraft-karte-${cardId.toLowerCase()}/k0`;
+}
+
+const MAX_URL = 512;
+
+/** Discord rejects non-http(s) and over-long URLs; a bad one must never break a whole batch. */
+export function validUrl(url: string | null | undefined): string | null {
+  if (!url || url.length > MAX_URL) return null;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function truncate(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+function formatPrice(price: Money): string {
+  const amount = (price.cents / 100).toFixed(2);
+  if (price.currency === 'EUR') return `${amount.replace('.', ',')} €`;
+  return `${amount} ${price.currency}`;
+}
+
+function title(item: NotificationItem, marker: string): string {
+  const { listing, cardIds } = item;
+  if (cardIds.length > 1) {
+    const ids = cardIds.map((id) => `#${id}`).join(', ');
+    return truncate(`${marker} 🟢 Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
+  }
+  const [id] = cardIds;
+  const name = id === undefined ? undefined : catalogManager.getCard(id)?.name;
+  return truncate(
+    `${marker} 🟢 Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`,
+    MAX_TITLE
+  );
+}
+
+function footer(listing: StoredListing): string | null {
+  switch (listing.matchStatus) {
+    case 'confirmed':
+      // `/admin map` confirms without a picture comparison.
+      return listing.similarity === null
+        ? '✅ checked by the admin'
+        : `✅ picture matches reference (${listing.similarity.toFixed(2)})`;
+    case 'unconfirmed':
+      return '⚠️ number unconfirmed — compare with the reference';
+    case 'bundle':
+      return 'ℹ️ bundle — check the listing';
+    case 'no_reference':
+      return 'ℹ️ no reference picture yet';
+    case 'pending':
+      return 'ℹ️ picture not checked yet';
+    case 'model_unavailable':
+      return 'ℹ️ picture check unavailable';
+    case 'image_unavailable':
+      return 'ℹ️ picture could not be loaded';
+    case 'reference':
+      return null;
+  }
+}
+
+function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
+  const { listing } = item;
+  const priceParts: string[] = [];
+  if (listing.price) priceParts.push(formatPrice(listing.price));
+  if (listing.format === 'auction' && listing.auctionEndsAt !== null) {
+    priceParts.push(`Auction · ends <t:${Math.floor(listing.auctionEndsAt / 1000)}:R>`);
+  }
+  if (listing.format === 'fixed_price') priceParts.push('Buy It Now');
+  const embed = new EmbedBuilder().setTitle(title(item, marker)).addFields(
+    { name: 'Shop', value: truncate(SHOP_NAMES[listing.shop], MAX_FIELD), inline: true },
+    {
+      name: 'Price',
+      value: truncate(priceParts.length > 0 ? priceParts.join(' · ') : 'unknown', MAX_FIELD),
+      inline: true,
+    }
+  );
+  const listingUrl = validUrl(listing.url);
+  if (listingUrl) embed.setURL(listingUrl);
+  const imageUrl = validUrl(listing.imageUrl);
+  if (imageUrl) embed.setImage(imageUrl);
+  const text = footer(listing);
+  if (text) embed.setFooter({ text });
+  if (listing.matchStatus === 'unconfirmed') {
+    const reference = item.cardIds[0] ? catalogManager.getCard(item.cardIds[0]) : undefined;
+    const thumbnail = validUrl(reference?.referenceImageUrl);
+    if (thumbnail) embed.setThumbnail(thumbnail);
+  }
+  return embed;
+}
+
+/**
+ * Link to the listing (`#12 · sammel-ente`, `Bundle · eBay`), Kleinanzeigen search for the
+ * (first) card, report button. The first button carries the item's position marker.
+ */
+function buildRow(item: NotificationItem, marker: string): ActionRowBuilder<ButtonBuilder> {
+  const { listing, cardIds } = item;
+  const [first] = cardIds;
+  const bundle = cardIds.length > 1;
+  const shop = SHOP_NAMES[listing.shop];
+  const buttons: { label: string; build: (label: string) => ButtonBuilder }[] = [];
+  const listingUrl = validUrl(listing.url);
+  if (listingUrl) {
+    buttons.push({
+      label: bundle ? `Bundle · ${shop}` : `#${first ?? '?'} · ${shop}`,
+      build: (label) =>
+        new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(listingUrl),
+    });
+  }
+  if (first) {
+    buttons.push({
+      label: `Kleinanzeigen #${first}`,
+      build: (label) =>
+        new ButtonBuilder()
+          .setStyle(ButtonStyle.Link)
+          .setLabel(label)
+          .setURL(kleinanzeigenSearchUrl(first)),
+    });
+  }
+  buttons.push({
+    label: bundle ? '❌ Wrong bundle' : `❌ Wrong #${first ?? '?'}`,
+    build: (label) =>
+      new ButtonBuilder()
+        .setStyle(ButtonStyle.Secondary)
+        .setLabel(label)
+        .setCustomId(`report:${listing.id}`),
+  });
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    buttons.map((b, i) => b.build(truncate(i === 0 ? `${marker} ${b.label}` : b.label, MAX_LABEL)))
+  );
+}
+
+export interface NotificationMessage<T extends NotificationItem = NotificationItem> {
+  message: MessageCreateOptions;
+  /** Exactly the items shown in `message`. */
+  items: T[];
+}
+
+/**
+ * One message per 5 items (Discord allows 10 embeds and 5 action rows per message). Embed n
+ * and button row n start with the same position marker.
+ */
+export function buildNotificationMessages<T extends NotificationItem>(
+  items: T[]
+): NotificationMessage<T>[] {
+  const messages: NotificationMessage<T>[] = [];
+  for (let i = 0; i < items.length; i += ITEMS_PER_MESSAGE) {
+    const chunk = items.slice(i, i + ITEMS_PER_MESSAGE);
+    const marker = (n: number) => POSITION_MARKERS[n] ?? `${n + 1}.`;
+    messages.push({
+      message: {
+        embeds: chunk.map((item, n) => buildEmbed(item, marker(n))),
+        components: chunk.map((item, n) => buildRow(item, marker(n))),
+      },
+      items: chunk,
+    });
+  }
+  return messages;
+}

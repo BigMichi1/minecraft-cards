@@ -15,21 +15,29 @@ import { catalogManager } from '../database/catalogManager';
 import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { userManager } from '../database/userManager';
-import type { ImageEmbedder } from '../matcher/embedder';
+import { ImageUnavailableError, ModelError, type ImageEmbedder } from '../matcher/embedder';
 import logger from '../utils/logger';
-import { ShopLayoutError, type Listing, type ShopAdapter, type ShopId } from '../shops/types';
+import {
+  ShopLayoutError,
+  type FetchResult,
+  type Listing,
+  type ShopAdapter,
+  type ShopId,
+} from '../shops/types';
 import {
   runCheck,
   type NotificationSender,
   type PendingNotifications,
   type RunDeps,
+  IMAGE_RETRY_MS,
 } from './runner';
+import { cid } from '../../test/cardIds';
 
 const blue12: Listing = {
   shop: 'blue-ocean',
   url: 'https://www.blue-ocean.de/p/12',
   title: 'Sticker Card 12',
-  cardIds: ['12'],
+  cardIds: [cid('12')],
   cardName: null,
   imageUrl: 'https://img/12.jpg',
   price: { cents: 199, currency: 'EUR' },
@@ -40,14 +48,13 @@ const blue12: Listing = {
 };
 
 let fetchCount = 0;
-function ok(id: ShopId, items: Listing[], extra: object = {}): ShopAdapter {
+function ok(id: ShopId, items: Listing[], extra: Omit<FetchResult, 'listings'> = {}): ShopAdapter {
   return {
     id,
     fetchListings: async () => {
       fetchCount++;
-      return items;
+      return { listings: items, ...extra };
     },
-    ...extra,
   };
 }
 function failing(id: ShopId, error: Error): ShopAdapter {
@@ -180,9 +187,79 @@ describe('runCheck', () => {
       imageUrl: 'https://ente/12.jpg',
     };
     await runCheck(depsWith([ok('sammel-ente', [ente])]));
-    const card = catalogManager.getCard('12')!;
+    const card = catalogManager.getCard(cid('12'))!;
     expect(card.name).toBe('Creeper');
     expect(card.referenceImageUrl).toBe('https://ente/12.jpg');
+  });
+
+  const ente12: Listing = {
+    ...blue12,
+    shop: 'sammel-ente',
+    url: 'https://shop-sammel-ente.de/12',
+    cardName: 'C',
+    imageUrl: 'https://ente/12.jpg',
+  };
+
+  test('a listing nobody wants is not compared, and is once a user adds its card', async () => {
+    const blue13: Listing = {
+      ...blue12,
+      url: 'https://www.blue-ocean.de/p/13',
+      cardIds: [cid('13')],
+      imageUrl: 'https://img/13.jpg',
+    };
+    const ente13: Listing = {
+      ...ente12,
+      url: 'https://shop-sammel-ente.de/13',
+      cardIds: [cid('13')],
+      imageUrl: 'https://ente/13.jpg',
+    };
+    const shops = () => [ok('sammel-ente', [ente12, ente13]), ok('blue-ocean', [blue12, blue13])];
+    await runCheck(depsWith(shops()));
+    expect(embedded).not.toContain('https://img/13.jpg');
+    expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('pending');
+    userManager.addToList('u1', '13');
+    await runCheck(depsWith(shops()));
+    expect(embedded).toContain('https://img/13.jpg');
+    expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('confirmed');
+  });
+
+  test('a listing without a picture is judged once, not on every run', async () => {
+    const setMatch = spyOn(listingManager, 'setMatch');
+    try {
+      const shops = () => [
+        ok('sammel-ente', [ente12]),
+        ok('blue-ocean', [{ ...blue12, imageUrl: null }]),
+      ];
+      await runCheck(depsWith(shops()));
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('unconfirmed');
+      const calls = setMatch.mock.calls.length;
+      await runCheck(depsWith(shops()));
+      expect(setMatch.mock.calls.length).toBe(calls);
+    } finally {
+      setMatch.mockRestore();
+    }
+  });
+
+  test('a picture that could not be loaded is retried once a day, not every run', async () => {
+    let attempts = 0;
+    const flaky: ImageEmbedder = {
+      model: 'm',
+      embed: async (url) => {
+        if (url === blue12.imageUrl) {
+          attempts++;
+          throw new ImageUnavailableError('HTTP 503');
+        }
+        return new Float32Array([1, 0]);
+      },
+    };
+    const shops = () => [ok('sammel-ente', [ente12]), ok('blue-ocean', [blue12])];
+    await runCheck(depsWith(shops(), { embedder: flaky }));
+    expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('image_unavailable');
+    await runCheck(depsWith(shops(), { embedder: flaky }));
+    expect(attempts).toBe(1);
+    clock += IMAGE_RETRY_MS;
+    await runCheck(depsWith(shops(), { embedder: flaky }));
+    expect(attempts).toBe(2);
   });
 
   test('matches new listing images once and stores the result', async () => {
@@ -208,12 +285,92 @@ describe('runCheck', () => {
     expect(embedded.length).toBe(before);
   });
 
-  test('reports eBay skippedNoId and shop listing counts', async () => {
+  test('reports skipped counts and shop listing counts', async () => {
     const s = await runCheck(
-      depsWith([ok('blue-ocean', [blue12]), ok('ebay', [], { lastSkippedNoId: 4 })])
+      depsWith([
+        ok('blue-ocean', [blue12]),
+        ok('ebay', [], { skippedNoId: 4, skippedInvalid: 2 }),
+        ok('sammel-ente', [], { skippedNoId: 0 }),
+      ])
     );
     expect(s.shops['blue-ocean']).toEqual({ listings: 1 });
-    expect(s.shops.ebay).toEqual({ listings: 0, skippedNoId: 4 });
+    expect(s.shops.ebay).toEqual({ listings: 0, skippedNoId: 4, skippedInvalid: 2 });
+    expect(s.shops['sammel-ente']).toEqual({ listings: 0 });
+  });
+
+  describe('a step failing after the fetch', () => {
+    let error: ReturnType<typeof spyOn>;
+    beforeEach(() => {
+      error = spyOn(logger, 'log');
+    });
+    afterEach(() => {
+      error.mockRestore();
+    });
+
+    test("storing one shop failing is that shop's error; the other shops still run", async () => {
+      const upsert = spyOn(listingManager, 'upsertFromRun');
+      upsert.mockImplementationOnce(() => {
+        throw new Error('disk I/O error');
+      });
+      try {
+        const s = await runCheck(depsWith([ok('sammel-ente', []), ok('blue-ocean', [blue12])]));
+        expect(s.shops['sammel-ente']!.error).toContain('disk I/O error');
+        expect(s.shops['blue-ocean']).toEqual({ listings: 1 });
+        expect(s.error).toBeUndefined();
+        expect(alerts.some((a) => a.includes('sammel-ente') && a.includes('disk I/O error'))).toBe(
+          true
+        );
+      } finally {
+        upsert.mockRestore();
+      }
+    });
+
+    test('a failing sender records a failed run, alerts once a day and logs the stack', async () => {
+      const throwing: NotificationSender = {
+        send: async () => {
+          throw new Error('gateway gone');
+        },
+      };
+      const s = await runCheck(depsWith([ok('blue-ocean', [blue12])], { sender: throwing }));
+      expect(s.error).toBe('gateway gone');
+      expect(runManager.last()).toEqual(s);
+      expect(alerts).toEqual(['Check run failed: gateway gone']);
+      const logged = error.mock.calls.find((c: unknown[]) =>
+        String(c[1]).includes('check run failed')
+      );
+      expect(logged?.[2]).toHaveProperty('stack');
+      await runCheck(depsWith([ok('blue-ocean', [blue12])], { sender: throwing }));
+      expect(alerts).toHaveLength(1);
+    });
+
+    test('an unexpected matching error fails the run instead of being taken for a model problem', async () => {
+      const broken: ImageEmbedder = {
+        model: 'm',
+        embed: async () => {
+          throw new Error('SQLITE_BUSY');
+        },
+      };
+      const s = await runCheck(
+        depsWith([ok('sammel-ente', [ente12]), ok('blue-ocean', [blue12])], { embedder: broken })
+      );
+      expect(s.error).toContain('SQLITE_BUSY');
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('pending');
+    });
+  });
+
+  test('a shop returning less than half of its last successful count alerts', async () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({
+      ...blue12,
+      url: `https://www.blue-ocean.de/p/${i + 1}`,
+    }));
+    await runCheck(depsWith([ok('blue-ocean', many)]));
+    await runCheck(depsWith([failing('blue-ocean', new Error('down'))]));
+    alerts = [];
+    await runCheck(depsWith([ok('blue-ocean', many.slice(0, 5))]));
+    expect(alerts).toEqual([]);
+    await runCheck(depsWith([ok('blue-ocean', many.slice(0, 2))]));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toContain('2 card listings, down from 5');
   });
 
   test('a failing alertAdmin does not fail the run', async () => {
@@ -260,7 +417,7 @@ describe('runCheck', () => {
   test('a shop whose card listings are all unavailable alerts the admin but still updates', async () => {
     const soldOut = [
       { ...blue12, available: false },
-      { ...blue12, url: 'https://www.blue-ocean.de/p/13', cardIds: ['13'], available: false },
+      { ...blue12, url: 'https://www.blue-ocean.de/p/13', cardIds: [cid('13')], available: false },
     ];
     await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     const s = await runCheck(depsWith([ok('blue-ocean', soldOut)]));
@@ -295,14 +452,14 @@ describe('runCheck', () => {
       ...blue12,
       shop: 'sammel-ente',
       url: `https://shop-sammel-ente.de/${n}`,
-      cardIds: [String(n)],
+      cardIds: [cid(String(n))],
       cardName: `C${n}`,
       imageUrl: `https://shop-sammel-ente.de/${n}.jpg`,
     });
     const candidate = (n: number): Listing => ({
       ...blue12,
       url: `https://www.blue-ocean.de/p/${n}`,
-      cardIds: [String(n)],
+      cardIds: [cid(String(n))],
       imageUrl: `https://www.blue-ocean.de/${n}.jpg`,
     });
 
@@ -316,7 +473,7 @@ describe('runCheck', () => {
       const matchWarnings = () =>
         warn.mock.calls.filter((c: unknown[]) => String(c[0]).includes('image match'));
       expect(matchWarnings()).toHaveLength(1);
-      expect(String(matchWarnings()[0]![0])).toContain('3 listings');
+      expect(String(matchWarnings()[0]![0])).toContain('(model_unavailable) for 3 listings');
       expect(listingManager.getByUrl(candidate(13).url)!.matchStatus).toBe('model_unavailable');
     });
 
@@ -325,7 +482,7 @@ describe('runCheck', () => {
       const broken: ImageEmbedder = {
         model: 'broken',
         embed: async () => {
-          throw new Error('onnx runtime missing');
+          throw new ModelError('broken: onnx runtime missing');
         },
       };
       await runCheck(

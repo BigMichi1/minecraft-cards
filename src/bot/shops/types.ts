@@ -1,6 +1,11 @@
 import type { CardId } from '../cards/cardId';
 
-export type ShopId = 'sammel-ente' | 'blue-ocean' | 'ebay';
+export const SHOP_IDS = ['sammel-ente', 'blue-ocean', 'ebay'] as const;
+export type ShopId = (typeof SHOP_IDS)[number];
+
+/** `shop`: a shop's own price; eBay listings are auctions or fixed price ("Buy It Now"). */
+export const LISTING_FORMATS = ['shop', 'auction', 'fixed_price'] as const;
+export type ListingFormat = (typeof LISTING_FORMATS)[number];
 
 export interface Money {
   cents: number;
@@ -17,7 +22,7 @@ export interface Listing {
   imageUrl: string | null;
   price: Money | null;
   available: boolean;
-  format: 'shop' | 'auction' | 'fixed_price';
+  format: ListingFormat;
   auctionEndsAt: number | null;
   /** blue-ocean only: the card number in the URL and in the image file name disagree. */
   idConflict: boolean;
@@ -25,12 +30,28 @@ export interface Listing {
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 
-export interface ShopAdapter {
-  id: ShopId;
-  fetchListings(): Promise<Listing[]>;
+/**
+ * One fetch of a shop. The skipped counts go into the run summary (`/admin status`), so a
+ * parser that silently drops more than usual shows up there.
+ */
+export interface FetchResult {
+  listings: Listing[];
+  /** Products or items read but without a card number (puzzle packs, eBay titles naming none). */
+  skippedNoId?: number;
+  /** Product boxes or items without a usable link or title. */
+  skippedInvalid?: number;
 }
 
-/** A shop page was fetched but no card could be parsed from the whole run (layout change, bot wall). */
+export interface ShopAdapter {
+  readonly id: ShopId;
+  fetchListings(): Promise<FetchResult>;
+}
+
+/**
+ * A shop answered, but not with what a working shop sends: no card on any page, a page that
+ * is not a category page (bot wall, maintenance), a page past the first without products, or
+ * eBay searches that all came back empty. The runner treats it like a failed fetch.
+ */
 export class ShopLayoutError extends Error {
   constructor(message: string) {
     super(message);

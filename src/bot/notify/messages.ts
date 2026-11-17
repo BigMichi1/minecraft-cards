@@ -58,9 +58,9 @@ function title(item: NotificationItem): string {
     const ids = cardIds.map((id) => `#${id}`).join(', ');
     return truncate(`🟢 Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
   }
-  const id = cardIds[0] ?? '?';
-  const name = catalogManager.getCard(id)?.name;
-  return truncate(`🟢 Card #${id}${name ? ` ${name}` : ''} is available`, MAX_TITLE);
+  const [id] = cardIds;
+  const name = id === undefined ? undefined : catalogManager.getCard(id)?.name;
+  return truncate(`🟢 Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`, MAX_TITLE);
 }
 
 function footer(listing: StoredListing): string | null {
@@ -76,8 +76,12 @@ function footer(listing: StoredListing): string | null {
       return 'ℹ️ bundle — check the listing';
     case 'no_reference':
       return 'ℹ️ no reference picture yet';
+    case 'pending':
+      return 'ℹ️ picture not checked yet';
     case 'model_unavailable':
       return 'ℹ️ picture check unavailable';
+    case 'image_unavailable':
+      return 'ℹ️ picture could not be loaded';
     case 'reference':
       return null;
   }
@@ -138,15 +142,17 @@ function buildRow(item: NotificationItem): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(buttons);
 }
 
-export interface NotificationMessage {
+export interface NotificationMessage<T extends NotificationItem = NotificationItem> {
   message: MessageCreateOptions;
   /** Exactly the items shown in `message`. */
-  items: NotificationItem[];
+  items: T[];
 }
 
 /** One message per 5 items (Discord allows 10 embeds and 5 action rows per message). */
-export function buildNotificationMessages(items: NotificationItem[]): NotificationMessage[] {
-  const messages: NotificationMessage[] = [];
+export function buildNotificationMessages<T extends NotificationItem>(
+  items: T[]
+): NotificationMessage<T>[] {
+  const messages: NotificationMessage<T>[] = [];
   for (let i = 0; i < items.length; i += ITEMS_PER_MESSAGE) {
     const chunk = items.slice(i, i + ITEMS_PER_MESSAGE);
     messages.push({

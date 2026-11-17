@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { Writable } from 'node:stream';
 import winston from 'winston';
-import logger, { formatConsoleLine, resolveLogLevel } from './logger';
+import logger, { formatConsoleLine, logError, resolveLogLevel } from './logger';
 
 describe('logger', () => {
   const initialLevel = logger.level;
@@ -80,5 +80,28 @@ describe('formatConsoleLine', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain('Unhandled promise rejection: kaputt');
     expect(lines[0]).toMatch(/\nError: kaputt\n\s+at /);
+  });
+});
+
+describe('logError', () => {
+  test('a non-Error value becomes part of the message, without a stack', () => {
+    const log = spyOn(logger, 'log').mockImplementation(() => logger);
+    try {
+      logError('step failed', 'plain string');
+      expect(log).toHaveBeenCalledWith('error', 'step failed: plain string', {});
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('an Error gives its message and its stack as metadata', () => {
+    const log = spyOn(logger, 'log').mockImplementation(() => logger);
+    try {
+      const error = new Error('kaputt');
+      logError('step failed', error, 'warn');
+      expect(log).toHaveBeenCalledWith('warn', 'step failed: kaputt', { stack: error.stack });
+    } finally {
+      log.mockRestore();
+    }
   });
 });

@@ -1,9 +1,9 @@
 import * as cheerio from 'cheerio';
 import { normalizeCardId } from '../cards/cardId';
-import { errorMessage, sleep as realSleep } from '../utils/async';
+import { sleep as realSleep } from '../utils/async';
 import { fetchText } from '../utils/http';
-import logger from '../utils/logger';
-import type { AdapterOptions, FetchFn, Listing, ShopAdapter } from './types';
+import logger, { logError } from '../utils/logger';
+import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopAdapter } from './types';
 import { ShopLayoutError } from './types';
 
 const BASE_URL = 'https://shop-sammel-ente.de/Minecraft/Serie-3/';
@@ -21,11 +21,18 @@ function parsePrice(text: string): Listing['price'] {
   return { cents: euros * 100 + Number.parseInt(match[2] ?? '0', 10), currency: 'EUR' };
 }
 
-/** Parse one category page. `productCount` counts every product box, cards or not. `lastPage` is the highest `?p=N` in the pagination (1 when none). */
+/**
+ * Parse one category page. `productCount` counts every product box, cards or not; of the boxes
+ * that are not card listings, `skippedNoId` had a title without a card number (puzzle packs,
+ * boosters) and `skippedInvalid` no link or title. `lastPage` is the highest `?p=N` in the
+ * pagination (1 when none).
+ */
 export function parseSammelEntePage(html: string): {
   listings: Listing[];
   lastPage: number;
   productCount: number;
+  skippedNoId: number;
+  skippedInvalid: number;
 } {
   const $ = cheerio.load(html);
 
@@ -36,16 +43,24 @@ export function parseSammelEntePage(html: string): {
   });
 
   const listings: Listing[] = [];
+  let skippedNoId = 0;
+  let skippedInvalid = 0;
   const boxes = $('.card.product-box');
   boxes.each((_, el) => {
     const box = $(el);
     const link = box.find('a.product-name').first();
     const href = link.attr('href');
     const title = link.text().replace(/\s+/g, ' ').trim();
-    if (!href || !title) return;
+    if (!href || !title) {
+      skippedInvalid++;
+      return;
+    }
     const match = TITLE_PATTERN.exec(title);
     const cardId = match ? normalizeCardId(match[1] ?? '') : null;
-    if (!match || !cardId) return;
+    if (!match || !cardId) {
+      skippedNoId++;
+      return;
+    }
 
     listings.push({
       shop: 'sammel-ente',
@@ -61,7 +76,7 @@ export function parseSammelEntePage(html: string): {
       idConflict: false,
     });
   });
-  return { listings, lastPage, productCount: boxes.length };
+  return { listings, lastPage, productCount: boxes.length, skippedNoId, skippedInvalid };
 }
 
 export function createSammelEnteAdapter(
@@ -72,9 +87,13 @@ export function createSammelEnteAdapter(
   const delayMs = options.delayMs ?? PAGE_DELAY_MS;
   return {
     id: 'sammel-ente',
-    async fetchListings() {
+    async fetchListings(): Promise<FetchResult> {
       const first = parseSammelEntePage(await fetchText(`${BASE_URL}?p=1`, fetchFn));
       const byUrl = new Map(first.listings.map((l) => [l.url, l]));
+      let { skippedNoId, skippedInvalid } = first;
+      if (first.lastPage > MAX_PAGES) {
+        logger.warn(`sammel-ente: ${first.lastPage} pages, reading only the first ${MAX_PAGES}`);
+      }
       const lastPage = Math.min(first.lastPage, MAX_PAGES);
       for (let page = 2; page <= lastPage; page++) {
         await sleep(delayMs);
@@ -85,15 +104,17 @@ export function createSammelEnteAdapter(
             throw new ShopLayoutError(`sammel-ente: page ${page} of ${lastPage} has no products`);
           }
           for (const listing of parsed.listings) byUrl.set(listing.url, listing);
+          skippedNoId += parsed.skippedNoId;
+          skippedInvalid += parsed.skippedInvalid;
         } catch (error) {
-          logger.error(`sammel-ente page ${page} failed: ${errorMessage(error)}`);
+          logError(`sammel-ente page ${page} failed`, error);
           throw error;
         }
       }
       if (byUrl.size === 0) {
         throw new ShopLayoutError('sammel-ente: no card listings found on any page');
       }
-      return [...byUrl.values()];
+      return { listings: [...byUrl.values()], skippedNoId, skippedInvalid };
     },
   };
 }

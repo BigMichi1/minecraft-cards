@@ -6,7 +6,26 @@ import { errorMessage } from '../utils/async';
 import { HttpError, REQUEST_TIMEOUT_MS, USER_AGENT } from '../utils/http';
 import logger from '../utils/logger';
 import { prepareImage, type ResizeSpec } from './imageInput';
+import type { MatchStatus } from './matchStatus';
 import { cosineSimilarity } from './similarity';
+
+export type { MatchStatus } from './matchStatus';
+
+/** A picture could not be loaded: host not allowed, network or HTTP error, too large, undecodable. */
+export class ImageUnavailableError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'ImageUnavailableError';
+  }
+}
+
+/** The image model failed on a picture it was given. */
+export class ModelError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'ModelError';
+  }
+}
 
 /**
  * Chosen with scripts/measure-threshold.ts (docs/image-matching.md): DINOv2-small separates
@@ -59,7 +78,14 @@ async function loadTransformersPipeline(model: string, cacheDir: string): Promis
     model: (inputs: { pixel_values: unknown }) => Promise<Record<string, FeatureTensor>>;
   };
   return async (imageBytes) => {
-    const px = await prepareImage(imageBytes, spec);
+    let px: Awaited<ReturnType<typeof prepareImage>>;
+    try {
+      px = await prepareImage(imageBytes, spec);
+    } catch (error) {
+      throw new ImageUnavailableError(`picture could not be decoded: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
     const { pixel_values } = await run.processor(
       new RawImage(px.data, px.width, px.height, px.channels)
     );
@@ -92,7 +118,7 @@ function firstVectorNormalised(tensor: FeatureTensor): Float32Array {
   return vec;
 }
 
-/** Shop pictures are well under 2 MB; anything over this is refused. */
+/** Shop pictures are well under 2 MB; anything over 10 MB is refused. */
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 /** Read the body, refusing a declared or streamed size over MAX_IMAGE_BYTES. */
@@ -100,7 +126,7 @@ async function readCapped(response: Response, url: string): Promise<Uint8Array> 
   const declared = Number(response.headers.get('Content-Length'));
   if (declared > MAX_IMAGE_BYTES) {
     await response.body?.cancel();
-    throw new Error(`image ${url} is ${declared} bytes, over ${MAX_IMAGE_BYTES}`);
+    throw new ImageUnavailableError(`image ${url} is ${declared} bytes, over ${MAX_IMAGE_BYTES}`);
   }
   if (!response.body) return new Uint8Array();
   const chunks: Uint8Array[] = [];
@@ -112,7 +138,7 @@ async function readCapped(response: Response, url: string): Promise<Uint8Array> 
     total += value.byteLength;
     if (total > MAX_IMAGE_BYTES) {
       await reader.cancel();
-      throw new Error(`image ${url} is over ${MAX_IMAGE_BYTES} bytes`);
+      throw new ImageUnavailableError(`image ${url} is over ${MAX_IMAGE_BYTES} bytes`);
     }
     chunks.push(value);
   }
@@ -147,34 +173,41 @@ export function allowedImageUrl(url: string): boolean {
 /**
  * GET a picture URL only on an allowed host. Redirects are followed by hand (at most
  * MAX_REDIRECTS), each target checked the same way, so a scraped URL cannot reach anything else.
+ * Every failure is an ImageUnavailableError.
  */
 async function fetchImage(fetchFn: FetchFn, imageUrl: string): Promise<Response> {
   let url = imageUrl;
   for (let hop = 0; ; hop++) {
-    if (!allowedImageUrl(url)) throw new Error(`image host not allowed: ${url}`);
-    const response = await fetchFn(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-      redirect: 'manual',
-    });
+    if (!allowedImageUrl(url)) throw new ImageUnavailableError(`image host not allowed: ${url}`);
+    let response: Response;
+    try {
+      response = await fetchFn(url, {
+        headers: { 'User-Agent': USER_AGENT },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        redirect: 'manual',
+      });
+    } catch (error) {
+      throw new ImageUnavailableError(`image ${url}: ${errorMessage(error)}`, { cause: error });
+    }
     const location = response.headers.get('Location');
     if (response.status < 300 || response.status >= 400 || location === null) return response;
     await response.body?.cancel();
     if (hop >= MAX_REDIRECTS) {
-      throw new Error(`image ${imageUrl}: more than ${MAX_REDIRECTS} redirects`);
+      throw new ImageUnavailableError(`image ${imageUrl}: more than ${MAX_REDIRECTS} redirects`);
     }
     try {
       url = new URL(location, url).toString();
     } catch {
-      throw new Error(`image ${imageUrl}: bad redirect location`);
+      throw new ImageUnavailableError(`image ${imageUrl}: bad redirect location`);
     }
   }
 }
 
 /**
  * Local image embedder over `@huggingface/transformers` (`image-feature-extraction`).
- * Model files are downloaded once into `cacheDir`. Rejects when the model cannot load;
- * `embed` rejects for a picture outside IMAGE_HOSTS (see fetchImage).
+ * Model files are downloaded once into `cacheDir`. Rejects when the model cannot load.
+ * `embed` rejects with ImageUnavailableError when the picture cannot be loaded (host outside
+ * IMAGE_HOSTS, network, HTTP status, size, decoding) and with ModelError when the model fails.
  */
 export async function createTransformersEmbedder(
   opts: { model: string; cacheDir: string },
@@ -190,9 +223,28 @@ export async function createTransformersEmbedder(
     model: opts.model,
     async embed(imageUrl: string): Promise<Float32Array> {
       const response = await fetchImage(fetchFn, imageUrl);
-      if (!response.ok) throw new HttpError(response.status, imageUrl);
-      const bytes = await readCapped(response, imageUrl);
-      return firstVectorNormalised(await extractor(bytes));
+      if (!response.ok) {
+        await response.body?.cancel();
+        const error = new HttpError(response.status, imageUrl);
+        throw new ImageUnavailableError(error.message, { cause: error });
+      }
+      let bytes: Uint8Array;
+      try {
+        bytes = await readCapped(response, imageUrl);
+      } catch (error) {
+        if (error instanceof ImageUnavailableError) throw error;
+        throw new ImageUnavailableError(`image ${imageUrl}: ${errorMessage(error)}`, {
+          cause: error,
+        });
+      }
+      let tensor: FeatureTensor;
+      try {
+        tensor = await extractor(bytes);
+      } catch (error) {
+        if (error instanceof ImageUnavailableError) throw error;
+        throw new ModelError(`${opts.model}: ${errorMessage(error)}`, { cause: error });
+      }
+      return firstVectorNormalised(tensor);
     },
   };
 }
@@ -230,21 +282,22 @@ export function createCachedEmbedder(inner: ImageEmbedder): ImageEmbedder {
   };
 }
 
-export type MatchStatus =
-  'reference' | 'confirmed' | 'unconfirmed' | 'no_reference' | 'model_unavailable' | 'bundle';
-
 export interface MatchOptions {
   /**
-   * Called with the reason when the result is `model_unavailable`. Without it the reason is
-   * logged per listing; the runner collects them and warns once per run instead.
+   * Called with the status and reason when the result is `model_unavailable` or
+   * `image_unavailable`. Without it the reason is logged per listing; the runner collects
+   * them and warns once per run instead.
    */
-  onUnavailable?: (reason: string) => void;
+  onUnavailable?: (status: 'model_unavailable' | 'image_unavailable', reason: string) => void;
 }
 
 /**
  * Check a listing's picture against the card's reference picture.
  * sammel-ente is the reference shop; listings of several cards are bundles and not compared.
- * A missing or failing model yields `model_unavailable` (reported), never an exception.
+ * No model loaded, or a ModelError, yields `model_unavailable`; a picture that cannot be
+ * loaded (ImageUnavailableError: host, redirect, HTTP, size, decoding) yields
+ * `image_unavailable`. Both are reported through `onUnavailable`. Any other error (the
+ * embedding cache's database, a bug) is rethrown.
  */
 export async function matchListing(
   listing: Listing,
@@ -253,15 +306,15 @@ export async function matchListing(
   threshold: number,
   options: MatchOptions = {}
 ): Promise<{ status: MatchStatus; similarity: number | null }> {
-  const unavailable = (reason: string) => {
-    if (options.onUnavailable) options.onUnavailable(reason);
-    else logger.warn(`image match unavailable for ${listing.url}: ${reason}`);
-    return { status: 'model_unavailable' as const, similarity: null };
+  const unavailable = (status: 'model_unavailable' | 'image_unavailable', reason: string) => {
+    if (options.onUnavailable) options.onUnavailable(status, reason);
+    else logger.warn(`image match unavailable (${status}) for ${listing.url}: ${reason}`);
+    return { status, similarity: null };
   };
   if (listing.shop === 'sammel-ente') return { status: 'reference', similarity: null };
   if (listing.cardIds.length > 1) return { status: 'bundle', similarity: null };
   if (reference === null) return { status: 'no_reference', similarity: null };
-  if (embedder === null) return unavailable('no image model loaded');
+  if (embedder === null) return unavailable('model_unavailable', 'no image model loaded');
   if (listing.imageUrl === null) return { status: 'unconfirmed', similarity: null };
 
   try {
@@ -273,6 +326,10 @@ export async function matchListing(
     const confirmed = similarity >= threshold && !listing.idConflict;
     return { status: confirmed ? 'confirmed' : 'unconfirmed', similarity };
   } catch (error) {
-    return unavailable(`${embedder.model}: ${errorMessage(error)}`);
+    if (error instanceof ImageUnavailableError) {
+      return unavailable('image_unavailable', errorMessage(error));
+    }
+    if (error instanceof ModelError) return unavailable('model_unavailable', errorMessage(error));
+    throw error;
   }
 }

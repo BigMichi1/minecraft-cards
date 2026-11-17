@@ -2,22 +2,27 @@
  * Measure how well each candidate image model separates "same card" from "different card".
  *
  * Fetches the live blue-ocean and sammel-ente listings, pairs them by card id (true pairs:
- * same card in both shops) and by shifting the id by one (false pairs: neighbouring cards),
- * and prints min / median / max cosine similarity per group and model, the gap between the
+ * same card in both shops) and each blue-ocean card with the sammel-ente picture of the next
+ * card id both shops have, in sorted order, the last wrapping to the first (false pairs), and
+ * prints min / median / max cosine similarity per group and model, the gap between the
  * lowest true pair and the highest false pair, and the errors at the gap midpoint and at the
  * fewest-errors threshold. Pick the model with the widest gap and use its fewest-errors
  * threshold as IMAGE_MATCH_THRESHOLD: the groups overlap, so the midpoint separates nothing.
  *
- * Usage: ./bin/mise run measure:threshold [-- --pages all|<n>] [--limit <pairs>]
- *   --pages  shop pages to read per shop (default all; page 1 alone rarely shares a card id)
+ * Usage: ./bin/mise run measure:threshold [-- --pages 1|all] [--limit <pairs>]
+ *   --pages  `1` reads only the first page of each shop, `all` (default) every page; page 1
+ *            alone rarely shares a card id
  *   --limit  cap the number of true pairs (default no cap)
  *
- * Downloads the models into MODEL_CACHE_DIR (default ./models) on first use.
+ * Pairs whose pictures cannot be embedded are skipped and counted per model. Exits 1 when no
+ * model scored any pair. Downloads the models into MODEL_CACHE_DIR (default ./models) on
+ * first use.
  */
 import path from 'node:path';
 
-// db.ts opens DB_PATH on import; this script must not touch the bot database.
-process.env.DB_PATH ??= ':memory:';
+// db.ts opens DB_PATH on import, and Bun loads .env (which may set DB_PATH to the bot's
+// database) before this runs: force an in-memory database so the script never touches it.
+process.env.DB_PATH = ':memory:';
 
 const { createTransformersEmbedder } = await import('../src/bot/matcher/embedder');
 const { cosineSimilarity } = await import('../src/bot/matcher/similarity');
@@ -50,8 +55,8 @@ async function loadListings(): Promise<{ sammel: Listing[]; blue: Listing[] }> {
   }
   if (pagesArg !== 'all') throw new Error(`--pages takes 1 or all, got "${pagesArg}"`);
   return {
-    sammel: await createSammelEnteAdapter().fetchListings(),
-    blue: await createBlueOceanAdapter().fetchListings(),
+    sammel: (await createSammelEnteAdapter().fetchListings()).listings,
+    blue: (await createBlueOceanAdapter().fetchListings()).listings,
   };
 }
 
@@ -110,7 +115,8 @@ if (ids.length < 2) {
   process.exit(1);
 }
 
-// False pair k: blue-ocean card ids[k] against sammel-ente card ids[k + 1] (wrapping).
+// False pair k: blue-ocean card ids[k] against the sammel-ente picture of the next shared id
+// ids[k + 1], the last one wrapping to ids[0].
 const truePairs = ids.map((id) => ({
   label: id,
   blue: candidates.get(id)!,
@@ -136,6 +142,7 @@ for (const model of MODELS) {
     if (!memo.has(url)) memo.set(url, embedder.embed(url));
     return memo.get(url)!;
   };
+  let skipped = 0;
   const score = async (pairs: typeof truePairs): Promise<{ label: string; sim: number }[]> => {
     const out: { label: string; sim: number }[] = [];
     for (const p of pairs) {
@@ -145,6 +152,7 @@ for (const model of MODELS) {
           sim: cosineSimilarity(await embed(p.blue), await embed(p.ref)),
         });
       } catch (error) {
+        skipped++;
         console.log(`  skip ${p.label}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
@@ -152,6 +160,7 @@ for (const model of MODELS) {
   };
   const trueSims = await score(truePairs);
   const falseSims = await score(falsePairs);
+  console.log(`skipped pairs: ${skipped} of ${truePairs.length + falsePairs.length}`);
   if (trueSims.length === 0 || falseSims.length === 0) {
     console.log('no pair could be scored');
     continue;
@@ -178,9 +187,11 @@ for (const model of MODELS) {
 }
 
 const best = results.sort((a, b) => b.gap - a.gap)[0];
-if (best) {
-  console.log(
-    `\nwidest gap: ${best.model} (gap ${fmt(best.gap)}, fewest-errors threshold ${fmt(best.fewestErrors)})`
-  );
-  if (best.gap <= 0) console.log('warning: the groups overlap; no threshold separates them');
+if (!best) {
+  console.error('\nno model produced results');
+  process.exit(1);
 }
+console.log(
+  `\nwidest gap: ${best.model} (gap ${fmt(best.gap)}, fewest-errors threshold ${fmt(best.fewestErrors)})`
+);
+if (best.gap <= 0) console.log('warning: the groups overlap; no threshold separates them');

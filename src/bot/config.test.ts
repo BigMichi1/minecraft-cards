@@ -56,9 +56,37 @@ describe('loadConfig', () => {
     });
   });
 
-  test('disables eBay when only one credential is set', () => {
-    expect(loadConfig({ ...REQUIRED, EBAY_CLIENT_ID: 'id' }).ebay).toBeNull();
-    expect(loadConfig({ ...REQUIRED, EBAY_CLIENT_SECRET: 's' }).ebay).toBeNull();
+  test('only one eBay credential is a configuration error naming the missing one', () => {
+    expect(() => loadConfig({ ...REQUIRED, EBAY_CLIENT_ID: 'id' })).toThrow(
+      /^EBAY_CLIENT_SECRET is not set/
+    );
+    expect(() => loadConfig({ ...REQUIRED, EBAY_CLIENT_SECRET: 's' })).toThrow(
+      /^EBAY_CLIENT_ID is not set/
+    );
+    expect(() => loadConfig({ ...REQUIRED, EBAY_CLIENT_SECRET: 's' })).toThrow(ConfigError);
+  });
+
+  test('neither eBay credential disables eBay', () => {
+    expect(
+      loadConfig({ ...REQUIRED, EBAY_CLIENT_ID: ' ', EBAY_CLIENT_SECRET: '' }).ebay
+    ).toBeNull();
+  });
+
+  test('rejects an interval longer than a timer can wait', () => {
+    // 2^31 - 1 ms is about 35791 minutes; longer makes setInterval fire every millisecond.
+    expect(loadConfig({ ...REQUIRED, CHECK_INTERVAL_MINUTES: '35791' }).checkIntervalMs).toBe(
+      2_147_460_000
+    );
+    expect(() => loadConfig({ ...REQUIRED, CHECK_INTERVAL_MINUTES: '35792' })).toThrow(ConfigError);
+    expect(() => loadConfig({ ...REQUIRED, CHECK_INTERVAL_MINUTES: '1e9' })).toThrow(
+      'CHECK_INTERVAL_MINUTES'
+    );
+  });
+
+  test('rejects an interval that rounds to zero milliseconds', () => {
+    expect(() => loadConfig({ ...REQUIRED, CHECK_INTERVAL_MINUTES: '0.000001' })).toThrow(
+      ConfigError
+    );
   });
 
   test.each(['abc', '0', '-5', '1.5x'])('rejects CHECK_INTERVAL_MINUTES=%p', (value) => {
@@ -86,6 +114,7 @@ describe('loadConfig', () => {
       loadConfig({
         DISCORD_TOKEN: 'super-secret-token',
         BOT_ADMIN_ID: '1',
+        EBAY_CLIENT_ID: 'ebay-id',
         EBAY_CLIENT_SECRET: 'ebay-secret',
         IMAGE_MATCH_THRESHOLD: '7',
       });

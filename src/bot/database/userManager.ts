@@ -1,10 +1,11 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
-import { compareCardIds, parseCardList, type CardId } from '../cards/cardId';
-import { catalogManager } from './catalogManager';
+import { compareCardIds, type CardId } from '../cards/cardId';
+import { parseKnownCardList, type CardListResult } from './catalogManager';
 import { db } from './db';
 import { users, wantedCards } from './schema/index';
 
-export type ListChange = { ok: true; ids: CardId[] } | { ok: false; invalid: string[] };
+/** The list after a change (`ok`), or why nothing changed (`empty` input, `invalid` tokens). */
+export type ListChange = CardListResult;
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -22,28 +23,11 @@ function readList(tx: Tx, discordId: string): CardId[] {
     .sort(compareCardIds);
 }
 
-/** Parse input; empty input yields `invalid: []` (clearing is explicit via clearList). `invalid` is unparseable tokens followed by (when checked) ids not in the catalog. */
-function parseChecked(
-  input: string,
-  checkCatalog: boolean
-): { ids: CardId[] } | { invalid: string[] } {
-  const parsed = parseCardList(input);
-  const unknown = checkCatalog
-    ? (() => {
-        const known = catalogManager.knownIds();
-        return parsed.ids.filter((id) => !known.has(id));
-      })()
-    : [];
-  const invalid = [...parsed.invalid, ...unknown];
-  if (invalid.length === 0 && parsed.ids.length === 0) return { invalid: [] };
-  return invalid.length > 0 ? { invalid } : { ids: parsed.ids };
-}
-
 export const userManager = {
   /** Replace the whole list atomically; any invalid token changes nothing. */
   setList(discordId: string, input: string): ListChange {
-    const checked = parseChecked(input, true);
-    if ('invalid' in checked) return { ok: false, invalid: checked.invalid };
+    const checked = parseKnownCardList(input);
+    if (!checked.ok) return checked;
     return db.transaction((tx) => {
       ensureUser(tx, discordId);
       tx.delete(wantedCards).where(eq(wantedCards.discordId, discordId)).run();
@@ -53,8 +37,8 @@ export const userManager = {
   },
 
   addToList(discordId: string, input: string): ListChange {
-    const checked = parseChecked(input, true);
-    if ('invalid' in checked) return { ok: false, invalid: checked.invalid };
+    const checked = parseKnownCardList(input);
+    if (!checked.ok) return checked;
     return db.transaction((tx) => {
       ensureUser(tx, discordId);
       for (const cardId of checked.ids) {
@@ -66,8 +50,8 @@ export const userManager = {
 
   /** Catalog membership is ignored so ids removed from the catalog can still be removed. */
   removeFromList(discordId: string, input: string): ListChange {
-    const checked = parseChecked(input, false);
-    if ('invalid' in checked) return { ok: false, invalid: checked.invalid };
+    const checked = parseKnownCardList(input, false);
+    if (!checked.ok) return checked;
     return db.transaction((tx) => {
       ensureUser(tx, discordId);
       if (checked.ids.length > 0) {

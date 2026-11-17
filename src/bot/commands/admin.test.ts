@@ -21,12 +21,13 @@ import {
 import { userManager } from '../database/userManager';
 import type { Listing } from '../shops/types';
 import { data, execute as adminExecute, type AdminContext } from './admin';
+import { cid, ids } from '../../test/cardIds';
 
 const blue12: Listing = {
   shop: 'blue-ocean',
   url: 'https://www.blue-ocean.de/p/12',
   title: 'Sticker Card 12',
-  cardIds: ['12'],
+  cardIds: [cid('12')],
   cardName: null,
   imageUrl: 'https://img/12.jpg',
   price: { cents: 199, currency: 'EUR' },
@@ -143,7 +144,7 @@ describe('/admin', () => {
   test('map overrides the cards of a listing', async () => {
     listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
     await adminExecute(fakeAdmin(undefined, 'map', { url: blue12.url, cards: '8' }), ctx);
-    expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual(['8']);
+    expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual([cid('8')]);
     expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
   });
 
@@ -151,7 +152,7 @@ describe('/admin', () => {
     listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
     await adminExecute(fakeAdmin(undefined, 'map', { url: blue12.url, cards: '8, 9999' }), ctx);
     expect(lastReply().content).toBe('Nothing changed. Unknown or invalid: 9999');
-    expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual(['12']);
+    expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual([cid('12')]);
     await adminExecute(fakeAdmin(undefined, 'map', { url: 'https://nope', cards: '8' }), ctx);
     expect(lastReply().content).toBe('No stored listing with that URL.');
   });
@@ -186,7 +187,7 @@ describe('/admin', () => {
       Array.from({ length: 12 }, (_, i) => ({
         ...blue12,
         url: `https://www.blue-ocean.de/p/${i + 1}`,
-        cardIds: i === 0 ? ['12', 'LE8'] : [String(i + 1)],
+        cardIds: i === 0 ? ids('12', 'LE8') : [cid(String(i + 1))],
       })),
       1000
     );
@@ -239,7 +240,7 @@ describe('/admin', () => {
       expect(lastReply().content).toContain('Added: LE23');
       expect(lastReply().content).toContain('Removed: none');
       expect(lastReply().components).toHaveLength(1);
-      expect(catalogManager.knownIds().has('LE23')).toBe(false);
+      expect(catalogManager.knownIds().has(cid('LE23'))).toBe(false);
     });
 
     test('lists what is still wanted when ids are removed', async () => {

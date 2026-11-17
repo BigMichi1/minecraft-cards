@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
+import type { CardId } from '../../cards/cardId';
 
 export const users = sqliteTable('users', {
   discordId: text().primaryKey(),
@@ -12,7 +13,7 @@ export const wantedCards = sqliteTable(
     discordId: text()
       .notNull()
       .references(() => users.discordId, { onDelete: 'cascade' }),
-    cardId: text().notNull(),
+    cardId: text().$type<CardId>().notNull(),
   },
   (t) => [primaryKey({ columns: [t.discordId, t.cardId] })]
 );

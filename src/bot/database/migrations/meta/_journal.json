@@ -15,6 +15,13 @@
       "when": 1794919048118,
       "tag": "0001_long_namorita",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1794920971482,
+      "tag": "0002_warm_bloodstrike",
+      "breakpoints": true
     }
   ]
 }

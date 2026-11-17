@@ -24,7 +24,7 @@ const customLevels = {
   },
 };
 
-/** debug/trace sit below info, so they stay off unless LOG_LEVEL raises the threshold. */
+/** The level threshold from LOG_LEVEL, `info` when unset; `debug`/`trace` need LOG_LEVEL set to them. */
 export function resolveLogLevel(env: Record<string, string | undefined>): string {
   return env.LOG_LEVEL || 'info';
 }
@@ -82,7 +82,7 @@ const logger = winston.createLogger({
       ),
     }),
 
-    // Console output (development)
+    // Console output
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize({ colors: customLevels.colors }),
@@ -95,5 +95,16 @@ const logger = winston.createLogger({
 
 // Add winston colors to console
 winston.addColors(customLevels.colors);
+
+/**
+ * Log `<text>: <message>` and, for an Error, its stack on the following lines. Use this
+ * instead of `logger.error('text:', value)`, which only works for Error values: winston
+ * appends nothing readable for a string or other thrown value.
+ */
+export function logError(text: string, error: unknown, level: 'error' | 'warn' = 'error'): void {
+  const message = error instanceof Error ? error.message : String(error);
+  const meta = error instanceof Error && error.stack ? { stack: error.stack } : {};
+  logger.log(level, `${text}: ${message}`, meta);
+}
 
 export default logger;

@@ -1,8 +1,10 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import * as cheerio from 'cheerio';
 import { parseBlueOceanPage, createBlueOceanAdapter } from './blueOcean';
-import { ShopLayoutError } from './types';
+import { ShopLayoutError, type Listing } from './types';
+import logger from '../utils/logger';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
+import { cid, ids } from '../../test/cardIds';
 
 function box(href: string, title: string, image: string, stock = 'Auf Lager'): string {
   return `<div class="product-card product-box"><img data-testid="product-box-img" src="${image}">
@@ -16,7 +18,7 @@ describe('parseBlueOceanPage', () => {
 
   test('uses the href number as card id, not the title number', () => {
     const squid = b1.listings.find((l) => l.url.endsWith('-2dd00088-12'))!;
-    expect(squid.cardIds).toEqual(['12']); // title says "Nr. 9"
+    expect(squid.cardIds).toEqual([cid('12')]); // title says "Nr. 9"
     expect(squid).toMatchObject({
       shop: 'blue-ocean',
       cardName: null,
@@ -30,7 +32,7 @@ describe('parseBlueOceanPage', () => {
       'https://www.blue-ocean.de/nr.-9-squid-uncommonlego-minecraft-tcc-on-fire-2dd00088-12'
     );
     expect(squid.imageUrl).toContain('P12.jpg');
-    expect(b1.listings.find((l) => l.url.endsWith('-107'))!.cardIds).toEqual(['107']);
+    expect(b1.listings.find((l) => l.url.endsWith('-107'))!.cardIds).toEqual([cid('107')]);
   });
 
   test('keeps only TCC cards and counts only the listing grid as products', () => {
@@ -58,6 +60,8 @@ describe('parseBlueOceanPage', () => {
       listings: [],
       productCount: 0,
       isCategoryPage: true,
+      skippedNoId: 0,
+      skippedInvalid: 0,
     });
   });
 
@@ -74,7 +78,7 @@ describe('parseBlueOceanPage', () => {
       'https://x.test/a/TCG3_.P7.jpg?ts=1'
     );
     const [l] = parseBlueOceanPage(html).listings;
-    expect(l?.cardIds).toEqual(['5']);
+    expect(l?.cardIds).toEqual(ids('5'));
     expect(l?.idConflict).toBe(true);
   });
 
@@ -97,6 +101,7 @@ describe('parseBlueOceanPage', () => {
     const parsed = parseBlueOceanPage(html);
     expect(parsed.listings).toEqual([]);
     expect(parsed.productCount).toBe(1);
+    expect(parsed.skippedNoId).toBe(1);
   });
 });
 
@@ -124,7 +129,7 @@ describe('createBlueOceanAdapter', () => {
       },
     });
     expect(adapter.id).toBe('blue-ocean');
-    const listings = await adapter.fetchListings();
+    const { listings } = await adapter.fetchListings();
     expect(calls).toEqual([`${base}?p=1`, `${base}?p=2`, `${base}?p=3`]);
     expect(sleeps).toEqual([1500, 1500]);
     expect(listings.some((l) => l.cardIds[0] === '12')).toBe(true);
@@ -144,8 +149,17 @@ describe('createBlueOceanAdapter', () => {
   });
 
   test('stops at the page cap when the shop never runs out of products', async () => {
+    const warn = spyOn(logger, 'warn');
     const { fetchFn, calls } = fakeFetch({ '?p=': readFixture('blue-ocean-p1.html') });
-    const listings = await createBlueOceanAdapter(fetchFn, { delayMs: 0 }).fetchListings();
+    let listings: Listing[];
+    try {
+      ({ listings } = await createBlueOceanAdapter(fetchFn, { delayMs: 0 }).fetchListings());
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('stopped after 60 pages'))).toBe(
+        true
+      );
+    } finally {
+      warn.mockRestore();
+    }
     expect(calls).toHaveLength(60);
     // identical pages are deduplicated by url
     expect(listings).toHaveLength(19);

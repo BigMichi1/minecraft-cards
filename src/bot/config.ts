@@ -6,14 +6,15 @@ import { DEFAULT_IMAGE_MATCH_THRESHOLD, DEFAULT_IMAGE_MODEL } from './matcher/em
  * `database/db.ts` and `utils/logger.ts` read them when they load, before config does.
  */
 export interface Config {
-  discordToken: string;
-  guildId?: string;
-  botAdminId: string;
-  checkIntervalMs: number;
-  ebay: { clientId: string; clientSecret: string } | null;
-  imageModel: string;
-  imageMatchThreshold: number;
-  modelCacheDir: string;
+  readonly discordToken: string;
+  readonly guildId?: string;
+  readonly botAdminId: string;
+  readonly checkIntervalMs: number;
+  /** null when neither EBAY_CLIENT_ID nor EBAY_CLIENT_SECRET is set (eBay off). */
+  readonly ebay: Readonly<{ clientId: string; clientSecret: string }> | null;
+  readonly imageModel: string;
+  readonly imageMatchThreshold: number;
+  readonly modelCacheDir: string;
 }
 
 /** A missing or invalid environment variable; the message names the variable, never its value. */
@@ -27,6 +28,8 @@ export class ConfigError extends Error {
 type Env = Record<string, string | undefined>;
 
 const DEFAULT_CHECK_INTERVAL_MINUTES = 60;
+/** setInterval takes a 32-bit signed delay; anything longer fires at once, over and over. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 const DEFAULT_MODEL_CACHE_DIR = './models';
 
 /** The trimmed value, or undefined when unset or blank. */
@@ -48,7 +51,13 @@ function intervalMs(env: Env): number {
   if (!Number.isFinite(minutes) || minutes <= 0) {
     throw new ConfigError(`CHECK_INTERVAL_MINUTES must be a positive number, got "${raw}"`);
   }
-  return Math.round(minutes * 60_000);
+  const ms = Math.round(minutes * 60_000);
+  if (ms < 1 || ms > MAX_TIMER_MS) {
+    throw new ConfigError(
+      `CHECK_INTERVAL_MINUTES must be at most ${Math.floor(MAX_TIMER_MS / 60_000)} (about 24 days), got "${raw}"`
+    );
+  }
+  return ms;
 }
 
 function threshold(env: Env): number {
@@ -69,6 +78,12 @@ export function loadConfig(env: Env): Config {
   const guildId = optional(env, 'DISCORD_GUILD_ID');
   const clientId = optional(env, 'EBAY_CLIENT_ID');
   const clientSecret = optional(env, 'EBAY_CLIENT_SECRET');
+  if ((clientId === undefined) !== (clientSecret === undefined)) {
+    // One without the other is a typo or a missing secret, not "eBay off".
+    throw new ConfigError(
+      `${clientId === undefined ? 'EBAY_CLIENT_ID' : 'EBAY_CLIENT_SECRET'} is not set, but ${clientId === undefined ? 'EBAY_CLIENT_SECRET' : 'EBAY_CLIENT_ID'} is: set both to enable eBay, or neither`
+    );
+  }
 
   return {
     discordToken,

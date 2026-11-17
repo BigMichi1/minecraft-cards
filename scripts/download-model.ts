@@ -6,8 +6,9 @@
  */
 import path from 'node:path';
 
-// db.ts opens DB_PATH on import; this script must not touch the bot database.
-process.env.DB_PATH ??= ':memory:';
+// db.ts opens DB_PATH on import, and Bun loads .env (which may set DB_PATH to the bot's
+// database) before this runs: force an in-memory database so the script never touches it.
+process.env.DB_PATH = ':memory:';
 
 const { createTransformersEmbedder, DEFAULT_IMAGE_MODEL } =
   await import('../src/bot/matcher/embedder');

@@ -7,10 +7,10 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import { formatCardList, parseCardList } from '../cards/cardId';
+import { formatCardList } from '../cards/cardId';
 import { parseChecklist } from '../cards/starterCatalog';
 import type { RunSummary } from '../check/runner';
-import { catalogManager } from '../database/catalogManager';
+import { catalogManager, parseKnownCardList } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { buildPreviewText, importStore } from '../interactions/catalogImport';
@@ -113,14 +113,13 @@ function statusText(): string {
 }
 
 function mapCards(url: string, cardsInput: string): string {
-  const { ids, invalid } = parseCardList(cardsInput);
-  if (ids.length === 0 && invalid.length === 0) return 'No card numbers found. Example: 12, LE8';
-  const known = catalogManager.knownIds();
-  const unknown = [...invalid, ...ids.filter((id) => !known.has(id))];
-  if (unknown.length > 0) {
-    return joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(unknown)]);
+  const parsed = parseKnownCardList(cardsInput);
+  if (!parsed.ok) {
+    return parsed.reason === 'empty'
+      ? 'No card numbers found. Example: 12, LE8'
+      : joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(parsed.invalid)]);
   }
-  const listing = listingManager.overrideCards(url, ids, Date.now());
+  const listing = listingManager.overrideCards(url, parsed.ids, Date.now());
   if (!listing) return 'No stored listing with that URL.';
   return joinWithinLimit('Listing now maps to: ', formatCardList(listing.cardIds).split(', '));
 }

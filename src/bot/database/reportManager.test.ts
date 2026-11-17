@@ -4,6 +4,7 @@ import { cards, listingCards, listings, reports } from './schema/index';
 import { catalogManager } from './catalogManager';
 import { listingManager } from './listingManager';
 import { reportManager } from './reportManager';
+import { cid } from '../../test/cardIds';
 
 describe('reportManager', () => {
   beforeAll(() => {
@@ -25,7 +26,7 @@ describe('reportManager', () => {
           shop: 'blue-ocean',
           url: 'https://www.blue-ocean.de/p/12',
           title: 't',
-          cardIds: ['12'],
+          cardIds: [cid('12')],
           cardName: null,
           imageUrl: null,
           price: null,
@@ -60,7 +61,7 @@ describe('reportManager', () => {
           shop: 'blue-ocean',
           url: 'https://www.blue-ocean.de/p/12',
           title: 't',
-          cardIds: ['12'],
+          cardIds: [cid('12')],
           cardName: null,
           imageUrl: null,
           price: null,

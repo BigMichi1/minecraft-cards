@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { cardType } from './cardId';
 import { parseChecklist, STARTER_CHECKLIST } from './starterCatalog';
+import { ids } from '../../test/cardIds';
 
 describe('parseChecklist', () => {
   test('drops the laststicker header line', () => {
     expect(parseChecklist('Prüfliste für Nummern diese Sammlung:\n1, 2, LE1, XXL1')).toEqual({
-      ids: ['1', '2', 'LE1', 'XXL1'],
+      ids: ids('1', '2', 'LE1', 'XXL1'),
       invalid: [],
     });
   });

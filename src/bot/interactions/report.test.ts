@@ -11,6 +11,7 @@ import {
   handleReportModal,
   handleReportReason,
 } from './report';
+import { cid } from '../../test/cardIds';
 
 let replies: Array<any> = [];
 let modals: Array<any> = [];
@@ -66,7 +67,7 @@ function makeListing(url = 'https://www.blue-ocean.de/p/12'): StoredListing {
         shop: 'blue-ocean',
         url,
         title: 't',
-        cardIds: ['12'],
+        cardIds: [cid('12')],
         cardName: null,
         imageUrl: 'https://img/12.jpg',
         price: null,

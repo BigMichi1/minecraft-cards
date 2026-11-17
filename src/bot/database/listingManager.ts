@@ -1,7 +1,7 @@
 import { and, eq, gte, inArray, isNull, lt, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
-import type { MatchStatus } from '../matcher/embedder';
-import type { Listing as ShopListing, Money, ShopId } from '../shops/types';
+import type { MatchStatus } from '../matcher/matchStatus';
+import type { ListingFormat, Listing as ShopListing, Money, ShopId } from '../shops/types';
 import { db } from './db';
 import { listingCards, listings, notifications, reports } from './schema/index';
 import type { Listing as ListingRow } from './schema/index';
@@ -14,16 +14,30 @@ export type StoredListing = {
   title: string;
   imageUrl: string | null;
   price: Money | null;
-  format: 'shop' | 'auction' | 'fixed_price';
+  format: ListingFormat;
   auctionEndsAt: number | null;
   available: boolean;
   availableSince: number | null;
   cardIds: CardId[];
   matchStatus: MatchStatus;
   similarity: number | null;
+  /** When the picture was last compared; null before the first comparison. */
+  matchCheckedAt: number | null;
+  idConflict: boolean;
   onHold: boolean;
   manualOverride: boolean;
 };
+
+/** One listing to tell a user about: the cards of it they want, for this availability period. */
+export interface PendingNotification {
+  listing: StoredListing;
+  cardIds: CardId[];
+  /** The availability period this notification is for (`listing.availableSince`, never null). */
+  availableSince: number;
+}
+
+/** discordId -> that user's pending notifications, by listing id. */
+export type PendingNotifications = Map<string, PendingNotification[]>;
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -47,7 +61,7 @@ function auctionEnded(auctionEndsAt: number | null, now: number): boolean {
 function toStored(row: ListingRow, cardIds: CardId[]): StoredListing {
   return {
     id: row.id,
-    shop: row.shop as ShopId,
+    shop: row.shop,
     url: row.url,
     title: row.title,
     imageUrl: row.imageUrl,
@@ -60,8 +74,10 @@ function toStored(row: ListingRow, cardIds: CardId[]): StoredListing {
     available: row.available,
     availableSince: row.availableSince,
     cardIds,
-    matchStatus: row.matchStatus as MatchStatus,
+    matchStatus: row.matchStatus,
     similarity: row.similarity,
+    matchCheckedAt: row.matchCheckedAt,
+    idConflict: row.idConflict,
     onHold: row.onHold,
     manualOverride: row.manualOverride,
   };
@@ -92,9 +108,10 @@ function load(tx: Tx, rows: ListingRow[]): StoredListing[] {
   return rows.map((r) => toStored(r, cards.get(r.id) ?? []));
 }
 
+/** The status of a listing whose picture has not been compared (yet). */
 function defaultMatchStatus(shop: ShopId, cardIds: CardId[]): MatchStatus {
   if (shop === 'sammel-ente') return 'reference';
-  return cardIds.length > 1 ? 'bundle' : 'unconfirmed';
+  return cardIds.length > 1 ? 'bundle' : 'pending';
 }
 
 function writeCards(tx: Tx, listingId: number, cardIds: CardId[]): void {
@@ -137,6 +154,7 @@ export const listingManager = {
           format: item.format,
           auctionEndsAt: item.auctionEndsAt,
           available: item.available,
+          idConflict: item.idConflict,
           lastSeenAt: now,
         };
         if (!existing) {
@@ -161,8 +179,12 @@ export const listingManager = {
           ? storedCards
           : [...new Set(item.cardIds)].sort(compareCardIds);
         const cardsChanged = newCards.join(',') !== storedCards.join(',');
+        // An admin-mapped listing stays confirmed: its cards and status are the admin's.
         const rematch =
-          existing.imageUrl !== item.imageUrl || (cardsChanged && !existing.manualOverride);
+          !existing.manualOverride &&
+          (existing.imageUrl !== item.imageUrl ||
+            cardsChanged ||
+            existing.idConflict !== item.idConflict);
         tx.update(listings)
           .set({
             ...fields,
@@ -173,8 +195,9 @@ export const listingManager = {
                 : now,
             ...(rematch
               ? {
-                  matchStatus: defaultMatchStatus(existing.shop as ShopId, newCards),
+                  matchStatus: defaultMatchStatus(existing.shop, newCards),
                   similarity: null,
+                  matchCheckedAt: null,
                 }
               : {}),
           })
@@ -207,9 +230,9 @@ export const listingManager = {
     });
   },
 
-  setMatch(listingId: number, status: MatchStatus, similarity: number | null): void {
+  setMatch(listingId: number, status: MatchStatus, similarity: number | null, now: number): void {
     db.update(listings)
-      .set({ matchStatus: status, similarity })
+      .set({ matchStatus: status, similarity, matchCheckedAt: now })
       .where(eq(listings.id, listingId))
       .run();
   },
@@ -218,9 +241,7 @@ export const listingManager = {
    * Available, not on hold, not an ended auction, seen since `seenSince`, sharing a card with
    * the user's list, and not yet notified for this availability period.
    */
-  pendingNotifications(
-    options: PendingOptions = {}
-  ): Map<string, { listing: StoredListing; cardIds: CardId[] }[]> {
+  pendingNotifications(options: PendingOptions = {}): PendingNotifications {
     const now = options.now ?? Date.now();
     return db.transaction((tx) => {
       const rows = tx
@@ -237,9 +258,10 @@ export const listingManager = {
         )
         .orderBy(listings.id)
         .all();
-      const result = new Map<string, { listing: StoredListing; cardIds: CardId[] }[]>();
+      const result: PendingNotifications = new Map();
       for (const listing of load(tx, rows)) {
-        if (listing.availableSince === null || auctionEnded(listing.auctionEndsAt, now)) continue;
+        const { availableSince } = listing;
+        if (availableSince === null || auctionEnded(listing.auctionEndsAt, now)) continue;
         for (const [discordId, cardIds] of userManager.usersWanting(listing.cardIds)) {
           const done = tx
             .select()
@@ -248,13 +270,13 @@ export const listingManager = {
               and(
                 eq(notifications.discordId, discordId),
                 eq(notifications.listingId, listing.id),
-                eq(notifications.availableSince, listing.availableSince)
+                eq(notifications.availableSince, availableSince)
               )
             )
             .get();
           if (done) continue;
           const list = result.get(discordId) ?? [];
-          list.push({ listing, cardIds });
+          list.push({ listing, cardIds, availableSince });
           result.set(discordId, list);
         }
       }

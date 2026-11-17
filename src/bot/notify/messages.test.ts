@@ -5,6 +5,7 @@ import { cards } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
 import type { StoredListing } from '../database/listingManager';
 import { buildNotificationMessages, kleinanzeigenSearchUrl } from './messages';
+import { cid } from '../../test/cardIds';
 
 const referenceUrl = 'https://ref/12.jpg';
 
@@ -20,9 +21,11 @@ function listing(i: number, over: Partial<StoredListing> = {}): StoredListing {
     auctionEndsAt: null,
     available: true,
     availableSince: 1,
-    cardIds: ['12'],
+    cardIds: [cid('12')],
     matchStatus: 'confirmed',
     similarity: 0.94,
+    matchCheckedAt: null,
+    idConflict: false,
     onHold: false,
     manualOverride: false,
     ...over,
@@ -57,12 +60,12 @@ describe('notification messages', () => {
     db.delete(cards).run();
     catalogManager.seedIfEmpty();
     catalogManager.updateNamesAndReferences([
-      { cardId: '12', name: 'Squid', imageUrl: referenceUrl },
+      { cardId: cid('12'), name: 'Squid', imageUrl: referenceUrl },
     ]);
   });
 
   test('kleinanzeigenSearchUrl lowercases the id', () => {
-    expect(kleinanzeigenSearchUrl('LE8')).toBe(
+    expect(kleinanzeigenSearchUrl(cid('LE8'))).toBe(
       'https://www.kleinanzeigen.de/s-lego-minecraft-karte-le8/k0'
     );
   });
@@ -97,7 +100,7 @@ describe('notification messages', () => {
 
   test('unknown name, unconfirmed footer with reference thumbnail', () => {
     const msgs = buildNotificationMessages([
-      item(1, { cardIds: ['45'], matchStatus: 'unconfirmed', similarity: 0.5 }),
+      item(1, { cardIds: [cid('45')], matchStatus: 'unconfirmed', similarity: 0.5 }),
       item(2, { matchStatus: 'unconfirmed', similarity: 0.5 }),
     ]);
     expect(embedJson(at(msgs, 0).message, 0).title).toBe('🟢 Card #45 is available');
@@ -109,9 +112,9 @@ describe('notification messages', () => {
   test('footers for other statuses; reference has none; null image and null reference', () => {
     const f = (over: Partial<StoredListing>) =>
       embedJson(atMsg(buildNotificationMessages([item(1, over)]), 0));
-    expect(f({ matchStatus: 'bundle', cardIds: ['12', '45'], shop: 'ebay' }).footer.text).toBe(
-      'ℹ️ bundle — check the listing'
-    );
+    expect(
+      f({ matchStatus: 'bundle', cardIds: [cid('12'), cid('45')], shop: 'ebay' }).footer.text
+    ).toBe('ℹ️ bundle — check the listing');
     expect(f({ matchStatus: 'no_reference' }).footer.text).toBe('ℹ️ no reference picture yet');
     expect(f({ matchStatus: 'model_unavailable' }).footer.text).toBe(
       'ℹ️ picture check unavailable'
@@ -120,7 +123,7 @@ describe('notification messages', () => {
     expect(ref.footer).toBeUndefined();
     expect(ref.fields.map((x: { value: string }) => x.value).join('|')).toContain('sammel-ente');
     expect(f({ imageUrl: null }).image).toBeUndefined();
-    const noRef = f({ matchStatus: 'unconfirmed', cardIds: ['45'] });
+    const noRef = f({ matchStatus: 'unconfirmed', cardIds: [cid('45')] });
     expect(noRef.thumbnail).toBeUndefined();
   });
 
@@ -130,7 +133,7 @@ describe('notification messages', () => {
         buildNotificationMessages([
           item(1, {
             shop: 'ebay',
-            cardIds: ['12', '45'],
+            cardIds: [cid('12'), cid('45')],
             matchStatus: 'bundle',
             format: 'auction',
             auctionEndsAt: 1_700_000_000_000,
@@ -146,7 +149,7 @@ describe('notification messages', () => {
   });
 
   test('non-EUR price and long titles stay within Discord limits', () => {
-    const ids = Array.from({ length: 200 }, (_, i) => String(i + 1));
+    const ids = Array.from({ length: 200 }, (_, i) => cid(String(i + 1)));
     const e = embedJson(
       atMsg(
         buildNotificationMessages([

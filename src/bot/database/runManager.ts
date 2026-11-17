@@ -1,7 +1,35 @@
 import { desc, eq } from 'drizzle-orm';
 import type { RunSummary } from '../check/runner';
+import type { ShopId } from '../shops/types';
+import logger from '../utils/logger';
 import { db } from './db';
 import { adminAlerts, runs } from './schema/index';
+
+/** How many past runs `lastShopListings` looks through for one where the shop succeeded. */
+const SHOP_HISTORY_RUNS = 50;
+
+/**
+ * Parse a stored summary. Rows written by an older version lack newer fields, so every field
+ * added to RunSummary after the first release must be optional; this check covers the fields
+ * every version wrote.
+ */
+function parseSummary(json: string): RunSummary | undefined {
+  try {
+    const value: unknown = JSON.parse(json);
+    if (typeof value !== 'object' || value === null) return undefined;
+    const v = value as Record<string, unknown>;
+    const valid =
+      typeof v.startedAt === 'number' &&
+      typeof v.finishedAt === 'number' &&
+      typeof v.notified === 'number' &&
+      typeof v.dmFailures === 'number' &&
+      typeof v.shops === 'object' &&
+      v.shops !== null;
+    return valid ? (value as RunSummary) : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export const runManager = {
   record(summary: RunSummary): void {
@@ -14,9 +42,28 @@ export const runManager = {
       .run();
   },
 
+  /** The latest run; undefined when none ran or its stored summary is unreadable (logged). */
   last(): RunSummary | undefined {
     const row = db.select().from(runs).orderBy(desc(runs.id)).limit(1).get();
-    return row ? (JSON.parse(row.summary) as RunSummary) : undefined;
+    if (!row) return undefined;
+    const summary = parseSummary(row.summary);
+    if (!summary) logger.warn(`run ${row.id}: stored summary is not a run summary`);
+    return summary;
+  },
+
+  /** Listings `shop` returned in the latest recent run where its fetch succeeded. */
+  lastShopListings(shop: ShopId): number | undefined {
+    const rows = db
+      .select({ summary: runs.summary })
+      .from(runs)
+      .orderBy(desc(runs.id))
+      .limit(SHOP_HISTORY_RUNS)
+      .all();
+    for (const row of rows) {
+      const entry = parseSummary(row.summary)?.shops[shop];
+      if (entry && entry.error === undefined) return entry.listings;
+    }
+    return undefined;
   },
 
   /** True (and remembers `now`) when no alert with this key went out within `everyMs`. */

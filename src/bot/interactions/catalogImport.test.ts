@@ -4,6 +4,7 @@ import { catalogManager } from '../database/catalogManager';
 import { db, initializeDatabase } from '../database/db';
 import { cards } from '../database/schema/index';
 import { createImportStore, handleCatalogButton } from './catalogImport';
+import { cid, ids } from '../../test/cardIds';
 
 let clock = 0;
 let updates: any[] = [];
@@ -28,15 +29,15 @@ function fakeButton(customId: string, userId = 'admin') {
 describe('import store', () => {
   test('take returns once and consumes the token', () => {
     const store = createImportStore(() => clock);
-    const token = store.put(['1']);
-    expect(store.take(token)).toEqual(['1']);
+    const token = store.put([cid('1')]);
+    expect(store.take(token)).toEqual(ids('1'));
     expect(store.take(token)).toBeUndefined();
   });
 
   test('tokens expire after 10 minutes', () => {
     clock = 0;
     const store = createImportStore(() => clock);
-    const token = store.put(['1']);
+    const token = store.put([cid('1')]);
     clock += 11 * 60_000;
     expect(store.take(token)).toBeUndefined();
   });
@@ -60,17 +61,17 @@ describe('handleCatalogButton', () => {
 
   test('save applies the import once', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put(['1', '2']);
+    const token = store.put([cid('1'), cid('2')]);
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
     expect(updates[0].content).toBe('Catalog saved.');
-    expect([...catalogManager.knownIds()].sort()).toEqual(['1', '2']);
+    expect([...catalogManager.knownIds()].sort()).toEqual(ids('1', '2'));
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
     expect(updates[1].content).toBe('This import expired, run the command again.');
   });
 
   test('cancel stores nothing', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put(['1']);
+    const token = store.put([cid('1')]);
     await handleCatalogButton(fakeButton(`catalog-cancel:${token}`), { adminId: 'admin' }, store);
     expect(updates[0].content).toBe('Import cancelled.');
     expect(catalogManager.knownIds().size).toBeGreaterThan(200);
@@ -78,7 +79,7 @@ describe('handleCatalogButton', () => {
 
   test('an expired token is reported', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put(['1']);
+    const token = store.put([cid('1')]);
     clock += 11 * 60_000;
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
     expect(updates[0].content).toBe('This import expired, run the command again.');
@@ -86,7 +87,7 @@ describe('handleCatalogButton', () => {
 
   test('a non-admin cannot save and does not consume the token', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put(['1']);
+    const token = store.put([cid('1')]);
     await handleCatalogButton(
       fakeButton(`catalog-save:${token}`, 'u1'),
       { adminId: 'admin' },
@@ -94,6 +95,6 @@ describe('handleCatalogButton', () => {
     );
     expect(replies[0].content).toBe('Only the bot admin can use this.');
     expect(catalogManager.knownIds().size).toBeGreaterThan(200);
-    expect(store.take(token)).toEqual(['1']);
+    expect(store.take(token)).toEqual(ids('1'));
   });
 });

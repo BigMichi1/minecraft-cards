@@ -1,4 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import logger from '../utils/logger';
 import { db, initializeDatabase } from './db';
 import { adminAlerts, runs } from './schema/index';
 import { runManager } from './runManager';
@@ -27,6 +28,34 @@ describe('runManager', () => {
     runManager.record({ ...summary, notified: 7 });
     expect(runManager.last()?.notified).toBe(7);
     expect(runManager.last()?.shops['blue-ocean']?.listings).toBe(3);
+  });
+
+  test('a stored summary that is not a run summary reads as no run, with a warning', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      db.insert(runs).values({ startedAt: 1, finishedAt: 2, summary: '{"shops":3}' }).run();
+      expect(runManager.last()).toBeUndefined();
+      db.insert(runs).values({ startedAt: 1, finishedAt: 2, summary: 'not json' }).run();
+      expect(runManager.last()).toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(2);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a summary of an older version without the newer optional fields still reads', () => {
+    runManager.record(summary);
+    expect(runManager.last()).toEqual(summary);
+    expect(runManager.last()?.error).toBeUndefined();
+  });
+
+  test('lastShopListings skips runs where the shop failed or did not run', () => {
+    expect(runManager.lastShopListings('blue-ocean')).toBeUndefined();
+    runManager.record(summary);
+    runManager.record({ ...summary, shops: { 'blue-ocean': { listings: 0, error: 'down' } } });
+    runManager.record({ ...summary, shops: {} });
+    expect(runManager.lastShopListings('blue-ocean')).toBe(3);
+    expect(runManager.lastShopListings('ebay')).toBeUndefined();
   });
 
   test('shouldAlert is true once per period', () => {

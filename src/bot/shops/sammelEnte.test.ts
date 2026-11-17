@@ -1,8 +1,10 @@
-import { describe, test, expect } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
+import logger from '../utils/logger';
 import { parseSammelEntePage, createSammelEnteAdapter } from './sammelEnte';
 import { ShopLayoutError } from './types';
 import { HttpError } from '../utils/http';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
+import { cid } from '../../test/cardIds';
 
 describe('parseSammelEntePage', () => {
   const p1 = parseSammelEntePage(readFixture('sammel-ente-p1.html'));
@@ -45,14 +47,23 @@ describe('parseSammelEntePage', () => {
     expect(p1.listings.some((l) => l.title.includes('Booster'))).toBe(false);
     expect(p1.listings.some((l) => l.title.includes('Starter'))).toBe(false);
     expect(p1.listings).toHaveLength(22);
+    expect(p1.skippedNoId).toBe(p1.productCount - 22);
+    expect(p1.skippedInvalid).toBe(0);
+  });
+
+  test('counts product boxes without a link or title as invalid', () => {
+    const parsed = parseSammelEntePage(
+      '<div class="card product-box"><a class="product-name"></a></div>'
+    );
+    expect(parsed).toMatchObject({ productCount: 1, skippedInvalid: 1, skippedNoId: 0 });
   });
 
   test('maps LE and XXL cards and skips puzzle packs on the last page', () => {
     const p11 = parseSammelEntePage(readFixture('sammel-ente-p11.html'));
     expect(p11.lastPage).toBe(11);
     const ids = p11.listings.map((l) => l.cardIds[0]);
-    expect(ids).toContain('LE12');
-    expect(ids).toContain('XXL1');
+    expect(ids).toContain(cid('LE12'));
+    expect(ids).toContain(cid('XXL1'));
     expect(p11.listings.find((l) => l.cardIds[0] === 'LE12')).toMatchObject({
       cardName: 'Efe',
       available: true,
@@ -66,6 +77,8 @@ describe('parseSammelEntePage', () => {
       listings: [],
       lastPage: 1,
       productCount: 0,
+      skippedNoId: 0,
+      skippedInvalid: 0,
     });
   });
 });
@@ -93,8 +106,9 @@ describe('createSammelEnteAdapter', () => {
       },
     });
     expect(adapter.id).toBe('sammel-ente');
-    const listings = await adapter.fetchListings();
+    const { listings, skippedNoId } = await adapter.fetchListings();
     expect(calls).toHaveLength(11);
+    expect(skippedNoId).toBeGreaterThan(0);
     expect(calls[0]).toBe('https://shop-sammel-ente.de/Minecraft/Serie-3/?p=1');
     expect(calls[10]).toBe('https://shop-sammel-ente.de/Minecraft/Serie-3/?p=11');
     expect(sleeps).toEqual(Array(10).fill(1500));
@@ -113,6 +127,22 @@ describe('createSammelEnteAdapter', () => {
     expect(error).toBeInstanceOf(ShopLayoutError);
     expect((error as Error).message).toContain('page 2');
   });
+
+  test('warns and reads only the first 60 pages when the pagination names more', async () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      const p1 = readFixture('sammel-ente-p1.html').replaceAll('?p=11', '?p=75');
+      const { fetchFn, calls } = fakeFetch({
+        '?p=1': p1,
+        '?p=': readFixture('sammel-ente-p11.html'),
+      });
+      await createSammelEnteAdapter(fetchFn, noDelay).fetchListings();
+      expect(calls).toHaveLength(60);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('75 pages'))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  }, 30_000);
 
   test('an HTTP failure on a later page rejects the whole run', async () => {
     const { fetchFn } = fakeFetch({ '?p=1': readFixture('sammel-ente-p1.html') });

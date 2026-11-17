@@ -3,12 +3,21 @@ import type { FetchFn } from '../shops/types';
 export const USER_AGENT = 'minecraft-cards-bot/1.0 (+hourly stock check)';
 export const REQUEST_TIMEOUT_MS = 20_000;
 
+/** Longest part of an error response body kept in an HttpError message. */
+export const MAX_ERROR_BODY = 300;
+
 export class HttpError extends Error {
+  /**
+   * `body` (an API's error answer) is cut to MAX_ERROR_BODY characters; the caller removes
+   * anything secret from it first.
+   */
   constructor(
     public readonly status: number,
-    public readonly url: string
+    public readonly url: string,
+    body?: string
   ) {
-    super(`HTTP ${status} for ${url}`);
+    const detail = body?.replace(/\s+/g, ' ').trim().slice(0, MAX_ERROR_BODY);
+    super(`HTTP ${status} for ${url}${detail ? `: ${detail}` : ''}`);
     this.name = 'HttpError';
   }
 }

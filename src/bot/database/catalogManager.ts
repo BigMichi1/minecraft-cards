@@ -1,5 +1,11 @@
 import { count, eq, inArray } from 'drizzle-orm';
-import { cardType, compareCardIds, type CardId, type CardType } from '../cards/cardId';
+import {
+  cardType,
+  compareCardIds,
+  parseCardList,
+  type CardId,
+  type CardType,
+} from '../cards/cardId';
 import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
 import { db } from './db';
 import { cards, wantedCards } from './schema/index';
@@ -16,6 +22,26 @@ export interface ImportPreview {
   added: CardId[];
   removed: CardId[];
   removedStillWanted: { cardId: CardId; users: number }[];
+}
+
+/**
+ * A parsed card list: the ids, or why there are none: `empty` (no token at all) or `invalid`
+ * (unparseable tokens, then ids not in the catalog when that was checked).
+ */
+export type CardListResult =
+  | { ok: true; ids: CardId[] }
+  | { ok: false; reason: 'empty' }
+  | { ok: false; reason: 'invalid'; invalid: string[] };
+
+/** Parse a comma separated card list; with `checkCatalog`, ids outside the catalog are invalid. */
+export function parseKnownCardList(input: string, checkCatalog = true): CardListResult {
+  const parsed = parseCardList(input);
+  const known = checkCatalog ? catalogManager.knownIds() : null;
+  const unknown = known ? parsed.ids.filter((id) => !known.has(id)) : [];
+  const invalid = [...parsed.invalid, ...unknown];
+  if (invalid.length > 0) return { ok: false, reason: 'invalid', invalid };
+  if (parsed.ids.length === 0) return { ok: false, reason: 'empty' };
+  return { ok: true, ids: parsed.ids };
 }
 
 function insertCards(ids: CardId[]): void {
@@ -60,7 +86,10 @@ export const catalogManager = {
       .get();
   },
 
-  /** Update name and reference image for catalog ids; unknown ids are ignored. */
+  /**
+   * Update name and reference image for catalog ids; unknown ids are ignored. An entry without
+   * a picture keeps the stored reference: a listing that lost its picture must not erase it.
+   */
   updateNamesAndReferences(
     entries: { cardId: CardId; name: string; imageUrl: string | null }[]
   ): void {
@@ -68,7 +97,11 @@ export const catalogManager = {
     db.transaction(() => {
       for (const e of entries) {
         db.update(cards)
-          .set({ name: e.name, referenceImageUrl: e.imageUrl, updatedAt: now })
+          .set({
+            name: e.name,
+            ...(e.imageUrl === null ? {} : { referenceImageUrl: e.imageUrl }),
+            updatedAt: now,
+          })
           .where(eq(cards.cardId, e.cardId))
           .run();
       }

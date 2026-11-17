@@ -4,7 +4,7 @@ import { formatCardList } from '../cards/cardId';
 import { userManager, type ListChange } from '../database/userManager';
 import { joinWithinLimit } from '../utils/messageLimit';
 import { replyWithError } from '../utils/interactionReply';
-import logger from '../utils/logger';
+import { logError } from '../utils/logger';
 
 const LIST_OPTION_MAX_LENGTH = 6000;
 
@@ -57,7 +57,7 @@ function describeChange(change: ListChange): string {
       formatCardList(change.ids).split(', ')
     );
   }
-  if (change.invalid.length === 0) return 'No card numbers found. Example: 12, 45, LE8';
+  if (change.reason === 'empty') return 'No card numbers found. Example: 12, 45, LE8';
   return joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(change.invalid)]);
 }
 
@@ -96,7 +96,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     const content = run(interaction);
     await interaction.reply({ content, flags: MessageFlags.Ephemeral });
   } catch (error) {
-    logger.error('[MISSING COMMAND] Error:', error);
+    logError('[MISSING COMMAND] failed', error);
     await replyWithError(interaction, 'Error', 'Something went wrong while updating your list.');
   }
 }

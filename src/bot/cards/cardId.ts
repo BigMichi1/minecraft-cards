@@ -1,5 +1,12 @@
-export type CardId = string;
-export type CardType = 'base' | 'le' | 'xxl';
+declare const cardIdBrand: unique symbol;
+/**
+ * A canonical card id (`12`, `LE8`, `XXL1`). Branded so a raw string cannot pass for one:
+ * only this module creates them (normalizeCardId, parseCardList), and the database columns
+ * holding card ids are typed with it (`.$type<CardId>()`).
+ */
+export type CardId = string & { readonly [cardIdBrand]: true };
+export const CARD_TYPES = ['base', 'le', 'xxl'] as const;
+export type CardType = (typeof CARD_TYPES)[number];
 
 const MAX_RANGE_SIZE = 300;
 const CARD_PATTERN = /^#?\s*(LE|XXL)?\s*(\d+)$/i;
@@ -13,8 +20,9 @@ interface ParsedId {
 const TYPE_ORDER: Record<CardType, number> = { base: 0, le: 1, xxl: 2 };
 const PREFIX: Record<CardType, string> = { base: '', le: 'LE', xxl: 'XXL' };
 
+/** The one place a string becomes a CardId. */
 function toId(type: CardType, num: number): CardId {
-  return `${PREFIX[type]}${num}`;
+  return `${PREFIX[type]}${num}` as CardId;
 }
 
 function parseId(raw: string): ParsedId | null {

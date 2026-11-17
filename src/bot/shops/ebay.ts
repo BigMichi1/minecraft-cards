@@ -1,12 +1,22 @@
 import { compareCardIds, normalizeCardId } from '../cards/cardId';
 import type { CardId } from '../cards/cardId';
+import { errorMessage } from '../utils/async';
 import { REQUEST_TIMEOUT_MS, USER_AGENT, HttpError } from '../utils/http';
-import { ShopLayoutError, type FetchFn, type Listing, type Money, type ShopAdapter } from './types';
+import logger from '../utils/logger';
+import {
+  ShopLayoutError,
+  type FetchFn,
+  type FetchResult,
+  type Listing,
+  type Money,
+  type ShopAdapter,
+} from './types';
 
 const TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 const SEARCH_URL = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
 const ITEM_URL = 'https://www.ebay.de/itm/';
 const TOKEN_SAFETY_MARGIN_MS = 60_000;
+const SEARCH_LIMIT = 200;
 
 export const EBAY_QUERIES = [
   'lego minecraft on fire karte',
@@ -27,7 +37,10 @@ const PREFIXED_LIST_PATTERN = new RegExp(
   'gi'
 );
 
-/** Card ids named in an eBay title. Only prefixed forms count; bare numbers (`Serie 3`, `2026`) never do. */
+/**
+ * Card ids named in an eBay title. Only prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `LE8`) and
+ * `n/228` count; bare numbers (`Serie 3`, `2026`) never do.
+ */
 export function extractCardIdsFromTitle(title: string): CardId[] {
   const ids = new Set<CardId>();
   const add = (raw: string) => {
@@ -126,13 +139,63 @@ function toListing(item: EbayItem): Listing | null {
   };
 }
 
+interface SearchResponse {
+  itemSummaries?: EbayItem[];
+  total?: number;
+  errors?: { message?: string; longMessage?: string }[];
+}
+
 export function createEbayAdapter(opts: {
   clientId: string;
   clientSecret: string;
   fetchFn?: FetchFn;
-}): ShopAdapter & { lastSkippedNoId: number } {
+}): ShopAdapter {
   const fetchFn = opts.fetchFn ?? fetch;
   let token: { value: string; expiresAt: number } | null = null;
+
+  /** An error body without the client secret or access token in it. */
+  function redact(text: string): string {
+    let out = text.split(opts.clientSecret).join('[redacted]');
+    if (token) out = out.split(token.value).join('[redacted]');
+    return out;
+  }
+
+  /**
+   * HttpError for a failed answer, with eBay's own error text: the `error`/`error_description`
+   * of an OAuth answer or the messages of an API `errors` list, never other fields (a token
+   * answer carries the access token). A body that is not JSON is kept as text.
+   */
+  async function failure(response: Response, url: string): Promise<HttpError> {
+    const text = await response.text().catch(() => '');
+    let detail = text;
+    try {
+      const json = JSON.parse(text) as {
+        error?: string;
+        error_description?: string;
+        errors?: { message?: string; longMessage?: string }[];
+      };
+      detail = [
+        json.error,
+        json.error_description,
+        ...(json.errors ?? []).map((e) => e.longMessage ?? e.message),
+      ]
+        .filter((part): part is string => typeof part === 'string')
+        .join('; ');
+    } catch {
+      // Not JSON: an HTML error page or plain text.
+    }
+    return new HttpError(response.status, url, redact(detail));
+  }
+
+  async function readJson<T>(response: Response, url: string): Promise<T> {
+    try {
+      return (await response.json()) as T;
+    } catch (error) {
+      throw new Error(`eBay answer from ${url} is not JSON: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+  }
 
   async function getToken(): Promise<string> {
     if (token && Date.now() < token.expiresAt) return token.value;
@@ -146,8 +209,11 @@ export function createEbayAdapter(opts: {
       body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope',
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (!response.ok) throw new HttpError(response.status, TOKEN_URL);
-    const body = (await response.json()) as { access_token?: string; expires_in?: number };
+    if (!response.ok) throw await failure(response, TOKEN_URL);
+    const body = await readJson<{ access_token?: string; expires_in?: number }>(
+      response,
+      TOKEN_URL
+    );
     if (!body.access_token || typeof body.expires_in !== 'number') {
       throw new Error('eBay token response has no access_token/expires_in');
     }
@@ -159,7 +225,7 @@ export function createEbayAdapter(opts: {
   }
 
   async function search(query: string): Promise<EbayItem[]> {
-    const url = `${SEARCH_URL}?q=${encodeURIComponent(query)}&limit=200`;
+    const url = `${SEARCH_URL}?q=${encodeURIComponent(query)}&limit=${SEARCH_LIMIT}`;
     const response = await fetchFn(url, {
       headers: {
         Authorization: `Bearer ${await getToken()}`,
@@ -168,24 +234,43 @@ export function createEbayAdapter(opts: {
       },
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (!response.ok) throw new HttpError(response.status, url);
-    const body = (await response.json()) as { itemSummaries?: EbayItem[] };
-    return body.itemSummaries ?? [];
+    if (!response.ok) throw await failure(response, url);
+    const body = await readJson<SearchResponse>(response, url);
+    if (!body.itemSummaries) {
+      const errors = (body.errors ?? []).map((e) => e.longMessage ?? e.message ?? '?');
+      if (errors.length > 0) {
+        throw new Error(
+          `eBay search "${query}" failed: ${redact(errors.join('; ')).slice(0, 300)}`
+        );
+      }
+      return [];
+    }
+    if (typeof body.total === 'number' && body.total > body.itemSummaries.length) {
+      // Only the first page is read; a search this broad needs a narrower query.
+      logger.warn(
+        `eBay search "${query}": ${body.total} results, only the first ${body.itemSummaries.length} read`
+      );
+    }
+    return body.itemSummaries;
   }
 
-  const adapter: ShopAdapter & { lastSkippedNoId: number } = {
+  return {
     id: 'ebay',
-    lastSkippedNoId: 0,
-    async fetchListings() {
+    async fetchListings(): Promise<FetchResult> {
       const byUrl = new Map<string, Listing>();
       const skipped = new Set<string>();
+      let skippedInvalid = 0;
       let itemsSeen = 0;
       for (const query of EBAY_QUERIES) {
         const items = await search(query);
         itemsSeen += items.length;
         for (const item of items) {
           const listing = toListing(item);
-          if (!listing || byUrl.has(listing.url) || skipped.has(listing.url)) continue;
+          if (!listing) {
+            skippedInvalid++;
+            continue;
+          }
+          if (byUrl.has(listing.url) || skipped.has(listing.url)) continue;
           if (listing.cardIds.length === 0) skipped.add(listing.url);
           else byUrl.set(listing.url, listing);
         }
@@ -195,9 +280,7 @@ export function createEbayAdapter(opts: {
       if (itemsSeen === 0) {
         throw new ShopLayoutError(`eBay: all ${EBAY_QUERIES.length} searches returned no items`);
       }
-      adapter.lastSkippedNoId = skipped.size;
-      return [...byUrl.values()];
+      return { listings: [...byUrl.values()], skippedNoId: skipped.size, skippedInvalid };
     },
   };
-  return adapter;
 }

@@ -8,11 +8,14 @@ import {
   createTransformersEmbedder,
   DEFAULT_IMAGE_MATCH_THRESHOLD,
   DEFAULT_IMAGE_MODEL,
+  ImageUnavailableError,
   matchListing,
+  ModelError,
   MAX_IMAGE_BYTES,
   pooledOutput,
   type ImageEmbedder,
 } from './embedder';
+import { cid } from '../../test/cardIds';
 
 /** Fake inner embedder: returns `vectors[url]` (or `fallback`) and counts calls. */
 function fakeEmbedder(
@@ -34,7 +37,7 @@ function fakeEmbedder(
 const throwingEmbedder: ImageEmbedder = {
   model: 'broken',
   async embed(): Promise<Float32Array> {
-    throw new Error('onnx runtime missing');
+    throw new ModelError('broken: onnx runtime missing');
   },
 };
 
@@ -42,7 +45,7 @@ const blue12: Listing = {
   shop: 'blue-ocean',
   url: 'https://www.blue-ocean.de/nr.-9-squid-2dd00088-12',
   title: 'Nr. 9 Squid LEGO Minecraft TCC',
-  cardIds: ['12'],
+  cardIds: [cid('12')],
   cardName: null,
   imageUrl: 'img12',
   price: { cents: 80, currency: 'EUR' },
@@ -51,7 +54,12 @@ const blue12: Listing = {
   auctionEndsAt: null,
   idConflict: false,
 };
-const bundle: Listing = { ...blue12, shop: 'ebay', cardIds: ['12', '13'], format: 'fixed_price' };
+const bundle: Listing = {
+  ...blue12,
+  shop: 'ebay',
+  cardIds: [cid('12'), cid('13')],
+  format: 'fixed_price',
+};
 
 const fakeSame = fakeEmbedder({ ref12: [1, 0], img12: [1, 0] });
 const fakeDifferent = fakeEmbedder({ ref12: [1, 0], img12: [0, 1] });
@@ -134,13 +142,39 @@ describe('matchListing', () => {
     expect((await matchListing(blue12, 'ref12', null, 0.85)).status).toBe('model_unavailable');
   });
 
-  test('onUnavailable receives the reason instead of a per-listing log line', async () => {
+  test('onUnavailable receives the status and reason instead of a per-listing log line', async () => {
     const reasons: string[] = [];
-    const onUnavailable = (reason: string) => reasons.push(reason);
+    const onUnavailable = (status: string, reason: string) => reasons.push(`${status} ${reason}`);
     await matchListing(blue12, 'ref12', null, 0.85, { onUnavailable });
     await matchListing(blue12, 'ref12', throwingEmbedder, 0.85, { onUnavailable });
     await matchListing(blue12, 'ref12', fakeSame, 0.85, { onUnavailable });
-    expect(reasons).toEqual(['no image model loaded', 'broken: onnx runtime missing']);
+    expect(reasons).toEqual([
+      'model_unavailable no image model loaded',
+      'model_unavailable broken: onnx runtime missing',
+    ]);
+  });
+
+  test('a picture that cannot be loaded is image_unavailable', async () => {
+    const noPicture: ImageEmbedder = {
+      model: 'm',
+      embed: async () => {
+        throw new ImageUnavailableError('HTTP 404 for img12');
+      },
+    };
+    expect(await matchListing(blue12, 'ref12', noPicture, 0.85)).toEqual({
+      status: 'image_unavailable',
+      similarity: null,
+    });
+  });
+
+  test('any other error (database, bug) is rethrown', async () => {
+    const broken: ImageEmbedder = {
+      model: 'm',
+      embed: async () => {
+        throw new Error('SQLITE_BUSY: database is locked');
+      },
+    };
+    await expect(matchListing(blue12, 'ref12', broken, 0.85)).rejects.toThrow(/SQLITE_BUSY/);
   });
 
   test('bundles, sammel-ente and missing references skip the comparison', async () => {
@@ -258,7 +292,50 @@ describe('createTransformersEmbedder', () => {
         loadPipeline: async () => async () => ({ data: new Float32Array([1]), dims: [1, 1] }),
       }
     );
-    await expect(embedder.embed('https://cdn.blue-ocean.de/missing.jpg')).rejects.toThrow(/404/);
+    const error = await embedder.embed('https://cdn.blue-ocean.de/missing.jpg').catch((e) => e);
+    expect(error).toBeInstanceOf(ImageUnavailableError);
+    expect(error.message).toMatch(/404/);
+  });
+
+  test('a network failure is ImageUnavailableError', async () => {
+    const embedder = await createTransformersEmbedder(
+      { model: 'm', cacheDir: 'c' },
+      {
+        fetchFn: async () => {
+          throw new TypeError('fetch failed');
+        },
+        loadPipeline: async () => async () => ({ data: new Float32Array([1]), dims: [1, 1] }),
+      }
+    );
+    await expect(embedder.embed(IMG)).rejects.toBeInstanceOf(ImageUnavailableError);
+  });
+
+  test('the model failing on a picture is ModelError', async () => {
+    const embedder = await createTransformersEmbedder(
+      { model: 'm', cacheDir: 'c' },
+      {
+        fetchFn: async () => new Response(new Uint8Array(10)),
+        loadPipeline: async () => async () => {
+          throw new Error('onnx runtime missing');
+        },
+      }
+    );
+    const error = await embedder.embed(IMG).catch((e) => e);
+    expect(error).toBeInstanceOf(ModelError);
+    expect(error.message).toBe('m: onnx runtime missing');
+  });
+
+  test('a picture the extractor cannot decode stays ImageUnavailableError', async () => {
+    const embedder = await createTransformersEmbedder(
+      { model: 'm', cacheDir: 'c' },
+      {
+        fetchFn: async () => new Response(new Uint8Array(10)),
+        loadPipeline: async () => async () => {
+          throw new ImageUnavailableError('picture could not be decoded: bad header');
+        },
+      }
+    );
+    await expect(embedder.embed(IMG)).rejects.toBeInstanceOf(ImageUnavailableError);
   });
 
   describe('download cap', () => {
@@ -303,7 +380,7 @@ describe('createTransformersEmbedder', () => {
       expect(pulled).toBeLessThan(20);
     });
 
-    test('an oversize picture is model_unavailable in matchListing', async () => {
+    test('an oversize picture is image_unavailable in matchListing', async () => {
       const embedder = await createTransformersEmbedder(
         { model: 'm', cacheDir: 'c' },
         {
@@ -313,7 +390,7 @@ describe('createTransformersEmbedder', () => {
         }
       );
       expect(await matchListing({ ...blue12, imageUrl: IMG }, IMG, embedder, 0.85)).toEqual({
-        status: 'model_unavailable',
+        status: 'image_unavailable',
         similarity: null,
       });
     });
@@ -410,7 +487,7 @@ describe('createTransformersEmbedder', () => {
       expect(seen).toHaveLength(4);
     });
 
-    test('a refused host is model_unavailable in matchListing', async () => {
+    test('a refused host is image_unavailable in matchListing', async () => {
       const { fetchFn } = routes({});
       const embedder = await createTransformersEmbedder(
         { model: 'm', cacheDir: 'c' },
@@ -423,9 +500,9 @@ describe('createTransformersEmbedder', () => {
           IMG,
           embedder,
           0.85,
-          { onUnavailable: (r) => reasons.push(r) }
+          { onUnavailable: (_status, r) => reasons.push(r) }
         )
-      ).toEqual({ status: 'model_unavailable', similarity: null });
+      ).toEqual({ status: 'image_unavailable', similarity: null });
       expect(reasons[0]).toContain('not allowed');
     });
   });

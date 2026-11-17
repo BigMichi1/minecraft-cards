@@ -13,6 +13,7 @@ import {
   handleReportButton,
   handleReportModal,
   handleReportReason,
+  resetReportWarnings,
   retryUnsentReports,
 } from './report';
 import { cid } from '../../test/cardIds';
@@ -102,6 +103,7 @@ describe('report flow', () => {
     modals = [];
     edits = [];
     deferrals = 0;
+    resetReportWarnings();
     db.delete(reports).run();
     db.delete(adminAlerts).run();
     db.delete(listingCards).run();
@@ -253,6 +255,29 @@ describe('report flow', () => {
       expect(db.select().from(reports).get()!.adminNotifiedAt).toBeNull();
     });
 
+    test('a report whose listing is gone is logged once, not silently skipped', async () => {
+      const failing = async () => {
+        throw new Error('dm closed');
+      };
+      const reportId = reportManager.create({
+        listingId: 9999,
+        reporterId: 'u1',
+        reason: 'other',
+        note: null,
+        now: 1_000,
+      });
+      const warn = spyOn(logger, 'warn');
+      try {
+        expect(await retryUnsentReports(failing)).toBe(0);
+        expect(await retryUnsentReports(failing)).toBe(0);
+        const lines = warn.mock.calls.map((c: unknown[]) => String(c[0]));
+        expect(lines.filter((m) => m.includes(`report ${reportId}`))).toHaveLength(1);
+        expect(lines.join('\n')).toContain('listing 9999 no longer exists');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     test('a report unsent for over a day warns once per day', async () => {
       const l = makeListing();
       const failing = async () => {
@@ -309,7 +334,13 @@ describe('report flow', () => {
         expect(
           warn.mock.calls.filter((c: unknown[]) => String(c[0]).includes(`report ${ids[1]}`))
         ).toHaveLength(1);
-        expect(log).toHaveBeenCalled();
+        expect(
+          log.mock.calls.some((c: unknown[]) =>
+            String(c[1]).startsWith(
+              `[REPORT] checking report ${ids[0]} (listing lookup or unsent-warning throttle) failed: database is locked`
+            )
+          )
+        ).toBe(true);
       } finally {
         alert.mockRestore();
         warn.mockRestore();

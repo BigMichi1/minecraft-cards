@@ -228,6 +228,14 @@ export async function handleReportModal(
 /** A report still unsent after this long is warned about, once per this period. */
 const UNSENT_WARN_AFTER_MS = 24 * 60 * 60 * 1000;
 
+/** Reports already logged as having no listing, so the check run logs each once per process. */
+const warnedMissingListing = new Set<number>();
+
+/** Forget which reports were logged (tests: report ids restart after a table is emptied). */
+export function resetReportWarnings(): void {
+  warnedMissingListing.clear();
+}
+
 /**
  * Retry the admin DM of open reports whose DM failed (reportManager.unsentOpen); called every
  * check run. Returns how many went out; never throws. A report that stays unsent for over a
@@ -240,10 +248,18 @@ export async function retryUnsentReports(
   let sent = 0;
   try {
     for (const report of reportManager.unsentOpen()) {
-      // One report's failure (database, DM) must not skip the reports after it.
+      // One report's failure (a database read, the alert throttle) must not skip the reports after it.
       try {
         const listing = listingManager.getById(report.listingId);
-        if (!listing) continue;
+        if (!listing) {
+          if (!warnedMissingListing.has(report.id)) {
+            warnedMissingListing.add(report.id);
+            logger.warn(
+              `[REPORT] report ${report.id}: listing ${report.listingId} no longer exists, the report cannot be sent`
+            );
+          }
+          continue;
+        }
         if (await sendReport(notifyAdmin, report, listing, report.reporterId)) {
           sent++;
         } else if (
@@ -255,7 +271,10 @@ export async function retryUnsentReports(
           );
         }
       } catch (err) {
-        logError(`[REPORT] retrying report ${report.id} failed`, err);
+        logError(
+          `[REPORT] checking report ${report.id} (listing lookup or unsent-warning throttle) failed`,
+          err
+        );
       }
     }
   } catch (err) {

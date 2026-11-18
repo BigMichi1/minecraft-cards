@@ -30,6 +30,7 @@ function listing(shop: ShopId, cards: CardId[], over: Partial<StoredListing> = {
     idConflict: false,
     onHold: false,
     manualOverride: false,
+    lastSeenAt: T,
     ...over,
   };
 }

@@ -12,6 +12,23 @@ import { adminAlerts, runs } from './schema/index';
  */
 export const SHOP_PEAK_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
 
+/**
+ * How far back `lastSuccess` looks. A success older than this is too old to vouch for stored
+ * listings; `/missing status` says there was none in this window instead.
+ */
+export const LAST_SUCCESS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Rows read per page by the newest-first scans; the runs table grows by one row per check. */
+const PAGE = 50;
+
+/** The newest run that can be read, and whether newer rows had to be skipped to reach it. */
+export interface LatestRun {
+  /** Undefined when no run was recorded or none of the rows can be read. */
+  summary: RunSummary | undefined;
+  /** True when at least one row newer than `summary` (or any row, without one) was unreadable. */
+  newerUnreadable: boolean;
+}
+
 /** Rows whose problems were already logged, so a bad row warns once per process, not per run. */
 const warnedOnce = new Set<string>();
 
@@ -118,17 +135,40 @@ export const runManager = {
   },
 
   /**
-   * When `shop` was last checked successfully: the start of the newest run whose entry for it
-   * has no error. Undefined when it never was (or only in rows that can no longer be read).
+   * The newest readable run, scanning newest first a page at a time; unreadable rows are skipped
+   * (warned once per row) and reported through `newerUnreadable`.
    */
-  lastSuccess(shop: ShopId): number | undefined {
-    // Newest first, a page at a time: the scan usually ends in the first page, and the runs
-    // table grows by one row per check forever.
-    const PAGE = 50;
+  latestReadable(): LatestRun {
+    let newerUnreadable = false;
     for (let offset = 0; ; offset += PAGE) {
       const rows = db
         .select({ id: runs.id, summary: runs.summary })
         .from(runs)
+        .orderBy(desc(runs.id))
+        .limit(PAGE)
+        .offset(offset)
+        .all();
+      for (const row of rows) {
+        const summary = parseSummary(row.summary, row.id);
+        if (summary) return { summary, newerUnreadable };
+        newerUnreadable = true;
+      }
+      if (rows.length < PAGE) return { summary: undefined, newerUnreadable };
+    }
+  },
+
+  /**
+   * When `shop` was last checked successfully: the start of the newest run within the last
+   * LAST_SUCCESS_WINDOW_MS (7 days) before `now` whose entry for it has no error. Undefined when
+   * there is none in that window (or only in rows that can no longer be read).
+   */
+  lastSuccess(shop: ShopId, now: number): number | undefined {
+    // Newest first, a page at a time: the scan usually ends in the first page.
+    for (let offset = 0; ; offset += PAGE) {
+      const rows = db
+        .select({ id: runs.id, summary: runs.summary })
+        .from(runs)
+        .where(gte(runs.startedAt, now - LAST_SUCCESS_WINDOW_MS))
         .orderBy(desc(runs.id))
         .limit(PAGE)
         .offset(offset)

@@ -81,7 +81,7 @@ function status(userId: string, now: number): string {
   for (const shop of SHOP_IDS) {
     const entry = last?.shops[shop];
     if (!last || (entry !== undefined && entry.error === undefined)) continue;
-    const at = runManager.lastSuccess(shop);
+    const at = runManager.lastSuccess(shop, now);
     if (at !== undefined) lastSuccess[shop] = at;
   }
   const names = new Map<CardId, string>();

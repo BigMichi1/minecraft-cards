@@ -26,6 +26,8 @@ export type StoredListing = {
   idConflict: boolean;
   onHold: boolean;
   manualOverride: boolean;
+  /** When a check last returned this listing. */
+  lastSeenAt: number;
 };
 
 /** One listing to tell a user about: the cards of it they want, for this availability period. */
@@ -80,6 +82,7 @@ function toStored(row: ListingRow, cardIds: CardId[]): StoredListing {
     idConflict: row.idConflict,
     onHold: row.onHold,
     manualOverride: row.manualOverride,
+    lastSeenAt: row.lastSeenAt,
   };
 }
 
@@ -341,7 +344,6 @@ export const listingManager = {
     });
   },
 
-  /** Listings paused by a report, oldest first. */
   /** Every stored listing (any shop, available or not) that carries one of `cardIds`. */
   listingsForCards(cardIds: CardId[]): StoredListing[] {
     if (cardIds.length === 0) return [];
@@ -360,6 +362,7 @@ export const listingManager = {
     });
   },
 
+  /** Listings paused by a report, oldest first. */
   onHold(): StoredListing[] {
     return db.transaction((tx) =>
       load(

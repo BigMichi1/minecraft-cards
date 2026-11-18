@@ -72,6 +72,13 @@ describe('listingManager', () => {
     expect(listingManager.listingsForCards([])).toEqual([]);
   });
 
+  test('a stored listing carries when it was last seen', () => {
+    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    expect(listingManager.getByUrl(blue12.url)!.lastSeenAt).toBe(1000);
+    listingManager.upsertFromRun('blue-ocean', [], 2000);
+    expect(listingManager.listingsForCards([cid('12')])[0]!.lastSeenAt).toBe(1000);
+  });
+
   describe('notification periods', () => {
     beforeEach(() => {
       userManager.setList('u1', '12');

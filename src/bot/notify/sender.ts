@@ -30,8 +30,8 @@ export interface SenderOptions {
   now?: () => number;
   /** True once the bot is stopping: a DM failing then is the shutdown, not closed DMs. */
   isShuttingDown?: () => boolean;
-  /** Throttled admin alert for failures that are not one user's closed DMs. */
-  alert: AlertFn;
+  /** Throttled admin alert for failures that are not one user's closed DMs; its outcome is not used. */
+  alert: (...args: Parameters<AlertFn>) => Promise<unknown>;
   /** Downloads a listing or reference picture to attach; the bounded matcher download by default. */
   downloadImage?: DownloadFn;
 }

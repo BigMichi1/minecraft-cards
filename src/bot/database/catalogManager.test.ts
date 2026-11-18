@@ -100,7 +100,112 @@ describe('catalogManager', () => {
       type: 'base',
       name: 'Squid',
       referenceImageUrl: 'https://x/12.jpg',
+      puzzle: false,
     });
     expect(catalogManager.getCard(cid('999'))).toBeUndefined();
+  });
+  test('a card is a puzzle card when its name says "Puzzlekarte", derived on every read (R4)', () => {
+    catalogManager.seedIfEmpty();
+    expect(catalogManager.getCard(cid('154'))?.puzzle).toBe(false);
+    // Live sammel-ente names of 2026-11-18 ("LEGO Minecraft Serie 3 | #154 Puzzlekarte Oberwelt 1").
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('154'), name: 'Puzzlekarte Oberwelt 1', imageUrl: null },
+      { cardId: cid('189'), name: 'Puzzlekarte Das Ende 9', imageUrl: null },
+      { cardId: cid('190'), name: 'Das Wächterduell', imageUrl: null },
+      { cardId: cid('12'), name: 'Squid', imageUrl: null },
+    ]);
+    expect(catalogManager.getCard(cid('154'))?.puzzle).toBe(true);
+    expect(catalogManager.getCard(cid('189'))?.puzzle).toBe(true);
+    expect(catalogManager.getCard(cid('190'))?.puzzle).toBe(false);
+    expect(catalogManager.getCard(cid('12'))?.puzzle).toBe(false);
+  });
+
+  test('a puzzle card stays one when sammel-ente renames it (sticky mark)', () => {
+    catalogManager.seedIfEmpty();
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('154'), name: 'Puzzlekarte Oberwelt 1', imageUrl: 'https://se/154.jpg' },
+    ]);
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('154'), name: 'Oberwelt 1', imageUrl: null },
+    ]);
+    expect(catalogManager.getCard(cid('154'))).toMatchObject({ name: 'Oberwelt 1', puzzle: true });
+    expect(catalogManager.referenceCatalog().usable).toEqual([
+      { cardId: cid('154'), referenceImageUrl: 'https://se/154.jpg', puzzle: true },
+    ]);
+  });
+
+  test('a row stored before this release counts as puzzle without a sammel-ente run (R4)', () => {
+    db.insert(cards)
+      .values({ cardId: cid('160'), type: 'base', name: 'Puzzlekarte Oberwelt 7', updatedAt: 1 })
+      .run();
+    expect(catalogManager.getCard(cid('160'))?.puzzle).toBe(true);
+  });
+
+  test('referenceCatalog: usable references with their puzzle flag, every other card missing', () => {
+    catalogManager.seedIfEmpty();
+    expect(catalogManager.referenceCatalog().usable).toEqual([]);
+    expect(catalogManager.referenceCatalog().missing).toHaveLength(251);
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('12'), name: 'Squid', imageUrl: 'https://se/12.jpg' },
+      { cardId: cid('160'), name: 'Puzzlekarte Oberwelt 7', imageUrl: 'https://se/160.jpg' },
+      { cardId: cid('13'), name: 'Skeleton', imageUrl: null },
+    ]);
+    const { usable, missing } = catalogManager.referenceCatalog();
+    expect(usable).toEqual([
+      { cardId: cid('12'), referenceImageUrl: 'https://se/12.jpg', puzzle: false },
+      { cardId: cid('160'), referenceImageUrl: 'https://se/160.jpg', puzzle: true },
+    ]);
+    expect(missing).toHaveLength(249);
+    expect(missing).toContainEqual({ cardId: cid('13'), reason: 'no_picture' });
+  });
+
+  test('updateNamesAndReferences returns the cards whose reference picture changed (R12)', () => {
+    catalogManager.seedIfEmpty();
+    expect(
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('12'), name: 'Squid', imageUrl: 'https://se/12.jpg' },
+        { cardId: cid('13'), name: 'Skeleton', imageUrl: null },
+      ])
+    ).toEqual([cid('12')]);
+    expect(
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('12'), name: 'Squid', imageUrl: 'https://se/12.jpg' },
+      ])
+    ).toEqual([]);
+    expect(
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('12'), name: 'Squid', imageUrl: 'https://se/12b.jpg' },
+      ])
+    ).toEqual([cid('12')]);
+  });
+
+  describe('placeholder references', () => {
+    // Live sammel-ente, 2026-11-18: LE10 and LE11 both show the empty card mnc3_leer.jpg.
+    const leer =
+      'https://shop-sammel-ente.de/media/38/d5/21/1791651554/mnc3_leer.jpg.watermarked.jpg?ts=1791651554';
+
+    test('a "_leer." picture is no reference: missing as a placeholder', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('LE10'), name: 'Exploding Creeper', imageUrl: leer },
+        { cardId: cid('12'), name: 'Squid', imageUrl: 'https://se/mnc3_012.jpg' },
+      ]);
+      const { usable, missing } = catalogManager.referenceCatalog();
+      expect(usable.map((c) => c.cardId)).toEqual([cid('12')]);
+      expect(missing).toContainEqual({ cardId: cid('LE10'), reason: 'placeholder' });
+    });
+
+    test('one picture shown for several cards is no reference for any of them', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('LE10'), name: 'Exploding Creeper', imageUrl: 'https://se/same.jpg?ts=1' },
+        { cardId: cid('LE11'), name: 'Iron Golem', imageUrl: 'https://se/same.jpg?ts=2' },
+        { cardId: cid('12'), name: 'Squid', imageUrl: 'https://se/mnc3_012.jpg' },
+      ]);
+      const { usable, missing } = catalogManager.referenceCatalog();
+      expect(usable.map((c) => c.cardId)).toEqual([cid('12')]);
+      expect(missing).toContainEqual({ cardId: cid('LE10'), reason: 'shared' });
+      expect(missing).toContainEqual({ cardId: cid('LE11'), reason: 'shared' });
+    });
   });
 });

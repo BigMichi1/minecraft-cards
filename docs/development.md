@@ -35,6 +35,11 @@ cp .env.example .env          # then set DISCORD_TOKEN and BOT_ADMIN_ID
 
 Extra arguments pass through: `./bin/mise run test src/bot/utils/async.test.ts`.
 
+Migrations of a feature branch may still be regenerated before it merges (a new file name and
+`when`), so a local database that ran a branch's unmerged migrations can refuse the merged
+ones. Delete such a dev database (`DB_PATH`, `./data/cards.db` by default) and let the bot
+create it again. Production deploys only from `main`, whose migrations never change.
+
 ## Rules
 
 - Every non-test source file in `src/` has a matching `*.test.ts` beside it. Exempt:

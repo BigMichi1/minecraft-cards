@@ -105,7 +105,9 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
 - **Counters**: titles excluded by the series, pick-list, range or variation rules are counted as
   `skippedExcluded` ("not series 3 single cards" in `/admin status`), series 3 titles naming no
   card as `skippedNoId` ("without card number"); both are logged with their reason at debug
-  level. Items without a link or title (`skippedInvalid`) are counted once per item, not once per
+  level. A series 3 title naming no card but with no count word and no number besides the series
+  and a year (`isPictureCandidate`) is not skipped: it is passed on without ids for the picture
+  to decide (`docs/image-matching.md`, rule 4). Items without a link or title (`skippedInvalid`) are counted once per item, not once per
   search that returns them.
 - **Result**: on 2026-11-18 the adapter found 4 listings with ids before this change and 244
   after the second review round (226 distinct card ids, no bundles); 31 items were excluded

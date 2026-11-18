@@ -96,6 +96,8 @@ const runDeps: RunDeps = {
   now: Date.now,
   intervalMs: config.checkIntervalMs,
   retryReports: () => retryUnsentReports(dmAdmin),
+  // A failing reference picture is tried again once a day, across runs.
+  referenceFailures: new Map(),
 };
 const scheduler = createScheduler(() => runCheck(runDeps), config.checkIntervalMs);
 stopScheduler = () => scheduler.stop();

@@ -1,0 +1,1 @@
+ALTER TABLE `cards` ADD `puzzle_seen` integer DEFAULT false NOT NULL;

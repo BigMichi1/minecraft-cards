@@ -34,6 +34,8 @@ function listing(i: number, over: Partial<StoredListing> = {}): StoredListing {
     onHold: false,
     manualOverride: false,
     lastSeenAt: 1,
+    idSource: 'title',
+    pictureCardId: null,
     ...over,
   };
 }
@@ -248,6 +250,61 @@ describe('notification messages', () => {
     expect(labels(1)).toContain('#12 · blue-ocean');
     expect(labels(2)).toEqual(['Kleinanzeigen #12', '❌ Wrong #12']);
     expect(msgs.map((m) => m.items.map((x) => x.listing.id))).toEqual([[1], [2], [3]]);
+  });
+
+  test('a card number from the picture says so and shows the reference beside it', () => {
+    const e = embedJson(
+      atMsg(
+        buildNotificationMessages([
+          item(1, {
+            shop: 'ebay',
+            title: 'Lego Minecraft Karte Serie 3 Squid Ultra Rare',
+            idSource: 'picture',
+            pictureCardId: cid('12'),
+            similarity: 0.91,
+          }),
+        ]),
+        0
+      )
+    );
+    expect(e.title).toBe('🟢 Card #12 Squid is available');
+    expect(e.footer.text).toBe('🖼️ number from the picture (0.91) — compare with the reference');
+    expect(e.thumbnail.url).toBe(referenceUrl);
+  });
+
+  test('a placeholder reference is never shown as the thumbnail', () => {
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('LE10'), name: 'Exploding Creeper', imageUrl: 'https://ref/mnc3_leer.jpg' },
+    ]);
+    const e = embedJson(
+      atMsg(
+        buildNotificationMessages([
+          item(1, { cardIds: [cid('LE10')], matchStatus: 'unconfirmed', similarity: 0.5 }),
+        ]),
+        0
+      )
+    );
+    expect(e.thumbnail).toBeUndefined();
+  });
+
+  test('a title number the picture confirms keeps the plain footer and no thumbnail', () => {
+    const e = embedJson(
+      atMsg(buildNotificationMessages([item(1, { pictureCardId: cid('12') })]), 0)
+    );
+    expect(e.footer.text).toBe('✅ picture matches reference (0.94)');
+    expect(e.thumbnail).toBeUndefined();
+  });
+
+  test('a mismatch (never sent to users) names the card the picture shows', () => {
+    const e = embedJson(
+      atMsg(
+        buildNotificationMessages([
+          item(1, { matchStatus: 'mismatch', pictureCardId: cid('45'), similarity: 0.5 }),
+        ]),
+        0
+      )
+    );
+    expect(e.footer.text).toBe('⚠️ the picture shows #45, not #12');
   });
 
   test('an admin-mapped listing reads as checked by the admin', () => {

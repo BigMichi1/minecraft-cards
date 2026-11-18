@@ -6,6 +6,11 @@ export const cards = sqliteTable('cards', {
   type: text({ enum: CARD_TYPES }).notNull(),
   name: text(),
   referenceImageUrl: text(),
+  /**
+   * Seen as a puzzle card once ("Puzzlekarte" in a sammel-ente name): stays set when the name
+   * changes. Reads OR it with the current name, so rows from before it need no backfill.
+   */
+  puzzleSeen: integer({ mode: 'boolean' }).notNull().default(false),
   updatedAt: integer().notNull(),
 });
 

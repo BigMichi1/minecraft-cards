@@ -87,6 +87,145 @@ matches", and 2 of 40 genuine matches (5 %; blue-ocean 4 of 203, about 2 %) woul
 unconfirmed. Both rates are small, and measured on only 40 pairs, so the threshold stays at 0.78.
 The alert shows the listing picture, so the user can still spot a wrong card.
 
+## Picture identification (2026-11-18)
+
+The comparison above asks "is this picture card N?". Title rules never cover every way a
+seller words a title, and a wrong number sends a false DM, so the matcher also asks "which card
+is this picture?" across all references (`src/bot/matcher/identify.ts`, `matchListing` in
+`embedder.ts`). The answer backs the title's number, contradicts it, or stands in for a number
+the title lacks. Design: `docs/superpowers/specs/2026-11-18-picture-identification-design.md`.
+
+### Measurement
+
+164 eBay single-card listings whose title gives the card number beyond doubt ("Karten N - Name
+
+- Typkarte Serie 3", "LE N"), each picture compared with all 251 sammel-ente references, model
+  `Xenova/dinov2-small`:
+
+- the best match was the right card in 153 of 164 (93 %);
+- **decided** means the best match reaches `IMAGE_MATCH_THRESHOLD` (0.78) and leads the
+  second-best by at least `DECISION_GAP` (0.02): 143 of 164 decided (87 %), none wrong;
+- the misses are mostly puzzle cards (#154–#189, "Oberwelt", "Unter der Erde", "Der Nether",
+  "Das Ende"): pieces of one big picture that look alike; all stayed below 0.78;
+- caveat: many listings came from one seller with uniform photos. Phone photos will decide
+  less often; recheck after a few weeks of real data.
+
+Of the 143 decided, 100 also had the second-best below 0.78; requiring that as well would have
+cost 43 decisions without preventing any error, so it is not a rule.
+
+**Twins.** Two references at least `TWIN_SIMILARITY` (0.9) alike show the same art, and the
+picture cannot tell those cards apart. Over the 251 references on 2026-11-18: #59 and XXL1
+(Charged Creeper) 0.945 (LE10 and LE11 showed 1.0, but that is one placeholder picture, see
+below); the next most alike pair 0.866 (LE5 and LE13). Both the threshold, the gap and the twin
+bar are met within `SIMILARITY_EPSILON` (1e-6), since float32 embeddings put an exact value a
+few 1e-8 below it. The live check found collect-it's #59 decided as
+XXL1 (0.885 against 0.853 for #59), which the twin rule and the title-card rule below keep from
+being a mismatch.
+
+**Placeholder references.** sammel-ente shows the empty card `mnc3_leer.jpg` for cards it has
+no picture of yet (LE10 and LE11 on 2026-11-18). A placeholder tells no card apart, so a
+reference whose file name contains `_leer.`, or a picture (URL without its query, `?ts=`
+changes on every upload) that sammel-ente shows for more than one card, counts as no reference
+at all (`catalogManager.referenceCatalog`): the card's listings are `no_reference` (retried
+every check until a real picture arrives), the card is left out of the identification, so no
+picture is ever identified as it, and no alert shows the placeholder as its thumbnail. Each
+run that compares pictures names these cards in one warning.
+
+**Only the complete reference set decides.** A card missing from the comparison could be the
+true one, and the gap to the runner-up would then look fine for a wrong card (a photo of LE10
+decided as LE5). So the picture may decide a card other than the title's (rules 2 and 4) only
+when every catalog card has a loaded, usable reference. Narrowing that to the card's kind (base,
+LE, XXL) does not hold: on 2026-11-18, 39 of 475 live listing pictures (eBay and collect-it)
+reached 0.78 against a reference of another kind than their own, and for 5 of them that
+reference was the best match. With LE10 and LE11 on the placeholder, rules 2 and 4 are
+therefore off until sammel-ente shows their real pictures; rules 1 and 3 work as before.
+
+**A reference that fails to load** (network, host, size, decoding, or the model failing on that
+one picture) leaves the set incomplete for the run. A listing that would then end as anything
+but `confirmed` gets `image_unavailable` (or `model_unavailable` when the model fails on every
+reference) instead, so it is compared again with the full set: never a final `unconfirmed`,
+`mismatch` or picture-only card. The bot tries a failed reference again at most once a day
+(`referenceFailures`, kept for the process), and sends one throttled admin alert
+(`reference-unavailable`) naming the cards, reasons and picture URLs. References load four at a
+time.
+
+### Rules
+
+For single-card listings of every shop but sammel-ente (bundles are never compared):
+
+1. **The picture decides the title card.** `confirmed`; the alert shows "✅ picture matches
+   reference". This also confirms a puzzle or twin card the title names.
+2. **The picture decides another card, and the title card's own reference stays below the
+   threshold.** `mismatch`, holding the picture's card in `listings.picture_card_id`. Never sent
+   to users; the admin gets a note with both numbers and the link, and fixes it with
+   `/admin map`. The note is durable (`listings.mismatch_noted_at`): one that fails to send goes
+   out in a later run. It is throttled per listing and picture card (key
+   `mismatch:<listing id>:<card>`): the same mismatch found again within a day sends nothing
+   new, another picture card or a day later does. A rescrape with a changed picture or title
+   compares it again, and so does a changed reference picture of either card. A mismatch is never re-mapped to
+   the picture's number automatically. A picture that also reaches the title card's reference
+   does not contradict the title (some cards share their art), so rule 3 applies.
+3. **The picture decides nothing.** Today's comparison with the title card's reference gives
+   `confirmed` or `unconfirmed`.
+4. **No number in the title (eBay only).** A title is a candidate when it passes the series 3
+   check, is not excluded (series 1 or 2, pick list, range, variations), has no `COUNT_WORDS`
+   word (pack, booster, blister, lot, Karten, Holo, Stück, …) and no number but the series and a
+   year (`isPictureCandidate` in `shops/ebay.ts`). The adapter passes it on with no card ids and
+   `idSource: 'picture'`. A decided picture gives it that card (`confirmed`); the alert says
+   "🖼️ number from the picture" and shows the reference beside the listing picture. An
+   undecided candidate is stored without card ids (`unconfirmed`), so it is never notified, and
+   is compared again when its picture or title changes, or when any reference picture changes.
+5. **Puzzle cards and twins are never identified by the picture alone.** In rules 2 and 4 a
+   best match that is a puzzle card or has a twin does not count as decided.
+
+An admin-mapped listing (`/admin map`) is never compared or identified again.
+
+**Puzzle cards** come from data: sammel-ente names them "Puzzlekarte <picture> <piece>"
+("#154 Puzzlekarte Oberwelt 1"). A card is a puzzle card when its current name says so or any
+earlier one did (`cards.puzzle_seen`, set on a name update and never cleared), so a rename
+cannot drop the mark; rows stored before that column count by their name, no backfill needed.
+On 2026-11-18
+that gave 36 cards (#154–#189), the same set as collect-it's "Puzzlekarte" titles.
+
+**Counts.** Each run counts the picture decisions (`decided`) and, per reason, the ones that
+did not count (`undecided`, `puzzle`, `twin`, `incomplete`, `title_fits`); `/admin run` shows
+them as `Pictures: 3 decided · not counted: …`.
+
+**Rows from before this release.** Migration `0003` sets every stored listing that is not
+admin-mapped, a bundle or a reference back to `pending`, so all of them go through the new
+rules on the next run. That is safe: the next run matches them before it sends anything, and a
+notification is recorded per listing and availability period, so nobody is notified twice.
+
+**Errors.** Any other error while matching one listing (the embedding cache's database, a bug)
+is logged, leaves that listing as it was (retried next run) and sends one throttled admin alert
+(`match-error`); the other listings are still matched and notified.
+
+**Why a candidate needs no number at all:** a number the id patterns do not read is a count as
+often as a card. The fixture title "lego© MINECRAFT 6 TradingCards ON FIRE incl. 1 special
+Card" is a lot of six; "TradingCards" is glued together, so no count word catches it.
+
+**Cost.** The references are embedded once per run on first use, through the embedding cache
+(after the first run a database read each), and only when a listing needs a match (new, changed,
+or retried). Comparing one picture with 251 references is 251 dot products of 384 values.
+
+### Live check (2026-11-18)
+
+Live eBay API through the adapter, live collect-it and blue-ocean, 251 live sammel-ente
+references (249 usable: LE10 and LE11 are placeholders). The numbers were the same before the
+review fixes (all 251 references, LE10/LE11 included) and after them, and also when the two
+placeholders are left out of the catalog (a complete set):
+
+| Shop       | Listings | Confirmed (rule 1) | Confirmed (rule 3) | Unconfirmed | Mismatch | Picture-only (decided / undecided) |
+| ---------- | -------- | ------------------ | ------------------ | ----------- | -------- | ---------------------------------- |
+| eBay       | 246      | 215                | 2                  | 27          | 0        | 0 / 2                              |
+| collect-it | 233      | 188                | 7                  | 38          | 0        | –                                  |
+| blue-ocean | 3        | 3                  | 0                  | 0           | 0        | –                                  |
+
+The two eBay candidates stayed undecided: "LEGO Minecraft On Fire (2026)" (best #214 at 0.518)
+and "Lego Minecraft Karte Serie 3 Chast Ultra Rare" (best #131 Ghast at 0.644, right but below
+0.78). The only other-card decision was collect-it #59 against XXL1 (twins, above). Rejected
+decisions after the fixes: eBay 31 undecided; collect-it 44 undecided, 1 twin.
+
 ## Data quality finding
 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",
@@ -159,17 +298,20 @@ handled as before.
 
 ## Match statuses
 
-| Status              | Meaning                                                                                                                          |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `reference`         | A sammel-ente listing: its picture is the reference                                                                              |
-| `pending`           | Not compared yet: a new single-card listing of another shop than sammel-ente, or one whose picture, cards or id conflict changed |
-| `confirmed`         | Picture matches the reference, or the admin mapped the listing (`/admin map`)                                                    |
-| `unconfirmed`       | Below the threshold, a blue-ocean id conflict, or no picture to compare                                                          |
-| `bundle`            | Several cards in one listing; not compared                                                                                       |
-| `no_reference`      | The card has no reference picture yet; retried every check                                                                       |
-| `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check                                                   |
-| `image_unavailable` | A picture could not be loaded (network, host, redirect, HTTP, size, decoding); retried once a day                                |
+| Status              | Meaning                                                                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reference`         | A sammel-ente listing: its picture is the reference                                                                                                                                   |
+| `pending`           | Not compared yet: a new single-card listing of another shop than sammel-ente, or one whose picture, cards or id conflict changed (or title, for a mismatch or a title naming no card) |
+| `confirmed`         | Picture matches the reference, the picture decided the card of an eBay title naming none, or the admin mapped it (`/admin map`)                                                       |
+| `unconfirmed`       | Below the threshold, a blue-ocean id conflict, or no picture to compare; a title naming no card whose picture decided nothing                                                         |
+| `mismatch`          | The picture decides another card than the title names; never sent to users, one admin note per listing                                                                                |
+| `bundle`            | Several cards in one listing; not compared                                                                                                                                            |
+| `no_reference`      | The card has no reference picture yet, or only a placeholder (`_leer.`, one picture for several cards); retried every check                                                           |
+| `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check                                                                                                        |
+| `image_unavailable` | A picture could not be loaded (network, host, redirect, HTTP, size, decoding); retried once a day                                                                                     |
 
-Only available listings of cards someone wants are compared. An admin-mapped listing stays
-`confirmed` when its picture changes later. Any other error while matching (the embedding
+Only available listings of cards someone wants, and eBay titles naming no card, are compared.
+`image_unavailable` and `model_unavailable` also mark a listing compared while a reference
+picture failed to load (retried as above).
+An admin-mapped listing stays `confirmed` when its picture changes later. Any other error while matching (the embedding
 cache's database, a bug) fails the check run instead of being taken for a model problem.

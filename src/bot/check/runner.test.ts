@@ -33,7 +33,7 @@ import {
   IMAGE_RETRY_MS,
   formatWindow,
 } from './runner';
-import { cid } from '../../test/cardIds';
+import { cid, ids } from '../../test/cardIds';
 
 const blue12: Listing = {
   shop: 'blue-ocean',
@@ -221,6 +221,47 @@ describe('runCheck', () => {
     expect(card.referenceImageUrl).toBe('https://ente/12.jpg');
   });
 
+  test('a sammel-ente listing without a name or with several ids leaves the catalog alone', async () => {
+    const nameless: Listing = {
+      ...blue12,
+      shop: 'sammel-ente',
+      url: 'https://shop-sammel-ente.de/x',
+      cardName: null,
+      imageUrl: 'https://ente/x.jpg',
+    };
+    const several: Listing = {
+      ...nameless,
+      url: 'https://shop-sammel-ente.de/y',
+      cardIds: [cid('12'), cid('13')],
+      cardName: 'Two',
+    };
+    await runCheck(depsWith([ok('sammel-ente', [nameless, several])]));
+    expect(catalogManager.getCard(cid('12'))).toMatchObject({
+      name: null,
+      referenceImageUrl: null,
+    });
+  });
+
+  test('a failing prune of old alert rows is logged and the run goes on', async () => {
+    const prune = spyOn(runManager, 'pruneAlerts').mockImplementation(() => {
+      throw new Error('SQLITE_BUSY: prune');
+    });
+    const log = spyOn(logger, 'log');
+    try {
+      const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+      expect(s.error).toBeUndefined();
+      expect(s.notified).toBe(1);
+      expect(
+        log.mock.calls.some((c: unknown[]) =>
+          String(c[1]).includes('pruning old admin alert rows failed')
+        )
+      ).toBe(true);
+    } finally {
+      prune.mockRestore();
+      log.mockRestore();
+    }
+  });
+
   const ente12: Listing = {
     ...blue12,
     shop: 'sammel-ente',
@@ -404,18 +445,39 @@ describe('runCheck', () => {
       expect(alerts).toHaveLength(1);
     });
 
-    test('an unexpected matching error fails the run instead of being taken for a model problem', async () => {
+    test('one listing failing to match (a cache write) does not stop the others (R8)', async () => {
+      userManager.setList('u1', '12, 13');
+      const blue13: Listing = {
+        ...blue12,
+        url: 'https://www.blue-ocean.de/p/13',
+        cardIds: [cid('13')],
+        imageUrl: 'https://img/13.jpg',
+      };
+      const ente13: Listing = {
+        ...ente12,
+        url: 'https://shop-sammel-ente.de/13',
+        cardIds: [cid('13')],
+        imageUrl: 'https://ente/13.jpg',
+      };
       const broken: ImageEmbedder = {
         model: 'm',
-        embed: async () => {
-          throw new Error('SQLITE_BUSY');
+        embed: async (url) => {
+          if (url === blue12.imageUrl) throw new Error('SQLITE_BUSY: database is locked');
+          return new Float32Array([1, 0]);
         },
       };
       const s = await runCheck(
-        depsWith([ok('sammel-ente', [ente12]), ok('blue-ocean', [blue12])], { embedder: broken })
+        depsWith([ok('sammel-ente', [ente12, ente13]), ok('blue-ocean', [blue12, blue13])], {
+          embedder: broken,
+        })
       );
-      expect(s.error).toContain('SQLITE_BUSY');
+      expect(s.error).toBeUndefined();
+      // The failed one stays pending (retried next run, notified as not checked yet).
       expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('pending');
+      expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('confirmed');
+      expect(s.notified).toBe(1);
+      expect(alerts.filter((a) => a.includes('SQLITE_BUSY'))).toHaveLength(1);
+      expect(alerts.find((a) => a.includes('SQLITE_BUSY'))).toContain(blue12.url);
     });
   });
 
@@ -644,6 +706,548 @@ describe('runCheck', () => {
       );
       expect(matchWarnings).toHaveLength(1);
       expect(String(matchWarnings[0]![0])).toContain('onnx runtime missing');
+    });
+  });
+  describe('picture identification', () => {
+    /** A unit vector at `deg` degrees: the cosine of two of them is cos(Δdeg). */
+    const at = (deg: number) => {
+      const rad = (deg * Math.PI) / 180;
+      return new Float32Array([Math.cos(rad), Math.sin(rad)]);
+    };
+    // References: 12 at 0°, 45 at 60°, puzzle card 160 at -60°.
+    const angles: Record<string, number> = {
+      'https://ente/12.jpg': 0,
+      'https://ente/45.jpg': 60,
+      'https://ente/160.jpg': -60,
+      'https://ente/77.jpg': 150,
+    };
+    const angled: ImageEmbedder = {
+      model: 'angled',
+      embed: async (url) => {
+        embedded.push(url);
+        const deg = angles[url];
+        if (deg === undefined) throw new Error(`test: no angle for ${url}`);
+        return at(deg);
+      },
+    };
+    const reference = (id: string, name: string): Listing => ({
+      ...blue12,
+      shop: 'sammel-ente',
+      url: `https://shop-sammel-ente.de/${id}`,
+      cardIds: [cid(id)],
+      cardName: name,
+      imageUrl: `https://ente/${id}.jpg`,
+      // Sold out, so only the listing under test can notify.
+      available: false,
+    });
+    const references = [
+      reference('12', 'Squid'),
+      reference('45', 'Steve'),
+      reference('77', 'Efe'),
+      reference('160', 'Puzzlekarte Oberwelt 7'),
+    ];
+    /** blue12 with its picture at `deg`. */
+    const blueAt = (deg: number): Listing => {
+      const imageUrl = `https://img/12-${deg}.jpg`;
+      angles[imageUrl] = deg;
+      return { ...blue12, imageUrl };
+    };
+    const candidateAt = (deg: number): Listing => {
+      const imageUrl = `https://i.ebayimg.com/c-${deg}.jpg`;
+      angles[imageUrl] = deg;
+      return {
+        ...blue12,
+        shop: 'ebay',
+        url: `https://www.ebay.de/itm/9${deg + 100}`,
+        title: 'LEGO Minecraft On Fire Serie 3 Steve',
+        cardIds: [],
+        imageUrl,
+        format: 'fixed_price',
+        idSource: 'picture',
+      };
+    };
+    const run = (shops: ShopAdapter[], over: Partial<RunDeps> = {}) =>
+      runCheck(depsWith(shops, { embedder: angled, ...over }));
+    beforeEach(() => {
+      // A catalog every card of which has a reference: the set is complete (R1).
+      catalogManager.applyImport(ids('12', '45', '77', '160'));
+    });
+    /** The admin alerts but the one for the sold-out references. */
+    const notes = () => alerts.filter((a) => !a.startsWith('Shop sammel-ente: all'));
+
+    test('the sammel-ente "Puzzlekarte" names mark the puzzle cards in the catalog', async () => {
+      await run([ok('sammel-ente', references)]);
+      expect(catalogManager.getCard(cid('160'))?.puzzle).toBe(true);
+      expect(catalogManager.getCard(cid('45'))?.puzzle).toBe(false);
+    });
+
+    test('rule 1: a picture deciding the title card confirms it and notifies', async () => {
+      const r = await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(5)])]);
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        matchStatus: 'confirmed',
+        pictureCardId: '12',
+      });
+      expect(r.notified).toBe(1);
+      expect(notes()).toEqual([]);
+    });
+
+    test('rule 2: a mismatch is held back and the admin gets one note per listing', async () => {
+      userManager.setList('u2', '45');
+      const shops = () => [ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])];
+      const r = await run(shops());
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        cardIds: ['12'],
+        matchStatus: 'mismatch',
+        pictureCardId: '45',
+      });
+      expect(r.notified).toBe(0);
+      expect(notes()).toHaveLength(1);
+      expect(notes()[0]).toContain('#12');
+      expect(notes()[0]).toContain('#45');
+      expect(notes()[0]).toContain(blue12.url);
+      expect(notes()[0]).toContain('/admin map');
+      await run(shops());
+      clock += 25 * 60 * 60 * 1000;
+      expect((await run(shops())).notified).toBe(0);
+      expect(notes()).toHaveLength(1);
+    });
+
+    test('rule 2: a rescrape with a changed picture compares again', async () => {
+      await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])]);
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('mismatch');
+      const r = await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(3)])]);
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        matchStatus: 'confirmed',
+        pictureCardId: '12',
+      });
+      expect(r.notified).toBe(1);
+    });
+
+    test('rule 2: a rescrape with a changed title compares again', async () => {
+      const listing = blueAt(60);
+      await run([ok('sammel-ente', references), ok('blue-ocean', [listing])]);
+      const before = embedded.length;
+      await run([
+        ok('sammel-ente', references),
+        ok('blue-ocean', [{ ...listing, title: 'Sticker Card 12 (neu)' }]),
+      ]);
+      expect(embedded.length).toBeGreaterThan(before);
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('mismatch');
+    });
+
+    test("rule 3: an undecided picture falls back to today's comparison", async () => {
+      const r = await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(30)])]);
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        matchStatus: 'confirmed',
+        similarity: expect.closeTo(Math.cos(Math.PI / 6), 5),
+        pictureCardId: null,
+      });
+      expect(r.notified).toBe(1);
+    });
+
+    test('rule 4: a decided eBay candidate gets the picture card and notifies its users', async () => {
+      userManager.setList('u2', '45');
+      const candidate = candidateAt(58);
+      const r = await run([ok('sammel-ente', references), ok('ebay', [candidate])]);
+      expect(listingManager.getByUrl(candidate.url)).toMatchObject({
+        cardIds: ['45'],
+        idSource: 'picture',
+        matchStatus: 'confirmed',
+        pictureCardId: '45',
+      });
+      expect(r.notified).toBe(1);
+      // The next scrape keeps the card and does not compare again.
+      const before = embedded.length;
+      expect((await run([ok('sammel-ente', references), ok('ebay', [candidate])])).notified).toBe(
+        0
+      );
+      expect(embedded.length).toBe(before);
+      expect(listingManager.getByUrl(candidate.url)!.cardIds).toEqual([cid('45')]);
+    });
+
+    test('rule 4: an undecided candidate is stored without cards and never notified', async () => {
+      userManager.setList('u2', '12, 45');
+      const candidate = candidateAt(30);
+      const r = await run([ok('sammel-ente', references), ok('ebay', [candidate])]);
+      expect(listingManager.getByUrl(candidate.url)).toMatchObject({
+        cardIds: [],
+        matchStatus: 'unconfirmed',
+        pictureCardId: null,
+      });
+      expect(r.notified).toBe(0);
+    });
+
+    test('rule 5: a puzzle picture never decides a candidate nor makes a mismatch', async () => {
+      userManager.setList('u1', '12, 160');
+      const candidate = candidateAt(-60);
+      const r = await run([
+        ok('sammel-ente', references),
+        ok('blue-ocean', [blueAt(-60)]),
+        ok('ebay', [candidate]),
+      ]);
+      expect(listingManager.getByUrl(candidate.url)!.cardIds).toEqual([]);
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        matchStatus: 'unconfirmed',
+        pictureCardId: null,
+      });
+      expect(notes()).toEqual([]);
+      // The unconfirmed blue-ocean 12 is still notified, as before.
+      expect(r.notified).toBe(1);
+    });
+
+    test('an admin-mapped listing is never identified again', async () => {
+      await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])]);
+      listingManager.overrideCards(blue12.url, [cid('12')], clock);
+      const before = embedded.length;
+      await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(61)])]);
+      expect(embedded.length).toBe(before);
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        matchStatus: 'confirmed',
+        manualOverride: true,
+        pictureCardId: null,
+      });
+    });
+
+    test('a placeholder reference is no reference: no_reference, never identified', async () => {
+      // sammel-ente shows the empty card mnc3_leer.jpg for LE10 and LE11 (2026-11-18).
+      const leer = 'https://ente/mnc3_leer.jpg';
+      angles[leer] = 120;
+      const placeholder = (id: string, name: string): Listing => ({
+        ...reference(id, name),
+        imageUrl: leer,
+      });
+      catalogManager.applyImport(ids('12', '45', '77', '160', 'LE10', 'LE11'));
+      userManager.setList('u1', '12, LE10');
+      const blueLE10: Listing = {
+        ...blue12,
+        url: 'https://www.blue-ocean.de/p/le10',
+        cardIds: [cid('LE10')],
+        imageUrl: 'https://img/le10.jpg',
+      };
+      angles['https://img/le10.jpg'] = 120;
+      // Undecided among the real references (45 and 77 both at 0.707).
+      const candidate = candidateAt(105);
+      await run([
+        ok('sammel-ente', [
+          ...references,
+          placeholder('LE10', 'Exploding Creeper'),
+          placeholder('LE11', 'Iron Golem'),
+        ]),
+        ok('blue-ocean', [blueLE10]),
+        ok('ebay', [candidate]),
+      ]);
+      expect(listingManager.getByUrl(blueLE10.url)!.matchStatus).toBe('no_reference');
+      expect(listingManager.getByUrl(candidate.url)).toMatchObject({
+        cardIds: [],
+        pictureCardId: null,
+      });
+      expect(embedded).not.toContain(leer);
+    });
+
+    test('references are embedded only when a listing needs a match', async () => {
+      await run([ok('sammel-ente', references)]);
+      expect(embedded).toEqual([]);
+      await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(5)])]);
+      expect(embedded.filter((u) => u.startsWith('https://ente/')).sort()).toEqual(
+        // The title card's own reference, then every reference once for the identification.
+        [
+          'https://ente/12.jpg',
+          'https://ente/12.jpg',
+          'https://ente/160.jpg',
+          'https://ente/45.jpg',
+          'https://ente/77.jpg',
+        ]
+      );
+    });
+
+    test('a reference picture that cannot be loaded is skipped with one warning per run', async () => {
+      const warn = spyOn(logger, 'warn');
+      try {
+        const flaky: ImageEmbedder = {
+          model: 'angled',
+          embed: async (url) => {
+            if (url === 'https://ente/45.jpg') throw new ImageUnavailableError('HTTP 404');
+            return angled.embed(url);
+          },
+        };
+        const r = await runCheck(
+          depsWith([ok('sammel-ente', references), ok('blue-ocean', [blueAt(5)])], {
+            embedder: flaky,
+          })
+        );
+        expect(r.error).toBeUndefined();
+        // Rule 1 still confirms the title card.
+        expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
+        const lines = warn.mock.calls.map((c: unknown[]) => String(c[0]));
+        expect(lines.filter((l) => l.includes('reference picture'))).toHaveLength(1);
+        // R3: one throttled admin alert naming the count, the card and the reason.
+        const note = notes().filter((a) => a.includes('reference picture'));
+        expect(note).toHaveLength(1);
+        expect(note[0]).toContain('1 reference picture');
+        expect(note[0]).toContain('#45');
+        expect(note[0]).toContain('HTTP 404');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('the reference-unavailable alert: text, count, ids, and once a day (I1)', async () => {
+      const broken: ImageEmbedder = {
+        model: 'angled',
+        embed: async (url) => {
+          if (url === 'https://ente/45.jpg') throw new ImageUnavailableError('HTTP 404');
+          if (url === 'https://ente/77.jpg') throw new ImageUnavailableError('HTTP 410');
+          return angled.embed(url);
+        },
+      };
+      const shops = (deg: number) => [
+        ok('sammel-ente', references),
+        ok('blue-ocean', [blueAt(deg)]),
+      ];
+      await run(shops(5), { embedder: broken });
+      const sent = () => notes().filter((a) => a.includes('could not be loaded'));
+      expect(sent()).toHaveLength(1);
+      expect(sent()[0]).toStartWith('2 reference picture(s) could not be loaded this run');
+      expect(sent()[0]).toContain('#45 (image_unavailable: HTTP 404, https://ente/45.jpg)');
+      expect(sent()[0]).toContain('#77 (image_unavailable: HTTP 410, https://ente/77.jpg)');
+      // A new listing needs the set again the same day: throttled.
+      await run(shops(6), { embedder: broken });
+      expect(sent()).toHaveLength(1);
+      clock += 25 * 60 * 60 * 1000;
+      await run(shops(7), { embedder: broken });
+      expect(sent()).toHaveLength(2);
+    });
+
+    test('a failing mismatch-note step still sends the users their DMs (I2)', async () => {
+      const notesStep = spyOn(listingManager, 'pendingMismatchNotes').mockImplementation(() => {
+        throw new Error('SQLITE_BUSY: notes');
+      });
+      try {
+        const r = await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(5)])]);
+        expect(r.error).toBeUndefined();
+        expect(r.notified).toBe(1);
+        expect(notes().filter((a) => a.includes('SQLITE_BUSY: notes'))).toHaveLength(1);
+      } finally {
+        notesStep.mockRestore();
+      }
+    });
+
+    test('a listing whose match failed is not notified in that run, but once matched (M1)', async () => {
+      let broken = true;
+      const flaky: ImageEmbedder = {
+        model: 'angled',
+        embed: async (url) => {
+          if (broken && url === 'https://img/12-5.jpg') throw new Error('SQLITE_BUSY');
+          return angled.embed(url);
+        },
+      };
+      const shops = () => [ok('sammel-ente', references), ok('blue-ocean', [blueAt(5)])];
+      expect((await run(shops(), { embedder: flaky })).notified).toBe(0);
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('pending');
+      broken = false;
+      expect((await run(shops(), { embedder: flaky })).notified).toBe(1);
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
+    });
+
+    describe('the reference set must be complete (R1, R2, R13)', () => {
+      const flaky45 = (failing: { on: boolean }): ImageEmbedder => ({
+        model: 'angled',
+        embed: async (url) => {
+          if (failing.on && url === 'https://ente/45.jpg') {
+            throw new ImageUnavailableError('HTTP 503');
+          }
+          return angled.embed(url);
+        },
+      });
+
+      test('a reference failing to load leaves would-be decisions retryable; the next try decides', async () => {
+        userManager.setList('u2', '45');
+        const failing = { on: true };
+        const candidate = candidateAt(58);
+        const shops = () => [
+          ok('sammel-ente', references),
+          ok('blue-ocean', [blueAt(60)]),
+          ok('ebay', [candidate]),
+        ];
+        await run(shops(), { embedder: flaky45(failing) });
+        expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('image_unavailable');
+        expect(listingManager.getByUrl(candidate.url)).toMatchObject({
+          cardIds: [],
+          matchStatus: 'image_unavailable',
+        });
+        expect(notes().filter((a) => a.startsWith('Picture mismatch'))).toEqual([]);
+        failing.on = false;
+        clock += IMAGE_RETRY_MS;
+        await run(shops(), { embedder: flaky45(failing) });
+        expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('mismatch');
+        expect(listingManager.getByUrl(candidate.url)).toMatchObject({
+          cardIds: ['45'],
+          matchStatus: 'confirmed',
+        });
+      });
+
+      test('a catalog card without a usable reference: no picture-only card, no mismatch', async () => {
+        catalogManager.applyImport(ids('12', '45', '77', '99', '160'));
+        const candidate = candidateAt(58);
+        await run([
+          ok('sammel-ente', references),
+          ok('blue-ocean', [blueAt(60)]),
+          ok('ebay', [candidate]),
+        ]);
+        expect(listingManager.getByUrl(candidate.url)).toMatchObject({
+          cardIds: [],
+          matchStatus: 'unconfirmed',
+        });
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+          matchStatus: 'unconfirmed',
+          pictureCardId: null,
+        });
+      });
+
+      test('a failed reference is not loaded again within a day across runs', async () => {
+        const failing = { on: true };
+        const referenceFailures = new Map<string, number>();
+        const loads: string[] = [];
+        const counting: ImageEmbedder = {
+          model: 'angled',
+          embed: async (url) => {
+            if (url === 'https://ente/45.jpg') loads.push(url);
+            return flaky45(failing).embed(url);
+          },
+        };
+        const shopsWith = (deg: number) => [
+          ok('sammel-ente', references),
+          ok('blue-ocean', [blueAt(deg)]),
+        ];
+        await run(shopsWith(5), { embedder: counting, referenceFailures });
+        failing.on = false;
+        await run(shopsWith(6), { embedder: counting, referenceFailures });
+        expect(loads).toHaveLength(1);
+        clock += IMAGE_RETRY_MS;
+        await run(shopsWith(7), { embedder: counting, referenceFailures });
+        expect(loads).toHaveLength(2);
+        expect(referenceFailures.size).toBe(0);
+      });
+
+      test('the reference catalog is read once per run, not per listing', async () => {
+        const spy = spyOn(catalogManager, 'referenceCatalog');
+        try {
+          await run([
+            ok('sammel-ente', references),
+            ok('blue-ocean', [blueAt(5)]),
+            ok('ebay', [candidateAt(58), candidateAt(30)]),
+          ]);
+          expect(spy.mock.calls.length).toBe(1);
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      test('placeholder and shared references are named once per run (R10)', async () => {
+        const warn = spyOn(logger, 'warn');
+        try {
+          catalogManager.applyImport(ids('12', '45', '77', '160', 'LE10', 'LE11'));
+          const leer = (id: string): Listing => ({
+            ...reference(id, `C${id}`),
+            imageUrl: 'https://ente/mnc3_leer.jpg',
+          });
+          angles['https://ente/mnc3_leer.jpg'] = 120;
+          await run([
+            ok('sammel-ente', [...references, leer('LE10'), leer('LE11')]),
+            ok('blue-ocean', [blueAt(5)]),
+            ok('ebay', [candidateAt(58)]),
+          ]);
+          const lines = warn.mock.calls
+            .map((c: unknown[]) => String(c[0]))
+            .filter((l) => l.includes('no usable reference'));
+          expect(lines).toHaveLength(1);
+          expect(lines[0]).toContain('#LE10 placeholder');
+          expect(lines[0]).toContain('#LE11 placeholder');
+        } finally {
+          warn.mockRestore();
+        }
+      });
+    });
+
+    describe('mismatch notes (R5, R6, R7)', () => {
+      const mismatchNotes = () => notes().filter((a) => a.startsWith('Picture mismatch'));
+
+      test('a note that fails to send goes out in a later run, once', async () => {
+        let down = true;
+        const alertAdmin = async (text: string) => {
+          if (down && text.startsWith('Picture mismatch')) throw new Error('DM failed');
+          alerts.push(text);
+        };
+        const shops = () => [ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])];
+        await run(shops(), { alertAdmin });
+        expect(mismatchNotes()).toEqual([]);
+        down = false;
+        await run(shops(), { alertAdmin });
+        expect(mismatchNotes()).toHaveLength(1);
+        await run(shops(), { alertAdmin });
+        expect(mismatchNotes()).toHaveLength(1);
+      });
+
+      test('the same mismatch twice is one note; another picture card or a day later is another', async () => {
+        const listing = blueAt(60);
+        await run([ok('sammel-ente', references), ok('blue-ocean', [listing])]);
+        // Compared again (a changed title), same outcome: throttled.
+        await run([
+          ok('sammel-ente', references),
+          ok('blue-ocean', [{ ...listing, title: 'Sticker Card 12 (neu)' }]),
+        ]);
+        expect(mismatchNotes()).toHaveLength(1);
+        // Within 24 h, the picture now shows #77: a new note.
+        await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(150)])]);
+        expect(mismatchNotes()).toHaveLength(2);
+        expect(mismatchNotes()[1]).toContain('#77');
+        // A day later, back to #45: a note again.
+        clock += 25 * 60 * 60 * 1000;
+        await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(61)])]);
+        expect(mismatchNotes()).toHaveLength(3);
+      });
+
+      test('two mismatched listings give two notes', async () => {
+        const other: Listing = { ...blueAt(60), url: 'https://www.blue-ocean.de/p/12b' };
+        await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(60), other])]);
+        expect(mismatchNotes()).toHaveLength(2);
+      });
+
+      test('throttle rows older than the window are pruned once per run', async () => {
+        runManager.shouldAlert('mismatch:1:45', clock, 1);
+        clock += 3 * 24 * 60 * 60 * 1000;
+        await run([ok('sammel-ente', references)]);
+        expect(runManager.lastAlertAt('mismatch:1:45')).toBeUndefined();
+      });
+    });
+
+    test('/admin map after a mismatch notifies exactly once on the next run (T5)', async () => {
+      const shops = () => [ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])];
+      expect((await run(shops())).notified).toBe(0);
+      listingManager.overrideCards(blue12.url, [cid('12')], clock);
+      expect((await run(shops())).notified).toBe(1);
+      expect((await run(shops())).notified).toBe(0);
+    });
+
+    test('a changed reference picture compares a mismatch again in the same run (R12)', async () => {
+      await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])]);
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('mismatch');
+      // sammel-ente's #12 now shows a picture at 58°, like the listing.
+      angles['https://ente/12-new.jpg'] = 58;
+      const moved = references.map((r) =>
+        r.cardIds[0] === '12' ? { ...r, imageUrl: 'https://ente/12-new.jpg' } : r
+      );
+      await run([ok('sammel-ente', moved), ok('blue-ocean', [blueAt(60)])]);
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).not.toBe('mismatch');
+    });
+
+    test('the run summary counts the picture decisions and why others did not count (R9)', async () => {
+      const s = await run([
+        ok('sammel-ente', references),
+        ok('blue-ocean', [blueAt(60)]),
+        ok('ebay', [candidateAt(30), candidateAt(-60), candidateAt(58)]),
+      ]);
+      expect(s.pictures).toEqual({ decided: 2, undecided: 1, puzzle: 1 });
     });
   });
 });

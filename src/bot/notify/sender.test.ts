@@ -118,7 +118,7 @@ function dmFailedAt(discordId: string): number | null | undefined {
     .find((u) => u.discordId === discordId)?.dmFailedAt;
 }
 
-const noAlert = async () => {};
+const noAlert = async () => 'sent' as const;
 
 describe('createDiscordSender', () => {
   beforeAll(() => {
@@ -486,6 +486,34 @@ describe('createDiscordSender', () => {
       await sender.send(new Map([['u1', items]]));
       expect(downloads).toEqual([reference]);
       expect(client.attempts.map((a) => a.files)).toEqual([1, 1, 1]);
+    });
+
+    test('a number from the picture attaches the reference beside the listing picture', async () => {
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('12'), name: 'Squid', imageUrl: reference },
+      ]);
+      const l: StoredListing = {
+        ...seedListing(1),
+        shop: 'ebay',
+        imageUrl: 'https://i.ebayimg.com/1.jpg',
+        matchStatus: 'confirmed',
+        idSource: 'picture',
+        pictureCardId: cid('12'),
+        similarity: 0.91,
+      };
+      const downloads: string[] = [];
+      const client = fakeClient();
+      const sender = createDiscordSender(client, {
+        alert: noAlert,
+        sleep: async () => {},
+        downloadImage: async (url) => {
+          downloads.push(url);
+          return PNG;
+        },
+      });
+      await sender.send(new Map([['u1', [pending(l)]]]));
+      expect(downloads.sort()).toEqual(['https://i.ebayimg.com/1.jpg', reference].sort());
+      expect(client.attempts.map((a) => a.files)).toEqual([2]);
     });
 
     test('nothing is downloaded while shutting down', async () => {

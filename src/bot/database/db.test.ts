@@ -3,7 +3,10 @@
  * database and each table takes one row and gives it back. The managers' tests cover the
  * behaviour; this is what covers the schema files themselves.
  */
+import { Database } from 'bun:sqlite';
 import { beforeAll, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { cid } from '../../test/cardIds';
 import { db, initializeDatabase, sqlite } from './db';
@@ -123,5 +126,51 @@ describe('database schema', () => {
         .values({ listingId: 999_999, cardId: cid('1') })
         .run()
     ).toThrow(/FOREIGN KEY/);
+  });
+  test('the picture-identification migration on rows stored before it (T3, R14)', () => {
+    // Apply every migration before the one adding `id_source`, store rows as the old release
+    // did, then apply it.
+    const dir = path.join(process.cwd(), 'src/bot/database/migrations');
+    const journal = JSON.parse(readFileSync(path.join(dir, 'meta/_journal.json'), 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const sqlOf = (tag: string) => readFileSync(path.join(dir, `${tag}.sql`), 'utf8');
+    const at = journal.entries.findIndex((e) => sqlOf(e.tag).includes('`id_source`'));
+    expect(at).toBeGreaterThan(0);
+    const old = new Database(':memory:');
+    const apply = (tag: string) => {
+      for (const statement of sqlOf(tag).split('--> statement-breakpoint')) {
+        if (statement.trim()) old.run(statement);
+      }
+    };
+    for (const e of journal.entries.slice(0, at)) apply(e.tag);
+    const listing = (url: string, shop: string, status: string, manual = 0) =>
+      old.run(
+        `INSERT INTO listings (shop, url, title, format, available, match_status, similarity, manual_override, first_seen_at, last_seen_at)
+         VALUES (?, ?, 't', 'shop', 1, ?, 0.9, ?, 1, 1)`,
+        [shop, url, status, manual]
+      );
+    listing('https://b/confirmed', 'blue-ocean', 'confirmed');
+    listing('https://b/unconfirmed', 'blue-ocean', 'unconfirmed');
+    listing('https://b/mapped', 'blue-ocean', 'confirmed', 1);
+    listing('https://e/bundle', 'ebay', 'bundle');
+    listing('https://s/ref', 'sammel-ente', 'reference');
+    apply(journal.entries[at]!.tag);
+    const rows = old
+      .query(
+        'SELECT url, match_status, similarity, id_source, picture_card_id, mismatch_noted_at FROM listings ORDER BY id'
+      )
+      .all();
+    const plain = { id_source: 'title', picture_card_id: null, mismatch_noted_at: null };
+    expect(rows).toEqual([
+      // Every compared listing goes through the new rules on the next run.
+      { url: 'https://b/confirmed', match_status: 'pending', similarity: null, ...plain },
+      { url: 'https://b/unconfirmed', match_status: 'pending', similarity: null, ...plain },
+      // The admin's mapping, bundles and references stay.
+      { url: 'https://b/mapped', match_status: 'confirmed', similarity: 0.9, ...plain },
+      { url: 'https://e/bundle', match_status: 'bundle', similarity: 0.9, ...plain },
+      { url: 'https://s/ref', match_status: 'reference', similarity: 0.9, ...plain },
+    ]);
+    old.close();
   });
 });

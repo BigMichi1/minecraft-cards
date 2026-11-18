@@ -82,4 +82,16 @@ describe('throttledAlert', () => {
       release.mockRestore();
     }
   });
+  test('tells whether the alert was sent, throttled or failed', async () => {
+    const alert = throttledAlert(send, () => clock);
+    expect(await alert('a', 'one')).toBe('sent');
+    expect(await alert('a', 'two')).toBe('throttled');
+    const failing = throttledAlert(
+      async () => {
+        throw new Error('DM closed');
+      },
+      () => clock
+    );
+    expect(await failing('b', 'three')).toBe('failed');
+  });
 });

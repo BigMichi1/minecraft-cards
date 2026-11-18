@@ -2,8 +2,11 @@ import { runManager } from '../database/runManager';
 import { logError } from '../utils/logger';
 import { clipText } from '../utils/messageLimit';
 
+/** What became of an alert: sent, held back by the throttle, or not delivered. */
+export type AlertOutcome = 'sent' | 'throttled' | 'failed';
+
 /** Send an admin alert under a throttle key; never rejects. */
-export type AlertFn = (key: string, text: string) => Promise<void>;
+export type AlertFn = (key: string, text: string) => Promise<AlertOutcome>;
 
 /** An alert with the same key goes out at most once per day. */
 export const ALERT_EVERY_MS = 24 * 60 * 60 * 1000;
@@ -20,13 +23,14 @@ export function throttledAlert(send: (text: string) => Promise<void>, now: () =>
     let previous: number | undefined;
     try {
       previous = runManager.lastAlertAt(key);
-      if (!runManager.shouldAlert(key, now(), ALERT_EVERY_MS)) return;
+      if (!runManager.shouldAlert(key, now(), ALERT_EVERY_MS)) return 'throttled';
     } catch (error) {
       logError(`admin alert bookkeeping failed (${key})`, error);
-      return;
+      return 'failed';
     }
     try {
       await send(clipText(text));
+      return 'sent';
     } catch (error) {
       logError(`admin alert failed (${key})`, error, 'warn');
       try {
@@ -34,6 +38,7 @@ export function throttledAlert(send: (text: string) => Promise<void>, now: () =>
       } catch (releaseError) {
         logError(`admin alert slot could not be released (${key})`, releaseError);
       }
+      return 'failed';
     }
   };
 }

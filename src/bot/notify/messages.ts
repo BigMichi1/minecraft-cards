@@ -83,9 +83,11 @@ function footer(listing: StoredListing): string | null {
   switch (listing.matchStatus) {
     case 'confirmed':
       // `/admin map` confirms without a picture comparison.
-      return listing.similarity === null
-        ? '✅ checked by the admin'
-        : `✅ picture matches reference (${listing.similarity.toFixed(2)})`;
+      if (listing.similarity === null) return '✅ checked by the admin';
+      if (listing.idSource === 'picture') {
+        return `🖼️ number from the picture (${listing.similarity.toFixed(2)}) — compare with the reference`;
+      }
+      return `✅ picture matches reference (${listing.similarity.toFixed(2)})`;
     case 'unconfirmed':
       return '⚠️ number unconfirmed — compare with the reference';
     case 'bundle':
@@ -98,12 +100,29 @@ function footer(listing: StoredListing): string | null {
       return 'ℹ️ picture check unavailable';
     case 'image_unavailable':
       return 'ℹ️ picture could not be loaded';
+    case 'mismatch':
+      // Never sent to users (pendingNotifications); kept for an exhaustive switch.
+      return `⚠️ the picture shows #${listing.pictureCardId ?? '?'}, not #${listing.cardIds[0] ?? '?'}`;
     case 'reference':
       return null;
   }
 }
 
-function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
+/** The reference picture goes beside a number the picture alone gave, or one it did not back. */
+function showsReference(listing: StoredListing): boolean {
+  if (listing.matchStatus === 'unconfirmed') return true;
+  return (
+    listing.matchStatus === 'confirmed' &&
+    listing.idSource === 'picture' &&
+    !listing.manualOverride &&
+    listing.similarity !== null
+  );
+}
+
+/** Card id -> usable reference picture (no placeholder, none shared), read once per batch. */
+type References = ReadonlyMap<CardId, string>;
+
+function buildEmbed(item: NotificationItem, marker: string, references: References): EmbedBuilder {
   const { listing } = item;
   const priceParts: string[] = [];
   if (listing.price) priceParts.push(formatPrice(listing.price));
@@ -125,9 +144,8 @@ function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
   if (imageUrl) embed.setImage(imageUrl);
   const text = footer(listing);
   if (text) embed.setFooter({ text });
-  if (listing.matchStatus === 'unconfirmed') {
-    const reference = item.cardIds[0] ? catalogManager.getCard(item.cardIds[0]) : undefined;
-    const thumbnail = validUrl(reference?.referenceImageUrl);
+  if (showsReference(listing)) {
+    const thumbnail = validUrl(item.cardIds[0] ? references.get(item.cardIds[0]) : null);
     if (thumbnail) embed.setThumbnail(thumbnail);
   }
   return embed;
@@ -191,6 +209,9 @@ export function buildNotificationMessages<T extends NotificationItem>(
   items: T[]
 ): NotificationMessage<T>[] {
   const messages: NotificationMessage<T>[] = [];
+  const references: References = new Map(
+    catalogManager.referenceCatalog().usable.map((c) => [c.cardId, c.referenceImageUrl])
+  );
   const single = items.length <= SINGLE_MESSAGE_LIMIT;
   const perMessage = single ? 1 : ITEMS_PER_MESSAGE;
   const marker = (n: number) => (single ? '' : (POSITION_MARKERS[n] ?? `${n + 1}.`));
@@ -198,7 +219,7 @@ export function buildNotificationMessages<T extends NotificationItem>(
     const chunk = items.slice(i, i + perMessage);
     messages.push({
       message: {
-        embeds: chunk.map((item, n) => buildEmbed(item, marker(n))),
+        embeds: chunk.map((item, n) => buildEmbed(item, marker(n), references)),
         components: chunk.map((item, n) => buildRow(item, marker(n))),
       },
       items: chunk,

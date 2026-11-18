@@ -6,7 +6,10 @@ import { errorMessage } from '../utils/async';
 import { HttpError, REQUEST_TIMEOUT_MS, USER_AGENT } from '../utils/http';
 import logger from '../utils/logger';
 import { prepareImage, type ResizeSpec } from './imageInput';
-import type { MatchStatus, ResolvedMatchStatus } from './matchStatus';
+import type { CardId } from '../cards/cardId';
+import type { ReferenceCard } from '../database/catalogManager';
+import { identifyPicture, type PictureIdentification, type ReferenceVector } from './identify';
+import type { ResolvedMatchStatus } from './matchStatus';
 import { cosineSimilarity } from './similarity';
 
 export type { MatchStatus } from './matchStatus';
@@ -303,10 +306,89 @@ export interface MatchOptions {
    * them and warns once per run instead.
    */
   onUnavailable?: (status: 'model_unavailable' | 'image_unavailable', reason: string) => void;
+  /**
+   * Every card's embedded reference picture, for the picture identification (rules 1 to 5 in
+   * docs/image-matching.md). Called only once a picture has been embedded; the runner loads
+   * them once per run. Without it a listing is only compared with its title card's reference.
+   */
+  references?: () => Promise<readonly ReferenceVector[]>;
+}
+
+/** The picture's card as the rules accepted it: the title card, another card, or a new one. */
+export interface PictureCard {
+  cardId: CardId;
+  similarity: number;
+}
+
+export interface MatchResult {
+  status: ResolvedMatchStatus;
+  /** Similarity with the reference of the listing's card (the title card, or the picture's). */
+  similarity: number | null;
+  /** Set when the picture decided a card (rules 1, 2 and 4); null otherwise. */
+  picture: PictureCard | null;
+}
+
+const unmatched = (status: ResolvedMatchStatus): MatchResult => ({
+  status,
+  similarity: null,
+  picture: null,
+});
+
+/** ImageUnavailableError and ModelError as their statuses; anything else is rethrown. */
+function unavailableStatus(error: unknown): 'image_unavailable' | 'model_unavailable' {
+  if (error instanceof ImageUnavailableError) return 'image_unavailable';
+  if (error instanceof ModelError) return 'model_unavailable';
+  throw error;
 }
 
 /**
- * Check a listing's picture against the card's reference picture.
+ * Embed every card's reference picture. A reference that cannot be loaded or embedded is
+ * skipped and reported through `onSkipped`; any other error (the cache's database, a bug) is
+ * rethrown.
+ */
+export async function loadReferenceVectors(
+  cards: readonly ReferenceCard[],
+  embedder: ImageEmbedder,
+  onSkipped: (status: 'model_unavailable' | 'image_unavailable', reason: string) => void
+): Promise<ReferenceVector[]> {
+  const vectors: ReferenceVector[] = [];
+  for (const card of cards) {
+    try {
+      vectors.push({
+        cardId: card.cardId,
+        vector: await embedder.embed(card.referenceImageUrl),
+        puzzle: card.puzzle,
+      });
+    } catch (error) {
+      onSkipped(unavailableStatus(error), errorMessage(error));
+    }
+  }
+  return vectors;
+}
+
+/**
+ * The picture's card, when the rules let the picture decide: a decided best match, and for
+ * another card than the title's (`titleCard` null for a title naming none) never a puzzle card
+ * (rule 5) nor a card whose reference has a twin (same art on another card).
+ */
+function acceptedPicture(
+  found: PictureIdentification | null,
+  titleCard: CardId | null
+): PictureCard | null {
+  if (found === null || !found.decided) return null;
+  if (found.cardId !== titleCard && (found.puzzle || found.twin)) return null;
+  return { cardId: found.cardId, similarity: found.similarity };
+}
+
+/**
+ * Check a listing's picture against the card's reference picture, and with `references` also
+ * against every card's reference (docs/image-matching.md):
+ * 1. the picture decides the title card: `confirmed`;
+ * 2. it decides another card (not a puzzle card, no twin) and the title card's reference stays
+ *    below the threshold: `mismatch`, holding that card;
+ * 3. it decides nothing: `confirmed` or `unconfirmed` by the title card's reference alone;
+ * 4. an eBay title naming no card (`idSource` `picture`): the picture's decided card (not a
+ *    puzzle card, no twin), `confirmed`, or `unconfirmed` without a card.
  * sammel-ente is the reference shop; listings of several cards are bundles and not compared.
  * No model loaded, or a ModelError, yields `model_unavailable`; a picture that cannot be
  * loaded (ImageUnavailableError: network, host, redirect, HTTP, size, decoding) yields
@@ -319,31 +401,47 @@ export async function matchListing(
   embedder: ImageEmbedder | null,
   threshold: number,
   options: MatchOptions = {}
-): Promise<{ status: ResolvedMatchStatus; similarity: number | null }> {
+): Promise<MatchResult> {
   const unavailable = (status: 'model_unavailable' | 'image_unavailable', reason: string) => {
     if (options.onUnavailable) options.onUnavailable(status, reason);
     else logger.warn(`image match unavailable (${status}) for ${listing.url}: ${reason}`);
-    return { status, similarity: null };
+    return unmatched(status);
   };
-  if (listing.shop === 'sammel-ente') return { status: 'reference', similarity: null };
-  if (listing.cardIds.length > 1) return { status: 'bundle', similarity: null };
-  if (reference === null) return { status: 'no_reference', similarity: null };
+  if (listing.shop === 'sammel-ente') return unmatched('reference');
+  if (listing.cardIds.length > 1) return unmatched('bundle');
+  const [titleCard] = listing.cardIds;
+  // A title naming no card leaves the picture alone to decide (rule 4).
+  const pictureOnly = titleCard === undefined && listing.idSource === 'picture';
+  if (!pictureOnly && reference === null) return unmatched('no_reference');
   if (embedder === null) return unavailable('model_unavailable', 'no image model loaded');
-  if (listing.imageUrl === null) return { status: 'unconfirmed', similarity: null };
+  if (listing.imageUrl === null) return unmatched('unconfirmed');
 
   try {
     const [ref, candidate] = await Promise.all([
-      embedder.embed(reference),
+      pictureOnly || reference === null ? null : embedder.embed(reference),
       embedder.embed(listing.imageUrl),
     ]);
-    const similarity = cosineSimilarity(ref, candidate);
-    const confirmed = similarity >= threshold && !listing.idConflict;
-    return { status: confirmed ? 'confirmed' : 'unconfirmed', similarity };
-  } catch (error) {
-    if (error instanceof ImageUnavailableError) {
-      return unavailable('image_unavailable', errorMessage(error));
+    const found = options.references
+      ? identifyPicture(candidate, await options.references(), threshold)
+      : null;
+    const picture = acceptedPicture(found, titleCard ?? null);
+    if (ref === null) {
+      return picture
+        ? { status: 'confirmed', similarity: picture.similarity, picture }
+        : unmatched('unconfirmed');
     }
-    if (error instanceof ModelError) return unavailable('model_unavailable', errorMessage(error));
-    throw error;
+    const similarity = cosineSimilarity(ref, candidate);
+    // A picture that also reaches the title card's reference does not contradict the title:
+    // some cards share their art (#59 and XXL1 Charged Creeper, 2026-11-18).
+    if (picture && picture.cardId !== titleCard && similarity < threshold) {
+      return { status: 'mismatch', similarity, picture };
+    }
+    if (picture?.cardId === titleCard && !listing.idConflict) {
+      return { status: 'confirmed', similarity, picture };
+    }
+    const confirmed = similarity >= threshold && !listing.idConflict;
+    return { status: confirmed ? 'confirmed' : 'unconfirmed', similarity, picture: null };
+  } catch (error) {
+    return unavailable(unavailableStatus(error), errorMessage(error));
   }
 }

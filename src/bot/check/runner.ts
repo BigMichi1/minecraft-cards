@@ -7,7 +7,13 @@ import {
 } from '../database/listingManager';
 import { runManager, SHOP_PEAK_WINDOW_MS } from '../database/runManager';
 import { userManager } from '../database/userManager';
-import { matchListing, type ImageEmbedder } from '../matcher/embedder';
+import {
+  loadReferenceVectors,
+  matchListing,
+  type ImageEmbedder,
+  type PictureCard,
+} from '../matcher/embedder';
+import type { ReferenceVector } from '../matcher/identify';
 import type { FetchResult, Listing, ShopAdapter, ShopId } from '../shops/types';
 import { errorMessage } from '../utils/async';
 import logger, { logError } from '../utils/logger';
@@ -95,8 +101,52 @@ function needsMatch(l: StoredListing, now: number): boolean {
   }
 }
 
+/** Whether the listing is worth comparing: a card someone wants, or a title naming no card. */
+function wantedOrPictureOnly(l: StoredListing, wanted: Set<CardId>): boolean {
+  if (l.idSource === 'picture' && l.cardIds.length === 0) return true;
+  return l.cardIds.some((id) => wanted.has(id));
+}
+
+/**
+ * Every card's reference picture, embedded on first use and then reused for the rest of the
+ * run (the embeddings come from the cache). A reference that cannot be loaded is skipped, with
+ * one warning per run.
+ */
+function referencesOnce(embedder: ImageEmbedder): () => Promise<ReferenceVector[]> {
+  let loading: Promise<ReferenceVector[]> | null = null;
+  return () => {
+    loading ??= (async () => {
+      const skipped: string[] = [];
+      const vectors = await loadReferenceVectors(
+        catalogManager.referenceCards(),
+        embedder,
+        (status, reason) => skipped.push(`${status}: ${reason}`)
+      );
+      if (skipped.length > 0) {
+        logger.warn(
+          `${skipped.length} reference picture(s) skipped for the picture identification this run, first: ${skipped[0]}`
+        );
+      }
+      return vectors;
+    })();
+    return loading;
+  };
+}
+
+/** The admin note for a listing whose picture shows another card than its title names. */
+function mismatchNote(l: StoredListing, similarity: number | null, picture: PictureCard): string {
+  const [titleCard] = l.cardIds;
+  const titleScore = similarity === null ? '' : `, #${titleCard} ${similarity.toFixed(2)}`;
+  return (
+    `Picture mismatch, not sent to users: the title says #${titleCard}, the picture shows ` +
+    `#${picture.cardId} (#${picture.cardId} ${picture.similarity.toFixed(2)}${titleScore}). ` +
+    `${l.url} — if the title is wrong, fix it with /admin map.`
+  );
+}
+
 async function matchPending(
   deps: RunDeps,
+  alert: AlertFn,
   stored: StoredListing[],
   fetched: Map<string, Listing>,
   wanted: Set<CardId>
@@ -108,8 +158,9 @@ async function matchPending(
     reasons.push(reason);
     unavailable.set(status, reasons);
   };
+  const references = deps.embedder ? referencesOnce(deps.embedder) : undefined;
   for (const l of stored) {
-    if (!l.available || !needsMatch(l, deps.now()) || !l.cardIds.some((id) => wanted.has(id))) {
+    if (!l.available || !needsMatch(l, deps.now()) || !wantedOrPictureOnly(l, wanted)) {
       continue;
     }
     const source = fetched.get(l.url);
@@ -120,13 +171,22 @@ async function matchPending(
         ? (catalogManager.getCard(only)?.referenceImageUrl ?? null)
         : null;
     const result = await matchListing(
-      { ...source, cardIds: l.cardIds, imageUrl: l.imageUrl },
+      { ...source, cardIds: l.cardIds, imageUrl: l.imageUrl, idSource: l.idSource },
       reference,
       deps.embedder,
       deps.threshold,
-      { onUnavailable }
+      { onUnavailable, ...(references ? { references } : {}) }
     );
-    listingManager.setMatch(l.id, result.status, result.similarity, deps.now());
+    listingManager.setMatch(
+      l.id,
+      result.status,
+      result.similarity,
+      deps.now(),
+      result.picture?.cardId ?? null
+    );
+    if (result.status === 'mismatch' && result.picture) {
+      await alert(`mismatch:${l.id}`, mismatchNote(l, result.similarity, result.picture));
+    }
   }
   for (const [status, reasons] of unavailable) {
     logger.warn(
@@ -242,7 +302,7 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
       for (const adapter of deps.adapters) {
         await checkShop(deps, alert, adapter, summary, stored, fetched);
       }
-      await matchPending(deps, stored, fetched, wanted);
+      await matchPending(deps, alert, stored, fetched, wanted);
       const now = deps.now();
       const sent = await deps.sender.send(
         listingManager.pendingNotifications({ now, seenSince: now - 2 * deps.intervalMs })

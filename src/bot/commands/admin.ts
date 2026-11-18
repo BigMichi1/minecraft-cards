@@ -75,6 +75,10 @@ export function formatSummary(summary: RunSummary): string {
     let line = `${shop}: ${s.listings} listings`;
     if (s.error) line += ` — error: ${s.error}`;
     if (s.skippedNoId) line += ` (skipped ${s.skippedNoId} without card number)`;
+    if (s.skippedExcluded) line += ` (skipped ${s.skippedExcluded} not series 3 single cards)`;
+    if (s.truncated) {
+      line += ` (${s.truncated} ${s.truncated === 1 ? 'search' : 'searches'} cut at the page cap)`;
+    }
     if (s.skippedInvalid) line += ` (skipped ${s.skippedInvalid} without link or title)`;
     return line;
   });

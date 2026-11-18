@@ -44,7 +44,7 @@ const summary: RunSummary = {
   shops: {
     'blue-ocean': { listings: 3 },
     'sammel-ente': { listings: 0, error: 'boom' },
-    ebay: { listings: 5, skippedNoId: 2 },
+    ebay: { listings: 5, skippedNoId: 2, skippedExcluded: 7, truncated: 1 },
   },
   notified: 4,
   dmFailures: 1,
@@ -176,7 +176,9 @@ describe('/admin', () => {
     expect(text).toContain('<t:1700000000:R>');
     expect(text).toContain('blue-ocean: 3 listings');
     expect(text).toContain('sammel-ente: 0 listings — error: boom');
-    expect(text).toContain('ebay: 5 listings (skipped 2 without card number)');
+    expect(text).toContain(
+      'ebay: 5 listings (skipped 2 without card number) (skipped 7 not series 3 single cards) (1 search cut at the page cap)'
+    );
     expect(text).toContain('Notified: 4 · DM failures: 1');
   });
 

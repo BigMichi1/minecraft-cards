@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
-import { createEbayAdapter, extractCardIdsFromTitle, EBAY_QUERIES } from './ebay';
+import {
+  CARD_NAME_WORDS,
+  createEbayAdapter,
+  extractCardIdsFromTitle,
+  titleExclusion,
+  EBAY_QUERIES,
+} from './ebay';
 import { HttpError } from '../utils/http';
 import { readFixture } from '../../test/shopHelpers';
 import { ShopLayoutError, type FetchFn } from './types';
@@ -131,7 +137,19 @@ describe('extractCardIdsFromTitle', () => {
         'LEGO Minecraft Karten 226 - Vernetzungstreffen - Comickarte Serie 3 (2026)'
       )
     ).toEqual([cid('226')]);
-    expect(s3('Karten 7 – Shadow Hoodie')).toEqual([cid('7')]);
+    expect(s3('Karten 7 – Shadow Hoodie - Charakterkarte')).toEqual([cid('7')]);
+    // A hyphen inside the name is not the spaced dash.
+    expect(
+      extractCardIdsFromTitle('LEGO Minecraft Karten 193 - Die End-Arena - Setkarte Serie 3 (2026)')
+    ).toEqual([cid('193')]);
+    expect(
+      extractCardIdsFromTitle(
+        'LEGO Minecraft Karten 198 - Das Lava-Duell im Nether - Setkarte Serie 3 (2026)'
+      )
+    ).toEqual([cid('198')]);
+    // Without a known card type the dash form is not read: a miss, not a false id.
+    expect(s3('Karten 7 – Shadow Hoodie')).toEqual([]);
+    expect(s3('Karten 7 - Shadow Hoodie - Einzelkarte')).toEqual([]);
     expect(
       extractCardIdsFromTitle(
         'LEGO Minecraft  132 - Wither Skeleton - Charakterkarte - Holo Serie 3 (2026)'
@@ -160,6 +178,125 @@ describe('extractCardIdsFromTitle', () => {
       cid('107'),
     ]);
     expect(extractCardIdsFromTitle('LEGO Minecraft Series 3 Card')).toEqual([]);
+  });
+
+  test('the dash forms refuse counts, product words and the series number (E2)', () => {
+    for (const title of [
+      'Serie 3 Karten 2 - Booster - Sammelkarte',
+      'On Fire Karten 10 – Lot',
+      'On Fire Karten 3 - Pack Booster',
+      'On Fire 10 - Booster Pack - Sammelkarte',
+      'On Fire Display 24 - Booster - Sammelkarte',
+      'LEGO Minecraft Serie 3 - Steve - Charakterkarte',
+      'LEGO Minecraft Series 3 - Steve - Charakterkarte',
+      'LEGO Minecraft Staffel 3 - Steve - Charakterkarte On Fire',
+      'On Fire 3 - Holo - Sammelkarte',
+      'On Fire 3 - Holo - Charakterkarte',
+      'On Fire Karten 4 - Booster Pack - Charakterkarte',
+      'On Fire Karten 5 - Stück - Comickarte',
+      'On Fire Karten 6 - Set Steve - Setkarte',
+      'On Fire Karten 7 - Konvolut - Puzzlekarte',
+      'On Fire 8 - Display - Charakterkarte',
+      'On Fire 9 - Paket - Charakterkarte',
+      'On Fire 11 - Album - Charakterkarte',
+    ]) {
+      expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+    }
+  });
+
+  test('a number before Karte counts only after a known card name (E1)', () => {
+    for (const title of [
+      'LEGO Minecraft On Fire XXL 3 Karte',
+      'Serie 3 Booster 1 Karte gratis',
+      'On Fire Album 1 Karte LE',
+      'Serie 3 neu 2 Karte',
+      'On Fire Holo 3 Karte',
+      'On Fire Tausch 3 Karte',
+      'On Fire Booster 5 Karte',
+      'On Fire Holo 1 Karte',
+    ]) {
+      const got = extractCardIdsFromTitle(title).filter((id) => /^\d+$/.test(id));
+      expect({ title, ids: got }).toEqual({ title, ids: [] });
+    }
+    const notNames = [
+      'Booster',
+      'Pack',
+      'Holo',
+      'Foil',
+      'Neu',
+      'Album',
+      'Mappe',
+      'Tausch',
+      'LE',
+      'XXL',
+      'Serie',
+      'Series',
+      'Staffel',
+      'mit',
+      'je',
+      'nur',
+      'set',
+      'lot',
+      'x',
+      'ca',
+      'plus',
+      'inkl',
+      'incl',
+      'und',
+      'and',
+      'Fire',
+      'Rare',
+      'Ultra',
+      'Gold',
+      'Edition',
+      'Limited',
+      'Karten',
+      'Cards',
+      'Trading',
+      'Display',
+      'Blister',
+      'Lego',
+      'Minecraft',
+    ];
+    for (const word of notNames) {
+      for (const w of [word, word.toUpperCase()]) {
+        const title = `On Fire ${w} 3 Karte`;
+        const got = extractCardIdsFromTitle(title).filter((id) => /^\d+$/.test(id));
+        expect({ title, ids: got }).toEqual({ title, ids: [] });
+      }
+    }
+    // The allow-list is pinned, so a change to it is deliberate, and every word in it reads.
+    expect(CARD_NAME_WORDS).toEqual(
+      // prettier-ignore
+      [
+        'Adventurer', 'Alex', 'Armorsmith', 'Bats', 'Bear', 'Bees', 'Blaze', 'Breeze', 'Camel',
+        'Cat', 'Cow', 'Creeper', 'Cube', 'Dragon', 'Efe', 'Enderman', 'Ghast', 'Handler', 'Hoodie',
+        'Horseman', 'Husk', 'Illager', 'Knight', 'Mooshroom', 'Moobloom', 'Ocelot', 'Parrot',
+        'Parrots', 'Phantoms', 'Piglin', 'Piglins', 'Pigs', 'Pillager', 'Rabbits', 'Skeleton',
+        'Slimes', 'Sniffer', 'Spiders', 'Squid', 'Steve', 'Strider', 'Sunny', 'Tamer', 'Villager',
+        'Warden', 'Warrior', 'Witch', 'Wither', 'Wolf', 'Zombie',
+      ]
+    );
+    for (const word of CARD_NAME_WORDS) {
+      for (const w of [word, word.toUpperCase()]) {
+        const title = `LEGO MINECRAFT ON FIRE Serie 3 ${w} 68 Karte`;
+        expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [cid('68')] });
+      }
+    }
+    // "Karte 3 Karte" is the "Karte N" prefix form, so "Karte" is checked here only.
+    for (const word of [...notNames, 'Karte', 'Card']) {
+      expect(CARD_NAME_WORDS.map((w) => w.toLowerCase())).not.toContain(word.toLowerCase());
+    }
+  });
+
+  test('titles ending in a year or a count after a dash keep their ids (E3)', () => {
+    expect(
+      extractCardIdsFromTitle('LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 - 2026')
+    ).toEqual([cid('30')]);
+    expect(s3('Karte 107/228 - 1 Stück')).toEqual([cid('107')]);
+    // A real range still excludes the title.
+    expect(s3('Karte #12 1 - 228')).toEqual([]);
+    expect(s3('Karte #12 12-24')).toEqual([]);
   });
 
   test('only titles that name series 3 give ids', () => {
@@ -202,9 +339,24 @@ describe('extractCardIdsFromTitle', () => {
     expect(s3('Karte #12 du wählst')).toEqual([]);
     expect(s3('Karte #12 choose')).toEqual([]);
     expect(s3('Karte #12 pick')).toEqual([]);
+    expect(s3('Karte #12 wählen')).toEqual([]);
+    expect(s3('Karte #12 waehlen')).toEqual([]);
+    expect(s3('Karte #12 bitte auswählen')).toEqual([]);
+    expect(s3('Karte #12 bitte auswaehlen')).toEqual([]);
+    // Card names starting with "pick" are not a pick list (T1).
+    expect(s3('Karte #12 Diamond Pickaxe')).toEqual([cid('12')]);
+    expect(s3('Karte #12 Picker')).toEqual([cid('12')]);
     expect(s3('Karte #12 151-254')).toEqual([]);
     expect(s3('LE1 - LE22')).toEqual([]);
     expect(s3('Karte #12, Karten 1 bis 228')).toEqual([]);
+  });
+
+  test('titleExclusion names the reason a title gives no ids', () => {
+    expect(titleExclusion('LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3')).toBeNull();
+    expect(titleExclusion('LEGO Minecraft Serie 1 Karte 3')).toBe('other series');
+    expect(titleExclusion('LEGO Minecraft Karte 3')).toBe('no series 3');
+    expect(titleExclusion('On Fire Karte 3 zum aussuchen')).toBe('pick list');
+    expect(titleExclusion('On Fire Karten 1 - 228')).toBe('range');
   });
 
   test('every fixture title gives its reviewed ids', () => {
@@ -271,10 +423,14 @@ describe('createEbayAdapter', () => {
       fetchFn: fake.fetchFn,
       sleep: noSleep,
     });
-    const { listings, skippedNoId, skippedInvalid } = await adapter.fetchListings();
-    // 4 made-up and 20 real items with ids; 1 made-up and 18 real without.
+    const { listings, skippedNoId, skippedExcluded, skippedInvalid } =
+      await adapter.fetchListings();
+    // 4 made-up and 20 real items with ids. Without: 13 real titles excluded (6 pick lists, one
+    // of them "zufällige Auswahl", 5 series 1/2, 2 without a series word), 1 made-up and 5 real
+    // series 3 titles naming no card.
     expect(listings).toHaveLength(24);
-    expect(skippedNoId).toBe(19);
+    expect(skippedExcluded).toBe(13);
+    expect(skippedNoId).toBe(6);
     expect(skippedInvalid).toBe(0);
     expect(fake.tokenCalls).toBe(1);
     expect(fake.searchUrls).toHaveLength(EBAY_QUERIES.length);
@@ -314,8 +470,67 @@ describe('createEbayAdapter', () => {
     expect(listings.some((l) => l.url.endsWith('298476153721'))).toBe(false);
   });
 
-  test('searches every query, the broad series 3 query included', () => {
-    expect(EBAY_QUERIES).toContain('lego minecraft karten serie 3');
+  test('searches every query once, in order, the broad series 3 query included', async () => {
+    expect(EBAY_QUERIES).toEqual([
+      'lego minecraft on fire karte',
+      'lego minecraft tcc serie 3',
+      'lego minecraft trading card on fire',
+      'lego minecraft karten serie 3',
+    ]);
+    const fake = makeFetch();
+    const adapter = createEbayAdapter({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    });
+    await adapter.fetchListings();
+    expect(fake.searchUrls.map((u) => new URL(u).searchParams.get('q'))).toEqual(EBAY_QUERIES);
+    expect(fake.searchUrls.map((u) => new URL(u).searchParams.get('offset'))).toEqual(
+      EBAY_QUERIES.map(() => '0')
+    );
+  });
+
+  test('excluded and id-less titles are counted apart and logged at debug level', async () => {
+    const debug = spyOn(logger, 'debug');
+    try {
+      const fake = makeFetch({
+        searchBody: () =>
+          body(
+            item({}),
+            item({
+              itemId: 'v1|220000000002|0',
+              legacyItemId: '220000000002',
+              title: 'LEGO Minecraft Serie 1 Karte Nr. 12',
+            }),
+            item({
+              itemId: 'v1|220000000003|0',
+              legacyItemId: '220000000003',
+              title: 'LEGO Minecraft Serie 3 Booster',
+            })
+          ),
+      });
+      const adapter = createEbayAdapter({
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      });
+      const result = await adapter.fetchListings();
+      expect(result).toMatchObject({ skippedExcluded: 1, skippedNoId: 1, skippedInvalid: 0 });
+      expect(result.listings).toHaveLength(1);
+      const lines = debug.mock.calls.map((c) => String(c[0]));
+      expect(
+        lines.some(
+          (l) => l.includes('LEGO Minecraft Serie 1 Karte Nr. 12') && l.includes('other series')
+        )
+      ).toBe(true);
+      expect(
+        lines.some((l) => l.includes('LEGO Minecraft Serie 3 Booster') && l.includes('no card id'))
+      ).toBe(true);
+    } finally {
+      debug.mockRestore();
+    }
   });
 
   test('a listing with seller-defined variations gives no ids', async () => {
@@ -334,7 +549,12 @@ describe('createEbayAdapter', () => {
       fetchFn: fake.fetchFn,
       sleep: noSleep,
     });
-    expect(await adapter.fetchListings()).toMatchObject({ listings: [], skippedNoId: 1 });
+    expect(await adapter.fetchListings()).toEqual({
+      listings: [],
+      skippedNoId: 0,
+      skippedExcluded: 1,
+      skippedInvalid: 0,
+    });
   });
 
   describe('paging', () => {
@@ -395,28 +615,157 @@ describe('createEbayAdapter', () => {
       expect(urls).toHaveLength(EBAY_QUERIES.length);
     });
 
-    test('an empty page ends the walk even when the total says more', async () => {
-      const { urls } = await run((url) =>
-        new URL(url).searchParams.get('offset') === '0'
-          ? paged(450)(url)
-          : JSON.stringify({ total: 450, itemSummaries: [] })
+    const runError = async (answer: (url: string) => string) =>
+      run(answer).then(
+        () => {
+          throw new Error('expected a rejection');
+        },
+        (e: unknown) => e as Error
       );
+
+    test('an empty later page while the total says more is a layout error (P1)', async () => {
+      for (const later of [
+        JSON.stringify({ total: 450, itemSummaries: [] }),
+        JSON.stringify({ total: 450 }),
+        JSON.stringify({}),
+      ]) {
+        const error = await runError((url) =>
+          new URL(url).searchParams.get('offset') === '0' ? paged(450)(url) : later
+        );
+        expect(error).toBeInstanceOf(ShopLayoutError);
+        expect(error.message).toContain(EBAY_QUERIES[0]!);
+        expect(error.message).toContain('offset 200');
+        expect(error.message).toContain('450');
+      }
+    });
+
+    test('a first page without itemSummaries and without total is a layout error (P1)', async () => {
+      const error = await runError((url) =>
+        new URL(url).searchParams.get('q') === EBAY_QUERIES[1] ? '{}' : paged(10)(url)
+      );
+      expect(error).toBeInstanceOf(ShopLayoutError);
+      expect(error.message).toContain(EBAY_QUERIES[1]!);
+      // {"total":0} is a valid empty result.
+      const { result } = await run((url) =>
+        new URL(url).searchParams.get('q') === EBAY_QUERIES[1]
+          ? JSON.stringify({ total: 0 })
+          : paged(10)(url)
+      );
+      expect(result.listings).toHaveLength(10);
+    });
+
+    test('an answer of an unexpected shape is a layout error naming query and offset (P2)', async () => {
+      for (const answer of [
+        'null',
+        '[]',
+        '"text"',
+        JSON.stringify({ total: 3, itemSummaries: {} }),
+        JSON.stringify({ total: '3', itemSummaries: [] }),
+        JSON.stringify({ total: 3, itemSummaries: [null] }),
+      ]) {
+        const error = await runError(() => answer);
+        expect({ answer, type: error.constructor.name }).toEqual({
+          answer,
+          type: 'ShopLayoutError',
+        });
+        expect(error.message).toContain('unexpected answer shape');
+        expect(error.message).toContain(EBAY_QUERIES[0]!);
+        expect(error.message).toContain('offset 0');
+      }
+    });
+
+    test('the total shrinking mid-walk ends the walk (P4)', async () => {
+      const { urls } = await run((url) => {
+        const offset = new URL(url).searchParams.get('offset');
+        return offset === '0' ? paged(450)(url) : paged(250)(url);
+      });
       expect(urls).toHaveLength(2 * EBAY_QUERIES.length);
     });
 
-    test('stops at the page cap and warns', async () => {
+    test('a later page without total keeps the earlier total (P4)', async () => {
+      // Without the kept total the full second page would ask for a third.
+      const { urls } = await run((url) => {
+        const answer = JSON.parse(paged(400)(url)) as Record<string, unknown>;
+        if (new URL(url).searchParams.get('offset') !== '0') delete answer.total;
+        return JSON.stringify(answer);
+      });
+      expect(urls).toHaveLength(2 * EBAY_QUERIES.length);
+    });
+
+    test('without any total, full pages continue and a short page stops (P4)', async () => {
+      const { urls } = await run((url) => {
+        const answer = JSON.parse(paged(450)(url)) as Record<string, unknown>;
+        delete answer.total;
+        return JSON.stringify(answer);
+      });
+      expect(offsets(urls).slice(0, 3)).toEqual(
+        [0, 200, 400].map((o) => `${EBAY_QUERIES[0]}@${o}`)
+      );
+      expect(urls).toHaveLength(3 * EBAY_QUERIES.length);
+    });
+
+    test('short pages with a total: the offset follows the items read (P4)', async () => {
+      const { urls } = await run(paged(450, 150));
+      expect(offsets(urls).slice(0, 3)).toEqual(
+        [0, 150, 300].map((o) => `${EBAY_QUERIES[0]}@${o}`)
+      );
+      expect(urls).toHaveLength(3 * EBAY_QUERIES.length);
+    });
+
+    test('a failure on a later query after the first returned items rejects (P4)', async () => {
+      const error = await runError((url) => {
+        if (new URL(url).searchParams.get('q') === EBAY_QUERIES[2]) return 'null';
+        return paged(10)(url);
+      });
+      expect(error).toBeInstanceOf(ShopLayoutError);
+    });
+
+    test('stops at the page cap, warns and reports the cut searches (P3)', async () => {
       const warn = spyOn(logger, 'warn');
       try {
-        const { urls } = await run(paged(5000));
+        const { urls, result } = await run(paged(5000));
         expect(urls).toHaveLength(5 * EBAY_QUERIES.length);
         expect(offsets(urls).slice(0, 5)).toEqual(
           [0, 200, 400, 600, 800].map((o) => `${EBAY_QUERIES[0]}@${o}`)
         );
-        expect(
-          warn.mock.calls.some((c) =>
-            String(c[0]).includes('5000 results, only the first 1000 read')
-          )
-        ).toBe(true);
+        const lines = warn.mock.calls.map((c) => String(c[0]));
+        for (const q of EBAY_QUERIES) {
+          expect(lines.some((l) => l.includes(q) && l.includes('5000') && l.includes('1000'))).toBe(
+            true
+          );
+        }
+        expect(result.truncated).toHaveLength(EBAY_QUERIES.length);
+        expect(result.truncated![0]).toContain(EBAY_QUERIES[0]!);
+        expect(result.truncated![0]).toContain('5000');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('at the cap without a total the warning says "more" (P4)', async () => {
+      const warn = spyOn(logger, 'warn');
+      try {
+        const { result } = await run((url) => {
+          const answer = JSON.parse(paged(5000)(url)) as Record<string, unknown>;
+          delete answer.total;
+          return JSON.stringify(answer);
+        });
+        expect(warn.mock.calls.some((c) => String(c[0]).includes('more'))).toBe(true);
+        expect(result.truncated![0]).toContain('more');
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('no cap warning under the cap or at exactly 1000 results (P3)', async () => {
+      const warn = spyOn(logger, 'warn');
+      try {
+        for (const total of [450, 1000]) {
+          const { urls, result } = await run(paged(total));
+          expect(result.truncated).toBeUndefined();
+          expect(urls).toHaveLength(Math.ceil(total / 200) * EBAY_QUERIES.length);
+        }
+        expect(warn).not.toHaveBeenCalled();
       } finally {
         warn.mockRestore();
       }
@@ -520,9 +869,11 @@ describe('createEbayAdapter', () => {
       fetchFn: fake.fetchFn,
       sleep: noSleep,
     });
+    // "LEGO Minecraft Booster" names no series: excluded, not "without card number".
     expect(await adapter.fetchListings()).toEqual({
       listings: [],
-      skippedNoId: 1,
+      skippedNoId: 0,
+      skippedExcluded: 1,
       skippedInvalid: 0,
     });
   });
@@ -579,6 +930,40 @@ describe('createEbayAdapter', () => {
     expect(error.message).toContain('[redacted]');
     expect(error.message).not.toContain('topsecret');
     expect(error.message).not.toContain('leaked');
+  });
+
+  test('a failure body echoing the Basic credential is redacted (C3)', async () => {
+    const basic = btoa('id:topsecret');
+    const fake = makeFetch({
+      tokenStatus: 401,
+      tokenBody: JSON.stringify({ error: 'invalid_client', error_description: `bad ${basic}` }),
+    });
+    const adapter = createEbayAdapter({
+      clientId: 'id',
+      clientSecret: 'topsecret',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    });
+    const error = (await adapter.fetchListings().catch((e: unknown) => e)) as HttpError;
+    expect(error.message).toContain('invalid_client');
+    expect(error.message).not.toContain(basic);
+    expect(error.message).toContain('bad [redacted]');
+  });
+
+  test('an empty secret does not garble the error text (C3)', async () => {
+    const fake = makeFetch({
+      tokenStatus: 401,
+      tokenBody: JSON.stringify({ error: 'invalid_client' }),
+    });
+    const adapter = createEbayAdapter({
+      clientId: 'id',
+      clientSecret: '',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    });
+    const error = (await adapter.fetchListings().catch((e: unknown) => e)) as HttpError;
+    expect(error.message).toContain('invalid_client');
+    expect(error.message).not.toContain('[redacted]i');
   });
 
   test('a failure answer without eBay error fields gives its message, else its field names only', async () => {
@@ -715,8 +1100,8 @@ describe('createEbayAdapter', () => {
     });
     const result = await adapter.fetchListings();
     expect(result.listings).toHaveLength(1);
-    // Two bad items in each of the searches.
-    expect(result.skippedInvalid).toBe(2 * EBAY_QUERIES.length);
+    // Two bad items, each counted once although every search returns them (C2).
+    expect(result.skippedInvalid).toBe(2);
   });
 
   describe('token expiry', () => {

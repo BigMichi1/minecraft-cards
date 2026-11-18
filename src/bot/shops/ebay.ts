@@ -36,10 +36,17 @@ const LETTER = 'A-Za-zÄÖÜäöüß';
 const SERIES_3_PATTERN = /\bSeries?\s*3\b|\bOn\s*Fire\b/i;
 // "Serie 1", "Series 2", but not "Serie 12".
 const SERIES_1_2_PATTERN = /\bSeries?\s*[12]\b/i;
-// A listing the buyer picks a card from: "zum aussuchen", "auswählen", "Auswahl", "du wählst".
+// A listing the buyer picks a card from: "zum aussuchen", "auswählen", "Auswahl", "du wählst",
+// "waehlen". `pick` only as a whole word: "Pickaxe" is a card name.
 const MULTI_PICK_PATTERN = /aussuch|auswahl|w(?:ä|ae)hl|\bchoos|\bpick\b/i;
-// A number range: "1 - 228", "151-254", "LE1 - LE22", "1 bis 228".
-const RANGE_PATTERN = /\b(?:LE|XXL)?\d+\s*(?:-|–|bis\b)\s*(?:LE|XXL)?\d+\b/i;
+// Not right after a series word: "Serie 3 - Steve" names the series, not card 3.
+const NOT_AFTER_SERIES = '(?<!\\b(?:Serie|Series|Staffel)\\s*)';
+// A number range: "1 - 228", "151-254", "LE1 - LE22", "1 bis 228". Only 1 to 3 digits, so
+// "Serie 3 - 2026" (a year) is not one; the first number must be the smaller (see hasRange).
+const RANGE_PATTERN = new RegExp(
+  `${NOT_AFTER_SERIES}(?<![\\w/])(?:LE|XXL)?(\\d{1,3})\\s*(?:-|–|bis\\b)\\s*(?:LE|XXL)?(\\d{1,3})(?!\\d)`,
+  'gi'
+);
 
 const LE_XXL_PATTERN = /\b(LE|XXL)\s?(\d+)\b/gi;
 // "12/228": only the series size counts, so dates (`11/2026`) and sizes (`10/12`) do not match.
@@ -54,66 +61,139 @@ const PREFIXED_LIST_PATTERN = new RegExp(
   'gi'
 );
 
-// "Karten 30 - Steve - …": the number after "Karten" and before a spaced dash.
-const KARTEN_DASH_PATTERN = /\bKarten\s+(\d{1,3})\s+[-–]\s/gi;
-// "Minecraft  132 - Wither Skeleton - Charakterkarte": number, name, card type ending in "karte".
+/** The card types of series 3 titles, as the 2026-11-18 probe spelled them. */
+const CARD_TYPES = ['Charakterkarte', 'Comickarte', 'Puzzlekarte', 'Setkarte'];
+// Words a pack, lot or variant name starts with; never the name of a card.
+const PRODUCT_WORDS = [
+  'Album',
+  'Blister',
+  'Booster',
+  'Box',
+  'Bundle',
+  'Cards',
+  'Display',
+  'Foil',
+  'Holo',
+  'Karten',
+  'Konvolut',
+  'Lot',
+  'Mappe',
+  'Multipack',
+  'Pack',
+  'Packs',
+  'Paket',
+  'Sammlung',
+  'Set',
+  'Starter',
+  'Stk',
+  'Stück',
+];
+// "Karten 30 - Steve - Charakterkarte", "Minecraft  132 - Wither Skeleton - Charakterkarte":
+// number, spaced dash, a name not starting with a product word (a hyphen inside it, as in
+// "End-Arena", is fine), spaced dash, a known card type.
 const NUMBER_NAME_TYPE_PATTERN = new RegExp(
-  `(?:^|\\s)(\\d{1,3})\\s+[-–]\\s+[^-–]+?\\s+[-–]\\s+[${LETTER}]*karte(?![${LETTER}])`,
+  `${NOT_AFTER_SERIES}(?:^|\\s)(\\d{1,3})\\s+[-–]\\s+(?!(?:${PRODUCT_WORDS.join('|')})(?![${LETTER}]))(?:(?!\\s[-–]\\s).)+?\\s+[-–]\\s+(?:${CARD_TYPES.join('|')})(?![${LETTER}])`,
   'gi'
 );
-// "ZOMBIE 68 Karte", "VILLAGER 8 Card": a name, a number, then the singular "Karte" or "Card".
-// The plural ("6 Karten", "6 Cards") is a count.
-const NAME_NUMBER_CARD_PATTERN = new RegExp(
-  `(?<![${LETTER}\\d])([${LETTER}]+)\\s+(\\d{1,3})\\s+(?:Karte|Card)(?![${LETTER}])`,
-  'gi'
-);
-// Words before a number that make it a series number or a count, not a card number.
-const NOT_A_NAME = new Set([
-  'serie',
-  'series',
-  'staffel',
-  'season',
-  'inkl',
-  'incl',
-  'inklusive',
-  'including',
-  'plus',
-  'mit',
-  'with',
-  'und',
-  'and',
-  'je',
-  'nur',
-  'ab',
-  'x',
-  'ca',
-  'über',
-  'set',
-  'lot',
-]);
 
 /**
- * True when a title can name a series 3 card: it names series 3 ("Serie 3", "On Fire"), names
- * no other series (a lot mixing series 1 or 2 is ambiguous), and is not a listing to pick
- * cards from or a number range ("Einzelkarten 1 - 228 zum aussuchen"): a range is not stock.
+ * Card name words that may stand right before "N Karte" (`ULTRA RARE ZOMBIE 68 Karte`): the
+ * characters and mobs of the series 3 card names in the 2026-11-18 probe. An allow-list, so a
+ * pack or count word (`Booster 5 Karte`, `Holo 3 Karte`) never reads as a card number.
  */
-function isSeries3Offer(title: string): boolean {
-  return (
-    SERIES_3_PATTERN.test(title) &&
-    !SERIES_1_2_PATTERN.test(title) &&
-    !MULTI_PICK_PATTERN.test(title) &&
-    !RANGE_PATTERN.test(title)
-  );
+export const CARD_NAME_WORDS: readonly string[] = [
+  'Adventurer',
+  'Alex',
+  'Armorsmith',
+  'Bats',
+  'Bear',
+  'Bees',
+  'Blaze',
+  'Breeze',
+  'Camel',
+  'Cat',
+  'Cow',
+  'Creeper',
+  'Cube',
+  'Dragon',
+  'Efe',
+  'Enderman',
+  'Ghast',
+  'Handler',
+  'Hoodie',
+  'Horseman',
+  'Husk',
+  'Illager',
+  'Knight',
+  'Mooshroom',
+  'Moobloom',
+  'Ocelot',
+  'Parrot',
+  'Parrots',
+  'Phantoms',
+  'Piglin',
+  'Piglins',
+  'Pigs',
+  'Pillager',
+  'Rabbits',
+  'Skeleton',
+  'Slimes',
+  'Sniffer',
+  'Spiders',
+  'Squid',
+  'Steve',
+  'Strider',
+  'Sunny',
+  'Tamer',
+  'Villager',
+  'Warden',
+  'Warrior',
+  'Witch',
+  'Wither',
+  'Wolf',
+  'Zombie',
+];
+// "ZOMBIE 68 Karte", "VILLAGER 8 Card": a card name word, a number, then the singular "Karte"
+// or "Card". The plural ("6 Karten", "6 Cards") is a count.
+const NAME_NUMBER_CARD_PATTERN = new RegExp(
+  `(?<![${LETTER}\\d])(?:${CARD_NAME_WORDS.join('|')})\\s+(\\d{1,3})\\s+(?:Karte|Card)(?![${LETTER}])`,
+  'gi'
+);
+
+/** A range whose first number is below its second ("1 - 228"); "228 - 1 Stück" is not one. */
+function hasRange(title: string): boolean {
+  for (const m of title.matchAll(RANGE_PATTERN)) {
+    if (Number(m[1]) < Number(m[2])) return true;
+  }
+  return false;
+}
+
+/** Why a title gives no card ids whatever it names; see titleExclusion. */
+export type TitleExclusion = 'other series' | 'no series 3' | 'pick list' | 'range';
+
+/**
+ * Why a title cannot name a series 3 card, or null when it can. It must name series 3
+ * ("Serie 3", "On Fire") and no other series (a lot mixing series 1 or 2 is ambiguous; a title
+ * without any series word may be series 1 or 2, which used the same title forms), and must not
+ * be a listing to pick cards from or name a number range ("Einzelkarten 1 - 228 zum
+ * aussuchen"): a range or a choice is not stock.
+ */
+export function titleExclusion(title: string): TitleExclusion | null {
+  if (SERIES_1_2_PATTERN.test(title)) return 'other series';
+  if (!SERIES_3_PATTERN.test(title)) return 'no series 3';
+  if (MULTI_PICK_PATTERN.test(title)) return 'pick list';
+  if (hasRange(title)) return 'range';
+  return null;
 }
 
 /**
- * Card ids named in an eBay title, only for a title that offers series 3 cards (see
- * isSeries3Offer). Prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `LE8`), `n/228`,
- * `Karten 30 - Name`, `132 - Name - Charakterkarte` and `ZOMBIE 68 Karte` count; bare numbers
+ * Card ids named in an eBay title, only for a title titleExclusion lets through. Prefixed forms
+ * (`#12`, `Nr. 12`, `Karte 12`, `LE8`), `n/228`, `132 - Name - Charakterkarte` (also after
+ * "Karten") and `ZOMBIE 68 Karte` (a card name word from CARD_NAME_WORDS) count; bare numbers
  * (`Serie 3`, `2026`) and counts (`6 Karten`) never do.
  */
 export function extractCardIdsFromTitle(title: string): CardId[] {
-  if (!isSeries3Offer(title)) return [];
+  if (titleExclusion(title) !== null) return [];
   const ids = new Set<CardId>();
   const add = (raw: string) => {
     const id = normalizeCardId(raw);
@@ -124,11 +204,8 @@ export function extractCardIdsFromTitle(title: string): CardId[] {
   for (const m of title.matchAll(PREFIXED_LIST_PATTERN)) {
     for (const num of (m[1] ?? '').match(/\d+/g) ?? []) add(num);
   }
-  for (const m of title.matchAll(KARTEN_DASH_PATTERN)) add(m[1] ?? '');
   for (const m of title.matchAll(NUMBER_NAME_TYPE_PATTERN)) add(m[1] ?? '');
-  for (const m of title.matchAll(NAME_NUMBER_CARD_PATTERN)) {
-    if (!NOT_A_NAME.has((m[1] ?? '').toLowerCase())) add(m[2] ?? '');
-  }
+  for (const m of title.matchAll(NAME_NUMBER_CARD_PATTERN)) add(m[1] ?? '');
   return [...ids].sort(compareCardIds);
 }
 
@@ -197,18 +274,14 @@ function listingUrl(item: EbayItem): string | null {
   }
 }
 
-function toListing(item: EbayItem): Listing | null {
-  const url = listingUrl(item);
-  if (!url || !item.title) return null;
+function toListing(item: EbayItem, url: string, title: string, cardIds: CardId[]): Listing {
   const isAuction = item.buyingOptions?.includes('AUCTION') ?? false;
   const endsAt = isAuction && item.itemEndDate ? Date.parse(item.itemEndDate) : Number.NaN;
   return {
     shop: 'ebay',
     url,
-    title: item.title,
-    // A listing with variations (`SELLER_DEFINED_VARIATIONS`) sells a choice of cards under one
-    // title; which of them is in stock is not in the search answer.
-    cardIds: item.itemGroupType ? [] : extractCardIdsFromTitle(item.title),
+    title,
+    cardIds,
     cardName: null,
     imageUrl: item.image?.imageUrl ?? null,
     price: totalPrice(item, isAuction),
@@ -219,11 +292,8 @@ function toListing(item: EbayItem): Listing | null {
   };
 }
 
-interface SearchResponse {
-  itemSummaries?: EbayItem[];
-  total?: number;
-  errors?: { message?: string; longMessage?: string }[];
-}
+/** Shop-controlled text in a log line, clipped. */
+const clip = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}…` : text);
 
 export function createEbayAdapter(
   opts: {
@@ -235,12 +305,18 @@ export function createEbayAdapter(
   const fetchFn = opts.fetchFn ?? fetch;
   const sleep = opts.sleep ?? realSleep;
   const delayMs = opts.delayMs ?? PAGE_DELAY_MS;
+  const basicCredential = btoa(`${opts.clientId}:${opts.clientSecret}`);
   let token: { value: string; expiresAt: number } | null = null;
 
-  /** An error body without the client secret or access token in it. */
+  /**
+   * An error body without the client secret, the Basic credential or the access token in it.
+   * An empty value is skipped: splitting on "" would put the marker between every character.
+   */
   function redact(text: string): string {
-    let out = text.split(opts.clientSecret).join('[redacted]');
-    if (token) out = out.split(token.value).join('[redacted]');
+    let out = text;
+    for (const secret of [opts.clientSecret, basicCredential, token?.value]) {
+      if (secret) out = out.split(secret).join('[redacted]');
+    }
     return out;
   }
 
@@ -304,7 +380,7 @@ export function createEbayAdapter(
     const response = await fetchFn(TOKEN_URL, {
       method: 'POST',
       headers: {
-        Authorization: `Basic ${btoa(`${opts.clientId}:${opts.clientSecret}`)}`,
+        Authorization: `Basic ${basicCredential}`,
         'Content-Type': 'application/x-www-form-urlencoded',
         'User-Agent': USER_AGENT,
       },
@@ -326,12 +402,16 @@ export function createEbayAdapter(
     return token.value;
   }
 
-  /** One page of a search; `pace` waits before every request but the first of a run. */
+  /**
+   * One page of a search; `pace` waits before every request but the first of a run. An answer
+   * that is not an object, or whose `itemSummaries` is not a list of objects or whose `total`
+   * is not a number, is a ShopLayoutError: eBay answered, but not with a search result.
+   */
   async function searchPage(
     query: string,
     offset: number,
     pace: () => Promise<void>
-  ): Promise<{ items: EbayItem[]; total: number | null }> {
+  ): Promise<{ items: EbayItem[] | null; total: number | null }> {
     const url = `${SEARCH_URL}?q=${encodeURIComponent(query)}&limit=${SEARCH_LIMIT}&offset=${offset}`;
     await pace();
     const response = await fetchFn(url, {
@@ -343,40 +423,76 @@ export function createEbayAdapter(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     if (!response.ok) throw await failure(response, url);
-    const body = await readJson<SearchResponse>(response, url);
-    if (!body.itemSummaries) {
-      const errors = (body.errors ?? []).map((e) => e.longMessage ?? e.message ?? '?');
-      if (errors.length > 0) {
+    const body = await readJson<unknown>(response, url);
+    const shapeError = (what: string) =>
+      new ShopLayoutError(
+        `eBay search "${query}" offset ${offset}: unexpected answer shape (${what})`
+      );
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      throw shapeError(body === null ? 'null' : Array.isArray(body) ? 'an array' : typeof body);
+    }
+    const { itemSummaries, total, errors } = body as Record<string, unknown>;
+    if (total !== undefined && typeof total !== 'number') throw shapeError('total is not a number');
+    if (itemSummaries === undefined) {
+      const messages = (Array.isArray(errors) ? (errors as unknown[]) : []).map((e) => {
+        const err = (typeof e === 'object' && e !== null ? e : {}) as Record<string, unknown>;
+        return [err.longMessage, err.message].find((m) => typeof m === 'string') ?? '?';
+      });
+      if (messages.length > 0) {
         throw new Error(
-          `eBay search "${query}" failed: ${redact(errors.join('; ')).slice(0, 300)}`
+          `eBay search "${query}" failed: ${redact(messages.join('; ')).slice(0, 300)}`
         );
       }
+      return { items: null, total: total ?? null };
     }
-    return {
-      items: body.itemSummaries ?? [],
-      total: typeof body.total === 'number' ? body.total : null,
-    };
+    if (
+      !Array.isArray(itemSummaries) ||
+      !itemSummaries.every((i) => typeof i === 'object' && i !== null && !Array.isArray(i))
+    ) {
+      throw shapeError('itemSummaries is not a list of items');
+    }
+    return { items: itemSummaries as EbayItem[], total: total ?? null };
   }
 
   /**
    * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. The
-   * walk ends at an empty page, at the answer's total, or (without a total) at a short page.
+   * walk ends at the answer's total (a later page without a total keeps the earlier one) or,
+   * without any total, at a short or empty page. An empty page while the total says more, or a
+   * first page with neither `itemSummaries` nor `total`, is a ShopLayoutError: a partial walk
+   * would mark the unread listings unavailable. A search cut at the cap is logged and added to
+   * `truncated`.
    */
-  async function search(query: string, pace: () => Promise<void>): Promise<EbayItem[]> {
+  async function search(
+    query: string,
+    pace: () => Promise<void>,
+    truncated: string[]
+  ): Promise<EbayItem[]> {
     const all: EbayItem[] = [];
     let total: number | null = null;
     for (let page = 0; page < MAX_PAGES_PER_QUERY; page++) {
-      const result = await searchPage(query, all.length, pace);
+      const offset = all.length;
+      const result = await searchPage(query, offset, pace);
       total = result.total ?? total;
-      all.push(...result.items);
-      if (result.items.length === 0) return all;
-      if (total !== null ? all.length >= total : result.items.length < SEARCH_LIMIT) return all;
+      const items = result.items ?? [];
+      all.push(...items);
+      if (items.length === 0) {
+        if (offset === 0 && result.items === null && result.total === null) {
+          throw new ShopLayoutError(
+            `eBay search "${query}" offset 0: answer has neither itemSummaries nor total`
+          );
+        }
+        if (total !== null && total > offset) {
+          throw new ShopLayoutError(
+            `eBay search "${query}" offset ${offset}: empty page, but the total is ${total}`
+          );
+        }
+        return all;
+      }
+      if (total !== null ? all.length >= total : items.length < SEARCH_LIMIT) return all;
     }
-    if (total === null || total > all.length) {
-      logger.warn(
-        `eBay search "${query}": ${total ?? 'more'} results, only the first ${all.length} read (${MAX_PAGES_PER_QUERY}-page cap)`
-      );
-    }
+    const note = `search "${query}": ${total ?? 'more'} results, only the first ${all.length} read (${MAX_PAGES_PER_QUERY}-page cap)`;
+    logger.warn(`eBay ${note}`);
+    truncated.push(note);
     return all;
   }
 
@@ -384,8 +500,11 @@ export function createEbayAdapter(
     id: 'ebay',
     async fetchListings(): Promise<FetchResult> {
       const byUrl = new Map<string, Listing>();
-      const skipped = new Set<string>();
-      let skippedInvalid = 0;
+      const noId = new Set<string>();
+      const excluded = new Set<string>();
+      // Invalid items by item id: every search returning the same item counts it once.
+      const invalid = new Set<string>();
+      const truncated: string[] = [];
       let itemsSeen = 0;
       let requests = 0;
       // 1500 ms between two search requests, as between two pages of a shop.
@@ -393,17 +512,34 @@ export function createEbayAdapter(
         if (requests++ > 0) await sleep(delayMs);
       };
       for (const query of EBAY_QUERIES) {
-        const items = await search(query, pace);
+        const items = await search(query, pace, truncated);
         itemsSeen += items.length;
         for (const item of items) {
-          const listing = toListing(item);
-          if (!listing) {
-            skippedInvalid++;
+          const url = listingUrl(item);
+          const title = item.title;
+          if (!url || !title) {
+            // Without any id, the item's own JSON: the same item from two searches is equal.
+            invalid.add(
+              item.itemId ?? item.legacyItemId ?? item.itemWebUrl ?? JSON.stringify(item)
+            );
             continue;
           }
-          if (byUrl.has(listing.url) || skipped.has(listing.url)) continue;
-          if (listing.cardIds.length === 0) skipped.add(listing.url);
-          else byUrl.set(listing.url, listing);
+          if (byUrl.has(url) || noId.has(url) || excluded.has(url)) continue;
+          // A listing with variations (`SELLER_DEFINED_VARIATIONS`) sells a choice of cards
+          // under one title; which of them is in stock is not in the search answer.
+          const reason = item.itemGroupType ? 'variations' : titleExclusion(title);
+          if (reason) {
+            excluded.add(url);
+            logger.debug(`eBay: skipped "${clip(title)}" (${reason})`);
+            continue;
+          }
+          const cardIds = extractCardIdsFromTitle(title);
+          if (cardIds.length === 0) {
+            noId.add(url);
+            logger.debug(`eBay: skipped "${clip(title)}" (no card id)`);
+            continue;
+          }
+          byUrl.set(url, toListing(item, url, title, cardIds));
         }
       }
       // Same rule as the shops: an answer with nothing in it is an API or query problem,
@@ -411,7 +547,13 @@ export function createEbayAdapter(
       if (itemsSeen === 0) {
         throw new ShopLayoutError(`eBay: all ${EBAY_QUERIES.length} searches returned no items`);
       }
-      return { listings: [...byUrl.values()], skippedNoId: skipped.size, skippedInvalid };
+      return {
+        listings: [...byUrl.values()],
+        skippedNoId: noId.size,
+        skippedExcluded: excluded.size,
+        skippedInvalid: invalid.size,
+        ...(truncated.length > 0 ? { truncated } : {}),
+      };
     },
   };
 }

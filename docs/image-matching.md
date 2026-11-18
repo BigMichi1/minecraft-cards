@@ -82,7 +82,10 @@ A spot check with the default model (`Xenova/dinov2-small`) on 40 collect-it lis
 | same card  | 0.729 | 0.847  | 0.930 | 38 of 40         |
 | other card | 0.145 | 0.534  | 0.814 | 2 of 40          |
 
-This is close to the blue-ocean measurement, so the threshold stays at 0.78. About 5 % of unconfirmed matches would still show as "picture matches". That is somewhat more than with blue-ocean, but each case is still shown with the picture so the user can check it.
+At 0.78, 2 of 40 wrong-card pairs (5 %; blue-ocean 6 of 203, about 3 %) would show as "picture
+matches", and 2 of 40 genuine matches (5 %; blue-ocean 4 of 203, about 2 %) would show as
+unconfirmed. Both rates are small, and measured on only 40 pairs, so the threshold stays at 0.78.
+The alert shows the listing picture, so the user can still spot a wrong card.
 
 ## Data quality finding
 

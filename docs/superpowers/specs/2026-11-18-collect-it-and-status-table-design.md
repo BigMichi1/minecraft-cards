@@ -19,11 +19,17 @@ across) it shows at a glance where a card can be bought.
   (the base card #12). How LE and XXL cards are titled is still unknown. The builder checks the
   fixtures: map them if they are present; otherwise skip a title whose id cannot be read and count
   it as skipped, as the other adapters do.
+  - Outcome (2026-11-18): LE cards are titled `LE01 - …` (→ `LE1`); there is no XXL card in the
+    category. Because collect-it hides sold-out cards, a title whose id cannot be read is a
+    `ShopLayoutError`, not a skipped count.
 - Card name: the text after the number, cut before the first " - ".
 - Stock: from the listing page if it shows availability per product. Otherwise use the product page's
   schema.org `availability` (`InStock` / `OutOfStock`), but only when the listing page lacks it, and
   only for cards that someone wants, so a run does not request 235 product pages. The builder decides
   from the fixtures, preferring the listing page.
+  - Outcome (2026-11-18): stock is read from the listing page's schema.org `availability`; no
+    product pages are requested. Sold-out cards are hidden from the category, so a card that sells
+    out vanishes.
 - Price: euro cents from the page (`0,55 €` → 55).
 - Picture: the product image URL. The image host is added to the matcher's allow-list.
 - Matching: collect-it is not a reference shop. Its single-card listings start `pending` and are

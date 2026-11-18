@@ -97,14 +97,28 @@ const logger = winston.createLogger({
 winston.addColors(customLevels.colors);
 
 /**
- * Log `<text>: <message>` and, for an Error, its stack on the following lines. Use this
- * instead of `logger.error('text:', value)`, which only works for Error values: winston
- * appends nothing readable for a string or other thrown value.
+ * Log `<text>: <message>` and, for an Error, its stack on the following lines and its `cause`
+ * (if any) as metadata. Use this instead of `logger.error('text:', value)`, which only works
+ * for Error values: winston appends nothing readable for a string or other thrown value.
  */
 export function logError(text: string, error: unknown, level: 'error' | 'warn' = 'error'): void {
   const message = error instanceof Error ? error.message : String(error);
-  const meta = error instanceof Error && error.stack ? { stack: error.stack } : {};
+  const meta: Record<string, unknown> =
+    error instanceof Error && error.stack ? { stack: error.stack } : {};
+  if (error instanceof Error && error.cause !== undefined) meta.cause = describeCause(error.cause);
   logger.log(level, `${text}: ${message}`, meta);
+}
+
+/** What a wrapped error's `cause` was: name, message, code (a Node or Bun error code) and stack. */
+function describeCause(cause: unknown): Record<string, unknown> {
+  if (!(cause instanceof Error)) return { message: String(cause) };
+  const code = (cause as { code?: unknown }).code;
+  return {
+    name: cause.name,
+    message: cause.message,
+    ...(code !== undefined ? { code } : {}),
+    ...(cause.stack ? { stack: cause.stack } : {}),
+  };
 }
 
 export default logger;

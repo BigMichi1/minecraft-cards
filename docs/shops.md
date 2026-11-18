@@ -28,11 +28,16 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   the earlier one) or, without any `total`, until a short or empty page; at most 5 pages (1000
   results) per query. 1500 ms between two search requests, as between two shop pages.
 - **Errors**: a failing page is a shop error, like a failing shop page. So is a partial walk,
-  because the unread listings would be marked unavailable: an empty later page while the `total`
-  says more, a first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty
+  because the unread listings would be marked unavailable: a walk that ends (an empty later page)
+  further below the `total` than its tolerance, a first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty
   result), and an answer of the wrong shape (not an object, `itemSummaries` not a list of items,
   `total` not a number) are `ShopLayoutError`s naming the query and the offset. All searches
   together returning no item is a `ShopLayoutError` as before.
+- **Total tolerance**: eBay's `total` is an estimate, so a walk may end up to
+  max(5, ceil(2 % of the total)) items short of it (455 announced, 450 delivered). That gap is
+  accepted with a warning naming the query, the total and the count read, and no admin alert; a
+  larger gap (600 announced, 400 delivered) stays a `ShopLayoutError`. At the page cap, a gap
+  within the tolerance also counts as complete; a larger one is a cut search (below).
 - **Page cap**: a search cut at the cap logs a warning and is reported in `FetchResult.truncated`;
   the runner sends a throttled admin alert (`shop-truncated:ebay`, at most once a day), and
   `/admin status` shows the number of cut searches.
@@ -54,7 +59,22 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     lists such as `#12, #45 und 107`.
 
   Counts are not ids: `6 Karten`, `21 Packs à 6 Karten`, `193 verschiedene Karten`,
-  `incl. 1 special Card`, and the series number in `Serie 3 Karte`.
+  `incl. 1 special Card`, and the series number in `Serie 3 Karte`. Every number after a prefix
+  (the first one too) and every LE/XXL number is refused when a decimal (`1,50`) or a count or
+  price word follows it: the product words (`PRODUCT_WORDS`: Album, Blister, Booster, Box,
+  Bundle, Cards, Display, Foil, Holo, Karten, Konvolut, Lot, Mappe, Multipack, Pack, Packs,
+  Paket, Sammlung, Set, Starter, Stk, Stück) and `€`, EUR, Euro, Stueck, pcs, x, weitere,
+  Bestseller, Händler, gratis, dazu. So `Karte 5 Stück`, `Karte 2 €`, `#1 Bestseller`,
+  `LE 3 Karten` and `XXL 1 Stück` give no id. `NAME N Karte` is refused when a product word,
+  `gratis` or `dazu` follows (`Wolf 3 Card Pack`). The dash form also refuses names starting
+  with Neu, Rare, Gold, Doppel, Karte or Sammelkarten, and a number after `je` or `x`.
+
+- **Extending `CARD_NAME_WORDS`**: when a real `NAME N Karte` title is missed because its name
+  word is not in the list, take the word from that card's name in the catalog (the sammel-ente
+  name, as `/missing status` shows it), never a pack, count or variant word. Add it to
+  `CARD_NAME_WORDS` in `src/bot/shops/ebay.ts` and to the equality test in `ebay.test.ts`, and
+  add the real title to `src/test/fixtures/ebay-search.json` (without seller data) with its
+  reviewed ids in `FIXTURE_IDS`.
 
 - **Series 3 only**: ids come only from a title that names series 3 (`Serie 3`, `Series 3`,
   `Serie3`, `On Fire`) and no other series. A title naming series 1 or 2 gives no ids even when it
@@ -74,10 +94,10 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   card as `skippedNoId` ("without card number"); both are logged with their reason at debug
   level. Items without a link or title (`skippedInvalid`) are counted once per item, not once per
   search that returns them.
-- **Result**: on 2026-11-18 the adapter found 4 listings with ids before this change and 243
-  after the review round (225 distinct card ids, no bundles); 30 items were excluded (series 1
-  and 2, no series word, pick lists, ranges, variations) and 53 skipped without a card id (packs,
-  displays, boosters).
+- **Result**: on 2026-11-18 the adapter found 4 listings with ids before this change and 244
+  after the second review round (226 distinct card ids, no bundles); 31 items were excluded
+  (series 1 and 2, no series word, pick lists, ranges, variations) and 53 skipped without a card
+  id (packs, displays, boosters).
 - **Fixture**: seller fields (`seller.username`, `feedbackScore`, `feedbackPercentage`, account
   type), `itemLocation` and the other fields the adapter does not read are dropped; item ids,
   titles, prices, shipping costs, image URLs, buying options and the variation group are kept.

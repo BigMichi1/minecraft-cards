@@ -412,6 +412,32 @@ describe('createDiscordSender', () => {
       expect(alerts.map((a) => a.key)).toContain('notify-attachment-rejected');
     });
 
+    test('a 400 after a shutdown that began once the pictures were attached is not resent', async () => {
+      let shuttingDown = false;
+      const client = fakeClient({
+        rejectFiles: () => {
+          shuttingDown = true;
+          return apiError(50035, 400);
+        },
+      });
+      const alerts: string[] = [];
+      const sender = createDiscordSender(client, {
+        sleep: async () => {},
+        alert: async (key) => void alerts.push(key),
+        isShuttingDown: () => shuttingDown,
+        downloadImage: async () => JPEG,
+      });
+      const l = { ...seedListing(1), imageUrl: picture };
+      expect(await sender.send(new Map([['u1', [pending(l)]]]))).toEqual({
+        notified: 0,
+        dmFailures: 0,
+      });
+      expect(client.attempts.map((a) => a.files)).toEqual([1]);
+      expect(db.select().from(notifications).all()).toHaveLength(0);
+      expect(dmFailedAt('u1')).toBeNull();
+      expect(alerts).not.toContain('notify-attachment-rejected');
+    });
+
     test('a 5xx is not resent without pictures', async () => {
       const client = fakeClient({ rejectFiles: () => apiError(0, 503) });
       const { sender, batch } = setup(client);

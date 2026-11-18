@@ -26,6 +26,8 @@ export const MAX_ATTACHMENTS = 10;
 export const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 /** Cap of one notification picture, enforced while downloading (matching allows 10 MB). */
 export const MAX_PICTURE_BYTES = 2 * 1024 * 1024;
+/** Fewer fallbacks than this in a run never alert: one eBay 404 is not a regression. */
+export const MIN_FALLBACKS_FOR_ALERT = 2;
 
 /** Why a picture kept its URL. */
 type Fallback =
@@ -54,28 +56,48 @@ function hostOf(url: string): string {
 }
 
 /**
- * The picture state of one sender run: a download cache shared by all its messages (a reference
- * thumbnail is fetched once), each warning logged once per reason, and per-host outcomes for the
- * admin alert.
+ * The picture state of one sender run: each warning logged once per reason, per-host outcomes
+ * for the admin alert, and a download cache bounded by design. Only reference thumbnails keep
+ * their bytes (a few shared sammel-ente pictures, fetched once per run); a listing picture keeps
+ * only its failure, so a failing host is not retried in the run and no listing bytes outlive
+ * their message.
  */
 export class PictureRun {
-  private readonly downloads = new Map<string, Promise<Uint8Array | Error>>();
+  private readonly references = new Map<string, Promise<Uint8Array | Error>>();
+  private readonly failures = new Map<string, Error>();
   private readonly warned = new Set<Fallback>();
   private readonly hosts = new Map<string, HostStats>();
 
   constructor(private readonly download: DownloadFn) {}
 
-  /** The picture's bytes, or the download error; never rejects. */
-  fetch(url: string): Promise<Uint8Array | Error> {
-    let pending = this.downloads.get(url);
-    if (!pending) {
-      pending = this.download(url, MAX_PICTURE_BYTES).catch((error: unknown) => {
-        logger.warn(`notification picture ${url} not attached: ${errorMessage(error)}`);
-        return error instanceof Error ? error : new Error(errorMessage(error));
-      });
-      this.downloads.set(url, pending);
+  /** URLs whose bytes this run keeps: the reference thumbnails. */
+  retainedUrls(): string[] {
+    return [...this.references.keys()];
+  }
+
+  /** The picture's bytes, or the download error; never rejects. `reference` keeps the bytes. */
+  fetch(url: string, reference: boolean): Promise<Uint8Array | Error> {
+    if (reference) {
+      let pending = this.references.get(url);
+      if (!pending) {
+        pending = this.load(url);
+        this.references.set(url, pending);
+      }
+      return pending;
     }
-    return pending;
+    const failure = this.failures.get(url);
+    if (failure) return Promise.resolve(failure);
+    return this.load(url).then((result) => {
+      if (result instanceof Error) this.failures.set(url, result);
+      return result;
+    });
+  }
+
+  private load(url: string): Promise<Uint8Array | Error> {
+    return this.download(url, MAX_PICTURE_BYTES).catch((error: unknown) => {
+      logger.warn(`notification picture ${url} not attached: ${errorMessage(error)}`);
+      return error instanceof Error ? error : new Error(errorMessage(error));
+    });
   }
 
   /** Count one picture: attached (`fallback` undefined) or kept as URL for `fallback`. */
@@ -98,8 +120,9 @@ export class PictureRun {
   }
 
   /**
-   * The admin alert text for this run, or null. It fires when more than half of the counted
-   * pictures fell back, or when every picture of a host did. Counted are attached pictures and
+   * The admin alert text for this run, or null. It fires when at least MIN_FALLBACKS_FOR_ALERT
+   * counted pictures fell back and either more than half of all counted pictures fell back or
+   * every picture of a host did. Counted are attached pictures and
    * those that fell back for their host (not allowed, download failed, not a picture); the
    * attachment limit and the byte budget are about the message and are only logged.
    */
@@ -112,7 +135,7 @@ export class PictureRun {
       failed += stats.failed;
       if (stats.failed > 0 && stats.failed === stats.total) hostDown = true;
     }
-    if (failed === 0 || (!hostDown && failed * 2 <= total)) return null;
+    if (failed < MIN_FALLBACKS_FOR_ALERT || (!hostDown && failed * 2 <= total)) return null;
     const parts = [...this.hosts.entries()]
       .filter(([, stats]) => stats.failed > 0)
       .map(([host, stats]) => {
@@ -179,7 +202,7 @@ async function attachAll(
   });
   // Start every download of the message at once; results are assigned in slot order below.
   for (const slot of slots) {
-    if (allowedImageUrl(slot.url)) slot.bytes = run.fetch(slot.url);
+    if (allowedImageUrl(slot.url)) slot.bytes = run.fetch(slot.url, slot.kind === 'thumbnail');
   }
   const results = await Promise.all(slots.map((slot) => slot.bytes));
 

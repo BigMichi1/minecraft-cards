@@ -8,6 +8,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
   MAX_PICTURE_BYTES,
+  MIN_FALLBACKS_FOR_ALERT,
   PictureRun,
   pictureExtension,
   type DownloadFn,
@@ -22,6 +23,7 @@ const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
 const COLLECT_IT =
   'https://www.collect-it.de/media/image/product/623998/md/14-alex-charakterkarte-lava-serie-3.jpg';
+const COLLECT_IT_2 = 'https://www.collect-it.de/media/image/product/2/md/15.jpg';
 const REFERENCE = 'https://shop-sammel-ente.de/media/12.png';
 
 function embed(image?: string, thumbnail?: string): EmbedBuilder {
@@ -216,6 +218,21 @@ describe('attachPictures', () => {
     expect(files(b).map((f) => f.name)).toEqual(['reference-1.png']);
   });
 
+  test('a run keeps the bytes of reference thumbnails only, never of listing pictures', async () => {
+    const { download, calls } = downloader({
+      [COLLECT_IT]: JPEG,
+      [COLLECT_IT_2]: new Error('HTTP 403'),
+      [REFERENCE]: PNG,
+    });
+    const run = new PictureRun(download);
+    await attachPictures({ embeds: [embed(COLLECT_IT, REFERENCE), embed(COLLECT_IT_2)] }, run);
+    expect(run.retainedUrls()).toEqual([REFERENCE]);
+    // A listing picture that worked is fetched again; one that failed is not retried this run.
+    await attachPictures({ embeds: [embed(COLLECT_IT), embed(COLLECT_IT_2)] }, run);
+    expect(calls).toEqual([COLLECT_IT, REFERENCE, COLLECT_IT_2, COLLECT_IT]);
+    expect(run.retainedUrls()).toEqual([REFERENCE]);
+  });
+
   describe('warnings once per run and reason', () => {
     function warnings(run: () => Promise<unknown>) {
       const warn = spyOn(logger, 'warn');
@@ -279,11 +296,13 @@ describe('attachPictures', () => {
         [ok(2)]: JPEG,
         [ok(3)]: JPEG,
         [COLLECT_IT]: new Error('HTTP 403'),
+        [COLLECT_IT_2]: new Error('HTTP 403'),
       });
       const run = new PictureRun(download);
-      await attachPictures({ embeds: [ok(1), ok(2), ok(3), COLLECT_IT].map((u) => embed(u)) }, run);
+      const urls = [ok(1), ok(2), ok(3), COLLECT_IT, COLLECT_IT_2];
+      await attachPictures({ embeds: urls.map((u) => embed(u)) }, run);
       const text = run.alertText();
-      expect(text).toContain('www.collect-it.de 1 of 1');
+      expect(text).toContain('www.collect-it.de 2 of 2');
       expect(text).toContain('HTTP 403');
       expect(text).not.toContain('i.ebayimg.com');
     });
@@ -323,7 +342,21 @@ describe('attachPictures', () => {
       await attachPictures({ embeds: urls.map((u) => embed(u, REFERENCE)) }, run);
       expect(run.alertText()).toBeNull();
       await attachPictures({ embeds: [embed('https://evil.example/1.jpg')] }, run);
-      expect(run.alertText()).toContain('evil.example 1 of 1 (host not allowed)');
+      await attachPictures({ embeds: [embed('https://evil.example/2.jpg')] }, run);
+      expect(run.alertText()).toContain('evil.example 2 of 2 (host not allowed)');
+    });
+
+    test(`a single fallback never alerts: 1 of 1 is quiet, 2 of 2 alerts`, async () => {
+      expect(MIN_FALLBACKS_FOR_ALERT).toBe(2);
+      const { download } = downloader({
+        [ok(1)]: new Error('HTTP 404'),
+        [ok(2)]: new Error('HTTP 404'),
+      });
+      const run = new PictureRun(download);
+      await attachPictures({ embeds: [embed(ok(1))] }, run);
+      expect(run.alertText()).toBeNull();
+      await attachPictures({ embeds: [embed(ok(2))] }, run);
+      expect(run.alertText()).toContain('i.ebayimg.com 2 of 2');
     });
   });
 

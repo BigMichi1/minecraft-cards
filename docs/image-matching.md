@@ -140,15 +140,17 @@ User-Agent, here capped at 2 MB per picture while downloading) and attaches them
 points at `attachment://picture-<n>.<ext>` or `attachment://reference-<n>.<ext>` (n is the
 embed's position, the extension comes from the file's first bytes). Discord's media proxy shows
 no collect-it.de pictures, most likely because the shop blocks datacenter IPs. A message's
-downloads run in parallel, and one check fetches each URL once, so a shared reference is
-downloaded once. Nothing is downloaded while the bot shuts down.
+downloads run in parallel. One check keeps the bytes of reference thumbnails only, so a shared
+reference is downloaded once; a listing picture keeps only a failure, so a failing picture is
+not retried within the check, and no listing bytes are kept after their message. Nothing is downloaded while the bot shuts down.
 
 A picture on another host, a failed download, a file that is not JPEG / PNG / GIF / WebP, more
 than 10 attachments or more than 8 MB per message keep the URL (`src/bot/notify/pictures.ts`),
 so an alert is never lost because of a picture. Each of these is logged at warn (host not
 allowed, attachment limit and byte budget once per check). The admin gets a throttled alert
-(`notify-pictures`) naming the hosts and reasons when, in one check, more than half of the
-pictures fell back or every picture of a host did; the attachment limit and the byte budget do
+(`notify-pictures`) naming the hosts and reasons when, in one check, at least 2 pictures fell
+back (`MIN_FALLBACKS_FOR_ALERT`) and either more than half of the pictures fell back or every
+picture of a host did; the attachment limit and the byte budget do
 not count toward it. If Discord rejects a message with pictures as a bad payload (HTTP 400 or
 413 other than closed DMs, e.g. 40005, 50035, 50045), the sender logs it, alerts the admin
 (`notify-attachment-rejected`) and sends the message once more without pictures; it is recorded

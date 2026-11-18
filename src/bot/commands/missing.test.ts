@@ -157,7 +157,11 @@ describe('/missing', () => {
     await execute(fakeInteraction('u1', 'status'));
     expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
     expect(lastReply().content).toContain(`Your missing cards (1) · last check <t:${T / 1000}:R>`);
-    expect(lastReply().content).toContain('#12: sammel-ente 0,55 € in stock');
+    expect(lastReply().content).toMatch(/\n#12 +0,55 €¹ +\? +n\/a +n\/a\n/);
+    const embed = (lastReply().embeds![0] as { toJSON(): { description?: string } }).toJSON();
+    expect(embed.description).toBe(
+      '¹ [#12 · sammel-ente · 0,55 €](https://shop-sammel-ente.de/x/MNC-03XX-BAS-0012)'
+    );
   });
 
   test('status on an empty list', async () => {
@@ -204,9 +208,8 @@ describe('/missing', () => {
       shops: { 'sammel-ente': { listings: 1 }, 'blue-ocean': { listings: 0, error: 'down' } },
     });
     await execute(fakeInteraction('u1', 'status'));
-    expect(lastReply().content).toContain(
-      `#12 Squid: blue-ocean 0,90 € in stock (picture unconfirmed) (as of <t:${Math.floor(older / 1000)}:R>)`
-    );
+    expect(lastReply().content).toContain(`data as of <t:${Math.floor(older / 1000)}:R>`);
+    expect(lastReply().content).toMatch(/\n#12 Squid +– +0,90 € ⏱⚠¹ +n\/a +n\/a\n/);
   });
 
   test('status shows a shop that is not enabled and skips its listings', async () => {
@@ -221,10 +224,11 @@ describe('/missing', () => {
     });
     await execute(fakeInteraction('u1', 'status'));
     expect(lastReply().content).toContain('⚪ eBay: not enabled');
-    expect(lastReply().content).toContain('#12: not listed in any shop');
+    expect(lastReply().content).toMatch(/\n#12 +– +– +n\/a +n\/a\n/);
+    expect(lastReply().embeds).toEqual([]);
     await executeWith(fakeInteraction('u1', 'status'), ALL_SHOPS);
     expect(lastReply().content).toContain('⚠️ eBay: not checked');
-    expect(lastReply().content).toContain('#12: eBay unknown (not checked)');
+    expect(lastReply().content).toMatch(/\n#12 +– +– +n\/a +\?\n/);
   });
 
   test('status that fails has its own error text and logs the subcommand', async () => {

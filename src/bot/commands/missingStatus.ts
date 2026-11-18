@@ -1,10 +1,11 @@
+import { EmbedBuilder } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import type { RunSummary } from '../check/runner';
 import type { StoredListing } from '../database/listingManager';
 import { LAST_SUCCESS_WINDOW_MS, type LatestRun } from '../database/runManager';
-import { formatPrice, SHOP_NAMES } from '../notify/messages';
+import { formatPrice, SHOP_NAMES, validUrl } from '../notify/messages';
 import { SHOP_IDS, type ShopId } from '../shops/types';
-import { DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
+import { clipText, DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
 
 /** Everything `/missing status` shows; gathered by the command, formatted here without I/O. */
 export interface StatusInput {
@@ -27,9 +28,40 @@ export interface StatusInput {
   now: number;
 }
 
+/** What `/missing status` replies: the message text and at most one embed with the links. */
+export interface StatusReply {
+  content: string;
+  embeds: EmbedBuilder[];
+}
+
+/** Discord's limit for an embed description. */
+export const EMBED_DESCRIPTION_LIMIT = 4096;
+
 const EMPTY_LIST = 'You have no missing cards on your list.';
 const MAX_ERROR = 100;
 const WINDOW_DAYS = LAST_SUCCESS_WINDOW_MS / (24 * 60 * 60 * 1000);
+/** A table row aims at this width (PC); card names are shortened to keep it. */
+const ROW_WIDTH = 84;
+/** The card column is never narrower than this, even with many wide shop columns. */
+const MIN_CARD_WIDTH = 14;
+const GAP = '  ';
+const FENCE = '```';
+/** The longest card label (`#id name`) a link text carries. */
+const MAX_LINK_LABEL = 60;
+const SUPERSCRIPT_DIGITS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+
+type Marker = '⏱' | '⚠' | '+';
+/** Markers in the order they are written in a cell and in the legend. */
+const MARKERS: readonly { marker: Marker; meaning: string }[] = [
+  { marker: '⏱', meaning: 'older than the last check' },
+  { marker: '⚠', meaning: 'picture unconfirmed' },
+  { marker: '+', meaning: 'bundle' },
+];
+
+/** A reference number in superscript digits: 1 → ¹, 10 → ¹⁰. */
+export function superscript(n: number): string {
+  return [...String(n)].map((d) => SUPERSCRIPT_DIGITS[Number(d)]).join('');
+}
 
 function seconds(ms: number): number {
   return Math.floor(ms / 1000);
@@ -99,65 +131,27 @@ function best(candidates: StoredListing[], last: RunSummary, now: number): Store
   );
 }
 
+/**
+ * The latest check of one shop. A shop whose cells may be older than the last check (its check
+ * failed or did not run) also says how old: its last success within the window, or none.
+ */
 function shopLine(shop: ShopId, input: StatusInput, last: RunSummary): string {
   const name = SHOP_NAMES[shop];
   if (!input.enabledShops.includes(shop)) return `⚪ ${name}: not enabled`;
   const entry = last.shops[shop];
-  if (entry === undefined) return `⚠️ ${name}: not checked`;
-  if (entry.error !== undefined) {
-    return `❌ ${name}: error <t:${seconds(last.startedAt)}:R> – ${entry.error.slice(0, MAX_ERROR)}`;
-  }
-  return `✅ ${name}: ${entry.listings} listings`;
-}
-
-function entryText(l: StoredListing, last: RunSummary, now: number): string {
-  const state = !l.available
-    ? 'sold out'
-    : ended(l, now)
-      ? 'auction ended'
-      : l.onHold
-        ? 'paused (reported)'
-        : `${l.price ? `${formatPrice(l.price)} ` : ''}in stock`;
-  const picture =
-    l.cardIds.length > 1 ? ' (bundle)' : pictureBacked(l) ? '' : ' (picture unconfirmed)';
-  const seen = unseen(l, last) ? ' (not seen in last check)' : '';
-  return `${SHOP_NAMES[l.shop]} ${state}${picture}${seen}`;
-}
-
-/**
- * For a shop whose latest check failed or did not run at all: how old the shown listing is, the
- * earlier of the shop's last success and when a check last returned the listing. Relative
- * (`:R`), so data from days ago never reads as today's.
- */
-function staleness(l: StoredListing, input: StatusInput, last: RunSummary): string {
-  if (!needsLastSuccess(last, l.shop, input.enabledShops)) return '';
+  const state =
+    entry === undefined
+      ? `⚠️ ${name}: not checked`
+      : entry.error !== undefined
+        ? `❌ ${name}: error <t:${seconds(last.startedAt)}:R> – ${entry.error.slice(0, MAX_ERROR)}`
+        : `✅ ${name}: ${entry.listings} listings`;
+  if (!needsLastSuccess(last, shop, input.enabledShops)) return state;
   // buildStatusReply checked that every shop needing it was looked up, so undefined cannot
   // occur here; only null (none in the window) is left.
-  const success = input.lastSuccess[l.shop]!;
+  const success = input.lastSuccess[shop]!;
   return success === null
-    ? ` (no successful check in ${WINDOW_DAYS} days)`
-    : ` (as of <t:${seconds(Math.min(success, l.lastSeenAt))}:R>)`;
-}
-
-function cardLine(card: CardId, input: StatusInput): string {
-  const name = input.names.get(card);
-  const label = `#${card}${name ? ` ${name}` : ''}`;
-  const last = input.latest.summary;
-  if (!last) return `${label}: ${input.latest.newerUnreadable ? 'unknown' : 'not checked yet'}`;
-  const parts: string[] = [];
-  for (const shop of SHOP_IDS) {
-    if (!input.enabledShops.includes(shop)) continue;
-    const here = input.listings.filter((l) => l.shop === shop && l.cardIds.includes(card));
-    if (here.length > 0) {
-      const shown = best(here, last, input.now);
-      parts.push(entryText(shown, last, input.now) + staleness(shown, input, last));
-    } else if (!succeeded(last, shop)) {
-      // Without a successful check there is no telling whether the shop lists the card.
-      const why = last.shops[shop] === undefined ? 'not checked' : 'check failed';
-      parts.push(`${SHOP_NAMES[shop]} unknown (${why})`);
-    }
-  }
-  return `${label}: ${parts.length > 0 ? parts.join(' · ') : 'not listed in any shop'}`;
+    ? `${state} · no successful check in ${WINDOW_DAYS} days`
+    : `${state} · data as of <t:${seconds(success)}:R>`;
 }
 
 function headLines(input: StatusInput): string[] {
@@ -182,14 +176,169 @@ function headLines(input: StatusInput): string[] {
   return [...head, '', ...SHOP_IDS.map((shop) => shopLine(shop, input, last))];
 }
 
+/** One table cell; `link` is set only for an in-stock cell whose listing URL is valid. */
+interface Cell {
+  value: string;
+  markers: Set<Marker>;
+  link?: { url: string; listing: StoredListing };
+}
+
+function cellFor(card: CardId, shop: ShopId, input: StatusInput): Cell {
+  const markers = new Set<Marker>();
+  const last = input.latest.summary;
+  if (!input.enabledShops.includes(shop)) return { value: 'n/a', markers };
+  // Without a readable run there is no telling what any shop lists.
+  if (!last) return { value: '?', markers };
+  const here = input.listings.filter((l) => l.shop === shop && l.cardIds.includes(card));
+  if (here.length === 0) {
+    // Without a successful check there is no telling whether the shop lists the card.
+    return { value: succeeded(last, shop) ? '–' : '?', markers };
+  }
+  const l = best(here, last, input.now);
+  if (unseen(l, last) || needsLastSuccess(last, shop, input.enabledShops)) markers.add('⏱');
+  if (l.cardIds.length > 1) markers.add('+');
+  else if (!pictureBacked(l)) markers.add('⚠');
+  if (!l.available) return { value: 'sold out', markers };
+  if (ended(l, input.now)) return { value: 'ended', markers };
+  if (l.onHold) return { value: 'paused', markers };
+  const value = l.price ? formatPrice(l.price) : 'in stock';
+  const url = validUrl(l.url);
+  return url ? { value, markers, link: { url, listing: l } } : { value, markers };
+}
+
+/** The value, a space and its markers when it has any, then the reference number if linked. */
+function cellText(cell: Cell, ref: number | undefined): string {
+  const marks = MARKERS.filter((m) => cell.markers.has(m.marker))
+    .map((m) => m.marker)
+    .join('');
+  return `${cell.value}${marks ? ` ${marks}` : ''}${ref === undefined ? '' : superscript(ref)}`;
+}
+
+interface Label {
+  id: string;
+  full: string;
+}
+
+/** `#id name`, the name on one line and without backticks that could close the code block. */
+function cardLabel(card: CardId, input: StatusInput): Label {
+  const name = (input.names.get(card) ?? '').replace(/`/g, "'").replace(/\s+/g, ' ').trim();
+  return { id: `#${card}`, full: name ? `#${card} ${name}` : `#${card}` };
+}
+
+/** The label cut to `width` with `…`, never into the `#id`. */
+function shorten(label: Label, width: number): string {
+  return clipText(label.full, Math.max(width, label.id.length + 2));
+}
+
+function escapeLinkText(text: string): string {
+  return text.replace(/[[\]\\]/g, '\\$&');
+}
+
+/** A URL safe inside the `(...)` of a markdown link: brackets and whitespace percent-encoded. */
+function escapeLinkUrl(url: string): string {
+  // encodeURIComponent leaves brackets as they are.
+  return url.replace(/[()\s]/g, (c) =>
+    c === '(' ? '%28' : c === ')' ? '%29' : encodeURIComponent(c)
+  );
+}
+
+function linkLine(ref: number, label: Label, value: string, url: string, l: StoredListing) {
+  const bundle = l.cardIds.length > 1 ? ' (bundle)' : '';
+  const text = `${clipText(label.full, MAX_LINK_LABEL)} · ${SHOP_NAMES[l.shop]} · ${value}${bundle}`;
+  return `${superscript(ref)} [${escapeLinkText(text)}](${escapeLinkUrl(url)})`;
+}
+
+interface Row {
+  text: string;
+  markers: Set<Marker>;
+  /** The link lines of this row's numbered cells, in number order. */
+  links: string[];
+}
+
 /**
- * The `/missing status` reply: the latest check per shop, then each missing card with what every
- * shop showed for it. Whole card lines are kept while the reply fits Discord's message limit; the
- * rest is counted as "… and K more cards". There is no hard cut: the head is a few lines with
- * every error cut to MAX_ERROR (well under the limit), so at worst every card line is counted.
+ * The header row and one row per card. Each shop column is as wide as its widest cell or name;
+ * the card column takes what is left of ROW_WIDTH (at least MIN_CARD_WIDTH) and longer labels
+ * are shortened. Numbers run row by row, left to right, over the linked cells only.
  */
-export function buildStatusReply(input: StatusInput): string {
-  if (input.cards.length === 0) return EMPTY_LIST;
+function buildTable(input: StatusInput): { header: string; rows: Row[] } {
+  let ref = 0;
+  const built = input.cards.map((card) => {
+    const label = cardLabel(card, input);
+    const links: string[] = [];
+    const markers = new Set<Marker>();
+    const texts = SHOP_IDS.map((shop) => {
+      const cell = cellFor(card, shop, input);
+      for (const m of cell.markers) markers.add(m);
+      if (!cell.link) return cellText(cell, undefined);
+      ref++;
+      links.push(linkLine(ref, label, cell.value, cell.link.url, cell.link.listing));
+      return cellText(cell, ref);
+    });
+    return { label, texts, markers, links };
+  });
+  const widths = SHOP_IDS.map((shop, i) =>
+    Math.max(SHOP_NAMES[shop].length, ...built.map((b) => b.texts[i]!.length))
+  );
+  const shopsWidth = widths.reduce((sum, w) => sum + GAP.length + w, 0);
+  const cardWidth = Math.min(
+    Math.max('Card'.length, ...built.map((b) => b.label.full.length)),
+    Math.max(MIN_CARD_WIDTH, ROW_WIDTH - shopsWidth)
+  );
+  const line = (cells: string[]) =>
+    cells
+      .map((text, i) => text.padEnd(i === 0 ? cardWidth : widths[i - 1]!))
+      .join(GAP)
+      .trimEnd();
+  return {
+    header: line(['Card', ...SHOP_IDS.map((shop) => SHOP_NAMES[shop])]),
+    rows: built.map((b) => ({
+      text: line([shorten(b.label, cardWidth), ...b.texts]),
+      markers: b.markers,
+      links: b.links,
+    })),
+  };
+}
+
+/** The markers that appear in `rows`, explained; null when none does. */
+function legendLine(rows: Row[]): string | null {
+  const present = MARKERS.filter((m) => rows.some((r) => r.markers.has(m.marker)));
+  if (present.length === 0) return null;
+  return `Legend: ${present.map((m) => `${m.marker} ${m.meaning}`).join(' · ')}`;
+}
+
+/** The message with the first `keep` rows; the legend covers only the rows shown. */
+function render(head: string[], header: string, rows: Row[], keep: number): string {
+  const kept = rows.slice(0, keep);
+  const lines = [...head, ''];
+  if (keep > 0) lines.push(FENCE, header, ...kept.map((r) => r.text), FENCE);
+  if (keep < rows.length) lines.push(`… and ${rows.length - keep} more cards`);
+  const legend = legendLine(kept);
+  if (legend) lines.push(legend);
+  return lines.join('\n');
+}
+
+/** Whole link lines while they fit an embed description; the rest counted. */
+function linkList(lines: string[]): string {
+  const full = lines.join('\n');
+  if (full.length <= EMBED_DESCRIPTION_LIMIT) return full;
+  for (let keep = lines.length - 1; keep > 0; keep--) {
+    const cut = [...lines.slice(0, keep), `… and ${lines.length - keep} more links`].join('\n');
+    if (cut.length <= EMBED_DESCRIPTION_LIMIT) return cut;
+  }
+  return `… and ${lines.length} more links`;
+}
+
+/**
+ * The `/missing status` reply: the latest check per shop, then a code-block table of the missing
+ * cards (rows) by shop (columns), a legend of the markers shown, and an embed whose description
+ * links every numbered in-stock cell. Whole rows are kept while the message fits Discord's 2000
+ * characters, the rest counted as "… and K more cards" after the block; links of rows left out
+ * are dropped, and links over 4096 characters are counted as "… and N more links". There is no
+ * hard cut: the head is a few lines with every error cut to MAX_ERROR (well under the limit), so
+ * at worst every row is counted.
+ */
+export function buildStatusReply(input: StatusInput): StatusReply {
+  if (input.cards.length === 0) return { content: EMPTY_LIST, embeds: [] };
   for (const shop of SHOP_IDS) {
     if (
       needsLastSuccess(input.latest.summary, shop, input.enabledShops) &&
@@ -200,14 +349,14 @@ export function buildStatusReply(input: StatusInput): string {
     }
   }
   const head = headLines(input);
-  const lines = input.cards.map((card) => cardLine(card, input));
-
-  const text = [...head, '', ...lines].join('\n');
-  if (text.length <= DISCORD_MESSAGE_LIMIT) return text;
-  for (let keep = lines.length - 1; keep > 0; keep--) {
-    const cut = [...head, '', ...lines.slice(0, keep), `… and ${lines.length - keep} more cards`];
-    const candidate = cut.join('\n');
-    if (candidate.length <= DISCORD_MESSAGE_LIMIT) return candidate;
+  const { header, rows } = buildTable(input);
+  let keep = rows.length;
+  let content = render(head, header, rows, keep);
+  while (keep > 0 && content.length > DISCORD_MESSAGE_LIMIT) {
+    keep--;
+    content = render(head, header, rows, keep);
   }
-  return [...head, '', `… and ${lines.length} more cards`].join('\n');
+  const links = rows.slice(0, keep).flatMap((r) => r.links);
+  const embeds = links.length > 0 ? [new EmbedBuilder().setDescription(linkList(links))] : [];
+  return { content, embeds };
 }

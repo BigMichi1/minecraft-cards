@@ -62,6 +62,29 @@ across) it shows at a glance where a card can be bought.
   "… and N more cards" outside the block.
 - The design is for PC width. Mobile wraps; that is accepted.
 
+### Outcome
+
+Built as designed, plus links ("option A", approved by the user while building):
+
+- Every in-stock cell whose listing URL passes `validUrl` gets a superscript reference number
+  (`¹ … ⁹ ¹⁰ ¹¹`, plain decimal digits in superscript), numbered row by row and left to right.
+  A cell with an invalid URL gets no number, and the next linked cell takes it.
+- An embed under the message lists each number as a markdown link,
+  `¹ [#140 Wither · blue-ocean · 0,80 €](url)` (`(bundle)` added for a bundle). Brackets in the
+  text are escaped, and brackets and whitespace in the URL percent-encoded. Only rows kept in the
+  message are linked; links over 4096 characters end in "… and N more links". No in-stock cell
+  means no embed.
+- Cells read `value`, a space and the markers (`0,55 € ⏱⚠`), then the number (`0,55 € ⚠¹`).
+- The legend reads `Legend: ⏱ older than the last check · ⚠ picture unconfirmed · + bundle`,
+  limited to the markers in the rows shown, after "… and N more cards" when rows were cut.
+- A shop whose check failed or did not run gets ` · data as of <t:…:R>` (its last success) or
+  ` · no successful check in 7 days` on its shop line; its stored cells get `⏱`.
+- Without a readable check run, every enabled cell is `?`.
+- Widths: each shop column is as wide as its widest cell or shop name, with two spaces between
+  columns. The card column gets what is left of 84 characters, at least 14. Longer
+  `#id name` labels end in `…` and the id is never cut; link texts keep up to 60 characters of the
+  label. Backticks in names become `'`, so a name cannot close the code block.
+
 ## Decided by the user
 
 - Add collect-it.de as a shop.

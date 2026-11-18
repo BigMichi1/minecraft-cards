@@ -100,6 +100,19 @@ describe('extractCardIdsFromTitle', () => {
     expect(s3('Card 5')).toEqual([cid('5')]);
   });
 
+  test('keeps a card number followed by "in" (only "#1" / "Nr. 1" / "No. 1 in" is a slogan)', () => {
+    expect(s3('Karte 12 in OVP')).toEqual([cid('12')]);
+    expect(s3('#45 in Schutzhülle')).toEqual([cid('45')]);
+    expect(s3('Nr. 12 in Top Zustand')).toEqual([cid('12')]);
+    expect(s3('Karte 12 in Sleeve')).toEqual([cid('12')]);
+    expect(s3('Karte 1 in OVP')).toEqual([cid('1')]);
+  });
+
+  test('reads no card number from a count of Sammelkarten', () => {
+    expect(s3('Karte 2 Sammelkarten')).toEqual([]);
+    expect(s3('Karte 2 Sammelkarte')).toEqual([]);
+  });
+
   test('reads bundles, LE and XXL ids', () => {
     expect(extractCardIdsFromTitle('Lego Minecraft TCC Serie 3 #12, #45 und LE8')).toEqual(
       ids('12', '45', 'LE8')
@@ -253,7 +266,8 @@ describe('extractCardIdsFromTitle', () => {
     'Album', 'Alben', 'Blister', 'Blisters', 'Booster', 'Boosters', 'Box', 'Boxen', 'Bundle',
     'Bundles', 'Cards', 'Display', 'Displays', 'Foil', 'Holo', 'Karten', 'Konvolut', 'Lot',
     'Lots', 'Mappe', 'Mappen', 'Multipack', 'Multipacks', 'Pack', 'Packs', 'Packung',
-    'Packungen', 'Paket', 'Pakete', 'Sammlung', 'Set', 'Sets', 'Starter',
+    'Packungen', 'Paket', 'Pakete', 'Sammelkarte', 'Sammelkarten', 'Sammlung', 'Set', 'Sets',
+    'Starter',
     // Counts and units.
     'Exemplare', 'fach', 'mal', 'pcs', 'St.', 'Stk', 'Stück', 'Stueck', 'Teile', 'weitere', 'x',
     // Prices.

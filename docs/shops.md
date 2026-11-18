@@ -75,11 +75,12 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   follows. The dash form refuses a name starting with one. So `Karte 5 Stück`, `Karte 2 €`,
   `Karte 2-fach`, `#1 Bestseller`, `LE 3 Karten`, `XXL 1 Stück`, `Wolf 3 Card Pack`,
   `Zombie 2 Karte gratis` and `5 - Stueck - Charakterkarte` give no id. A word added to the list
-  guards every form; add it to the equality test in `ebay.test.ts` too. A number after
-  `#`/`Nr.`/`No.` followed by `in` is a slogan (`Nr. 1 in Deutschland`). The dash form also
-  refuses names starting with Neu, Neuware, Rare, Gold, Goldkarte, Doppel, Doppelt, Karte,
-  Sammelkarte or Sammelkarten, and a number after `je`, `2x`, `2 x` or a unit word
-  (`Stück 5 - …`).
+  guards every form; add it to the equality test in `ebay.test.ts` too. The list includes
+  Sammelkarte and Sammelkarten (`Karte 2 Sammelkarten` gives no id). Only `#1`, `Nr. 1` or
+  `No. 1` followed by `in` is a slogan (`Nr. 1 in Deutschland`); any other number before `in`
+  stays a card (`Karte 12 in OVP`, `#45 in Schutzhülle`). The dash form also refuses names
+  starting with Neu, Neuware, Rare, Gold, Goldkarte, Doppel, Doppelt or Karte, and a number
+  after `je`, `2x`, `2 x` or a unit word (`Stück 5 - …`).
 
 - **Extending `CARD_NAME_WORDS`**: when a real `NAME N Karte` title is missed because its name
   word is not in the list, take the word from that card's name in the catalog (the sammel-ente

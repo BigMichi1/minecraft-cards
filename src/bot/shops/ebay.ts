@@ -85,6 +85,8 @@ const PRODUCT_WORDS = [
   'Packungen',
   'Paket',
   'Pakete',
+  'Sammelkarte',
+  'Sammelkarten',
   'Sammlung',
   'Set',
   'Sets',
@@ -140,10 +142,12 @@ const NOT_FOLLOWED_BY_WORD = '(?![\\dA-Za-zÄÖÜäöüß])';
 // Every number of a list, the first included, must be a whole id, not a price or count
 // ("3er Set", "3 weitere", "5 €", "1,50", "5 Stück").
 const LIST_ITEM = `#?\\d+${NOT_FOLLOWED_BY_WORD}${NOT_A_COUNT}`;
-// A prefix followed by a list: "#12, #45 und 107", "Nr. 12, 45", "Karte 12". A first number
-// followed by "in" is a slogan ("Nr. 1 in Deutschland").
+// A prefix followed by a list: "#12, #45 und 107", "Nr. 12, 45", "Karte 12". "#1", "Nr. 1" or
+// "No. 1" followed by "in" is a slogan ("Nr. 1 in Deutschland"); any other number before "in"
+// stays a card ("Karte 12 in OVP", "#45 in Schutzhülle").
+const SLOGAN_ONE_IN = `(?!(?<=(?:#|\\b(?:Nr|No)\\.?)\\s*0*1)\\s+in(?![${LETTER}]))`;
 const PREFIXED_LIST_PATTERN = new RegExp(
-  `(?:#|\\b(?:Nr|No)\\.?|\\b(?:Karte|Card))\\s*(\\d+${NOT_FOLLOWED_BY_WORD}${NOT_A_COUNT}(?!\\s+in(?![${LETTER}]))(?:(?:,\\s+|\\s*&\\s*|\\s+(?:und|and)\\s+)${LIST_ITEM})*)`,
+  `(?:#|\\b(?:Nr|No)\\.?|\\b(?:Karte|Card))\\s*(\\d+${NOT_FOLLOWED_BY_WORD}${NOT_A_COUNT}${SLOGAN_ONE_IN}(?:(?:,\\s+|\\s*&\\s*|\\s+(?:und|and)\\s+)${LIST_ITEM})*)`,
   'gi'
 );
 
@@ -160,8 +164,6 @@ const NOT_A_NAME_START = [
   'Neu',
   'Neuware',
   'Rare',
-  'Sammelkarte',
-  'Sammelkarten',
 ];
 // "Karten 30 - Steve - Charakterkarte", "Minecraft  132 - Wither Skeleton - Charakterkarte":
 // a number (not after a count such as "je", "2x" or "Stück"), a spaced dash, a name not

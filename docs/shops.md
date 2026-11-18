@@ -6,12 +6,12 @@ changes or a new one is suggested.
 
 ## Used by the bot
 
-| Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                      |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the image reference for every other shop.                                                 |
-| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. Card id from the product URL suffix (`…-2dd00088-12`); the title's "Nr." is wrong. Only "On Fire" titles count; series 1 and 2 share the category.    |
-| [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page. |
-| eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Needs `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`; disabled until the eBay developer account is approved. Card ids from the title.                                                            |
+| Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the image reference for every other shop.                                                          |
+| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. Card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`); the title's "Nr." is wrong. Only "On Fire" titles count; series 1 and 2 share the category. |
+| [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.          |
+| eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved; off until `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` are set in the deployment. Card ids from the title.                                                                  |
 
 ## collect-it.de details
 
@@ -21,9 +21,15 @@ User-Agent):
 - **Pages**: `…/Einzelkarten` is page 1, `…/Einzelkarten_sN` page N, 30 products per page; 235
   singles on 8 pages (25 on page 8). Each page but the last has `<link rel="next">`, and each
   page's canonical link names its own page. A page past the end (`_s9`, `_s99`) answers
-  `301` to page 1, so there is no empty page that ends the list: the adapter follows
-  `rel="next"` and stops when a page lacks it, or when the canonical link names another page
-  than the one asked for (the shop shrank during a run).
+  `301` to page 1, so there is no empty page that ends the list: the adapter follows the
+  `rel="next"` href and stops at the page without one. Because sold-out cards are hidden
+  (below), a partial read would mark real listings sold out. So a page whose canonical link is
+  missing, unreadable, or names another page than the one linked (the shop shrank during a
+  run) is a shop error (`ShopLayoutError`), as is reaching the 60-page cap or any unreadable
+  product box or title. The run is retried next hour, and stored listings are left untouched.
+  A canonical or next link is readable only as exactly the category URL (page 1) or the
+  category URL plus `_sN`, with no trailing slash, query or fragment, and a next link must name
+  the following page.
 - **Products**: `#product-list .c-product-box`, schema.org `Product` microdata. Title in
   `.c-product-box-content-title`; the product link around it.
 - **Card ids**: base cards are titled `12 - Squid - Charakterkarte - Serie 3`, with a variant
@@ -42,10 +48,15 @@ User-Agent):
   LE3, LE4 and LE6–LE12 are missing from the category, the site search shows only in-stock
   cards, and guessed product URLs of missing cards answer 404; no sold-out product page was
   found to save. A card that sells out therefore vanishes,
-  and the run marks the stored listing unavailable. `OutOfStock` (or no availability) would
-  read as sold out, `InStock` and `LimitedAvailability` as in stock.
-- **Pictures**: `<meta itemprop="image">` in each box, 600 px, on `www.collect-it.de`
-  (`/media/image/product/<id>/md/<slug>.jpg`).
+  and the run marks the stored listing unavailable. The value is matched by its schema.org
+  name, case-insensitively, with or without the `http(s)://schema.org/` prefix: `InStock`,
+  `LimitedAvailability` and `OnlineOnly` read as in stock, the other schema.org values
+  (`OutOfStock`, `SoldOut`, `Discontinued`, `PreOrder`, …) as sold out. A box without
+  availability or with an unknown value is a shop error, not stock information.
+- **Pictures**: `<meta itemprop="image">` in each box, the `md` size (600w in the `<img>`
+  srcset), on `www.collect-it.de` (`/media/image/product/<id>/md/<slug>.jpg`). The `<img src>`
+  (the 200w `sm` size) is the fallback when the meta is missing; both are resolved against the
+  shop.
 - **Fixtures**: the pages carry a per-session CSRF token (`jtl_token`, also inside a base64
   `data:` script) and the shop's public reCAPTCHA site key; both are replaced by
   `REDACTED_…` placeholders in the saved pages.

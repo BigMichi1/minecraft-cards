@@ -100,7 +100,8 @@ const TIER: Record<ListingState, number> = {
 /**
  * The currency prices are compared in: EUR (every shop's own currency) when any listing has a
  * EUR price, else the first priced listing's, so listings only in another currency still compare
- * among themselves. A price in any other currency counts as no price.
+ * among themselves. A price in any other currency counts as no price. Callers pass the in-stock
+ * listings (or all, when none is in stock), so a sold-out EUR listing does not decide it.
  */
 function referenceCurrency(listings: StoredListing[]): string {
   const priced = listings.filter((l) => l.price !== null);
@@ -177,7 +178,8 @@ export function shopCells(ctx: CellContext): (card: CardId, shop: ShopId) => Sho
     if (!last) return { kind: 'unknown' };
     const here = index.get(key(shop, card));
     if (!here) return succeeded(last, shop) ? { kind: 'not_listed' } : { kind: 'unknown' };
-    const currency = referenceCurrency(here);
+    const inStock = here.filter((l) => listingState(l, ctx.now) === 'in_stock');
+    const currency = referenceCurrency(inStock.length > 0 ? inStock : here);
     const listing = best(here, last, ctx.now, currency);
     const state = listingState(listing, ctx.now);
     const stale = unseen(listing, last) || needsLastSuccess(last, shop, ctx.enabledShops);

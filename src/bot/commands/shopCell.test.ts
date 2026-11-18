@@ -162,6 +162,22 @@ describe('shopCells', () => {
     expect(d).toMatchObject({ listing: usd2, offers: [usd2, usd] });
   });
 
+  test('the currency comes from the in-stock listings: a sold-out EUR one does not count', () => {
+    const soldEur = listing('ebay', ids('12'), { available: false, ...euro(10) });
+    const usd = (cents: number) =>
+      listing('ebay', ids('12'), { price: { cents, currency: 'USD' } });
+    const [dear, cheap] = [usd(300), usd(100)];
+    const c = shopCells(ctx({ listings: [soldEur, dear, cheap] }))(cid('12'), 'ebay');
+    expect(c).toMatchObject({ listing: cheap, offers: [cheap, dear] });
+    // Nothing in stock: all listings decide, so the EUR price compares.
+    const soldUsd = listing('ebay', ids('12'), {
+      available: false,
+      price: { cents: 1, currency: 'USD' },
+    });
+    const d = shopCells(ctx({ listings: [soldUsd, soldEur] }))(cid('12'), 'ebay');
+    expect(d).toMatchObject({ listing: soldEur, offers: [] });
+  });
+
   test('offers leave out held-back, paused, sold-out and ended listings', () => {
     const now = T + 60_000;
     const stock = listing('ebay', ids('12'), euro(500));

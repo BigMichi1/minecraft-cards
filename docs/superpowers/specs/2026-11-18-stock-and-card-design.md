@@ -90,8 +90,8 @@ to open the shop page for one card.
   cheapest first. `/card` uses the first offer with a valid URL for `Open <shop>` and for
   `, from <price>`. A bundle or an unconfirmed picture is linked or named as "from" only when no
   backed single is on offer.
-- Prices compare only in one currency: EUR when any listing of the shop and card has a EUR
-  price, else the first priced listing's currency. A price in another currency counts like a
-  missing price. "From" appears only when the first offer is in the shown listing's currency and
+- Prices compare only in one currency: EUR when any in-stock listing of the shop and card (all
+  listings when none is in stock) has a EUR price, else the first priced listing's currency. A
+  price in another currency counts like a missing price. "From" appears only when the first offer is in the shown listing's currency and
   cheaper, or the shown listing has no price.
 - With `shop:` the Kleinanzeigen button is left out.

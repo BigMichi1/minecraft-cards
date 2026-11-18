@@ -125,6 +125,17 @@ before decoding or resizing. Pictures are fetched only over https from the shop 
 image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
 `www.collect-it.de`, `i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
 
+## Pictures in alerts
+
+The alert DM does not link the listing picture and the reference thumbnail; the bot downloads
+them with the same bounded download (`downloadImage` in `embedder.ts`: allowed hosts, 10 MB,
+timeout, User-Agent) and attaches them, and the embed points at `attachment://picture-<n>.<ext>`
+or `attachment://reference-<n>.<ext>` (n is the embed's position, the extension comes from the
+file's first bytes). Discord's media proxy shows no collect-it.de pictures, most likely because
+the shop blocks datacenter IPs. A picture on another host, a failed download, a file that is not
+JPEG / PNG / GIF / WebP, more than 10 attachments or more than 8 MB per message keep the URL
+(`src/bot/notify/pictures.ts`), so an alert is never lost because of a picture.
+
 ## Match statuses
 
 | Status              | Meaning                                                                                                                          |

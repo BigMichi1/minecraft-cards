@@ -9,7 +9,9 @@ import {
 import { userManager } from '../database/userManager';
 import { errorMessage } from '../utils/async';
 import logger, { logError } from '../utils/logger';
+import { downloadImage } from '../matcher/embedder';
 import { buildNotificationMessages, ITEMS_PER_MESSAGE, type NotificationMessage } from './messages';
+import { attachPictures, type DownloadFn } from './pictures';
 
 /** The only part of the Discord client the sender needs. */
 export interface DmClient {
@@ -25,6 +27,8 @@ export interface SenderOptions {
   isShuttingDown?: () => boolean;
   /** Throttled admin alert for failures that are not one user's closed DMs. */
   alert: AlertFn;
+  /** Downloads a listing or reference picture to attach; the bounded matcher download by default. */
+  downloadImage?: DownloadFn;
 }
 
 const PAUSE_MS = 500;
@@ -59,6 +63,7 @@ export function createDiscordSender(client: DmClient, options: SenderOptions): N
   const now = options.now ?? Date.now;
   const isShuttingDown = options.isShuttingDown ?? (() => false);
   const { alert } = options;
+  const download = options.downloadImage ?? ((url: string) => downloadImage(url));
 
   return {
     async send(pending: PendingNotifications) {
@@ -94,7 +99,8 @@ export function createDiscordSender(client: DmClient, options: SenderOptions): N
           for (const { message, items: sent } of messages) {
             if (!first) await sleep(PAUSE_MS);
             first = false;
-            await user.send(message);
+            // attachPictures never rejects: a picture it cannot attach keeps its URL.
+            await user.send(await attachPictures(message, download));
             try {
               for (const item of sent) {
                 listingManager.recordNotified(discordId, item.listing.id, item.availableSince);

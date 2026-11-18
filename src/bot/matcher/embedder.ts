@@ -205,6 +205,31 @@ async function fetchImage(fetchFn: FetchFn, imageUrl: string): Promise<Response>
 }
 
 /**
+ * Download a picture on an allowed host (IMAGE_HOSTS, redirects checked), with the bot
+ * User-Agent, the request timeout and MAX_IMAGE_BYTES. Used for image matching and for
+ * attaching pictures to notifications. Every failure is an ImageUnavailableError.
+ */
+export async function downloadImage(
+  imageUrl: string,
+  fetchFn: FetchFn = fetch
+): Promise<Uint8Array> {
+  const response = await fetchImage(fetchFn, imageUrl);
+  if (!response.ok) {
+    await response.body?.cancel();
+    const error = new HttpError(response.status, imageUrl);
+    throw new ImageUnavailableError(error.message, { cause: error });
+  }
+  try {
+    return await readCapped(response, imageUrl);
+  } catch (error) {
+    if (error instanceof ImageUnavailableError) throw error;
+    throw new ImageUnavailableError(`image ${imageUrl}: ${errorMessage(error)}`, {
+      cause: error,
+    });
+  }
+}
+
+/**
  * Local image embedder over `@huggingface/transformers` (`image-feature-extraction`).
  * Model files are downloaded once into `cacheDir`. Rejects when the model cannot load.
  * `embed` rejects with ImageUnavailableError when the picture cannot be loaded (host outside
@@ -223,21 +248,7 @@ export async function createTransformersEmbedder(
   return {
     model: opts.model,
     async embed(imageUrl: string): Promise<Float32Array> {
-      const response = await fetchImage(fetchFn, imageUrl);
-      if (!response.ok) {
-        await response.body?.cancel();
-        const error = new HttpError(response.status, imageUrl);
-        throw new ImageUnavailableError(error.message, { cause: error });
-      }
-      let bytes: Uint8Array;
-      try {
-        bytes = await readCapped(response, imageUrl);
-      } catch (error) {
-        if (error instanceof ImageUnavailableError) throw error;
-        throw new ImageUnavailableError(`image ${imageUrl}: ${errorMessage(error)}`, {
-          cause: error,
-        });
-      }
+      const bytes = await downloadImage(imageUrl, fetchFn);
       let tensor: FeatureTensor;
       try {
         tensor = await extractor(bytes);

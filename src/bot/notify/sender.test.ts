@@ -208,6 +208,77 @@ describe('createDiscordSender', () => {
     expect(db.select().from(notifications).all()).toHaveLength(0);
   });
 
+  describe('listing pictures', () => {
+    const picture = 'https://www.collect-it.de/media/image/product/1/md/12.jpg';
+    const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9]);
+    type Sent = { files?: { name: string }[]; embeds?: { toJSON?: () => unknown }[] };
+    const imageUrlOf = (o: unknown) =>
+      (
+        ((o as Sent).embeds?.[0] as { toJSON(): { image?: { url: string } } }).toJSON() as {
+          image?: { url: string };
+        }
+      ).image?.url;
+
+    test('a downloaded picture is attached and the embed points at it', async () => {
+      const l = { ...seedListing(1), imageUrl: picture };
+      const client = fakeClient();
+      const downloads: string[] = [];
+      const sender = createDiscordSender(client, {
+        alert: noAlert,
+        sleep: async () => {},
+        downloadImage: async (url) => {
+          downloads.push(url);
+          return JPEG;
+        },
+      });
+      expect(await sender.send(new Map([['u1', [pending(l)]]]))).toEqual({
+        notified: 1,
+        dmFailures: 0,
+      });
+      expect(downloads).toEqual([picture]);
+      const opts = client.sent[0]?.opts as Sent;
+      expect(opts.files?.map((f) => f.name)).toEqual(['picture-1.jpg']);
+      expect(imageUrlOf(opts)).toBe('attachment://picture-1.jpg');
+    });
+
+    test('a failed download still sends with the URL and records the item', async () => {
+      const l = { ...seedListing(1), imageUrl: picture };
+      const client = fakeClient();
+      const sender = createDiscordSender(client, {
+        alert: noAlert,
+        sleep: async () => {},
+        downloadImage: async () => {
+          throw new Error('connection reset');
+        },
+      });
+      expect(await sender.send(new Map([['u1', [pending(l)]]]))).toEqual({
+        notified: 1,
+        dmFailures: 0,
+      });
+      const opts = client.sent[0]?.opts as Sent;
+      expect(opts.files ?? []).toEqual([]);
+      expect(imageUrlOf(opts)).toBe(picture);
+      expect(db.select().from(notifications).all()).toHaveLength(1);
+    });
+
+    test('closed DMs with a picture still mark the user and record nothing', async () => {
+      const l = { ...seedListing(1), imageUrl: picture };
+      const client = fakeClient({ failFor: 'u1' });
+      const sender = createDiscordSender(client, {
+        alert: noAlert,
+        sleep: async () => {},
+        now: () => 77,
+        downloadImage: async () => JPEG,
+      });
+      expect(await sender.send(new Map([['u1', [pending(l)]]]))).toEqual({
+        notified: 0,
+        dmFailures: 1,
+      });
+      expect(dmFailedAt('u1')).toBe(77);
+      expect(db.select().from(notifications).all()).toHaveLength(0);
+    });
+  });
+
   test('isDmClosed is true only for Discord error 50007', () => {
     expect(isDmClosed(dmClosedError())).toBe(true);
     expect(isDmClosed(new Error('Cannot send messages to this user'))).toBe(false);

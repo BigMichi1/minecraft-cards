@@ -375,6 +375,50 @@ describe('buildStatusReply', () => {
     expect(legend(plain)).toBeUndefined();
   });
 
+  test('a mismatch is held back from users: "held back", no link, below every usable listing', () => {
+    const mismatch = listing('blue-ocean', ids('12'), {
+      matchStatus: 'mismatch',
+      pictureCardId: cid('45'),
+      ...euro(10),
+    });
+    const alone = buildStatusReply(input({ listings: [mismatch] }));
+    expect(cells(alone)).toEqual(['–', 'held back', 'n/a', 'n/a']);
+    expect(links(alone)).toEqual([]);
+    expect(legend(alone)).toBeUndefined();
+    const backed = listing('blue-ocean', ids('12'), { matchStatus: 'confirmed' });
+    expect(cells(buildStatusReply(input({ listings: [mismatch, backed] })))).toEqual([
+      '–',
+      '0,55 € [1]',
+      'n/a',
+      'n/a',
+    ]);
+    const soldOut = listing('blue-ocean', ids('12'), {
+      matchStatus: 'confirmed',
+      available: false,
+    });
+    expect(cells(buildStatusReply(input({ listings: [soldOut, mismatch] })))).toEqual([
+      '–',
+      'held back',
+      'n/a',
+      'n/a',
+    ]);
+  });
+
+  test('a card number from the picture is a usable, picture-backed cell', () => {
+    const fromPicture = listing('ebay', ids('12'), {
+      matchStatus: 'confirmed',
+      similarity: 0.91,
+      idSource: 'picture',
+      pictureCardId: cid('12'),
+      ...euro(120),
+    });
+    const reply = buildStatusReply(
+      input({ enabledShops: ALL, latest: run(allRun), listings: [fromPicture] })
+    );
+    expect(cells(reply)).toEqual(['–', '–', '–', '1,20 € [1]']);
+    expect(legend(reply)).toBeUndefined();
+  });
+
   test('per shop the best listing wins: in stock beats paused beats sold out, then the lowest price', () => {
     const reply = buildStatusReply(
       input({

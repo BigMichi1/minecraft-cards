@@ -83,9 +83,11 @@ function footer(listing: StoredListing): string | null {
   switch (listing.matchStatus) {
     case 'confirmed':
       // `/admin map` confirms without a picture comparison.
-      return listing.similarity === null
-        ? '✅ checked by the admin'
-        : `✅ picture matches reference (${listing.similarity.toFixed(2)})`;
+      if (listing.similarity === null) return '✅ checked by the admin';
+      if (listing.idSource === 'picture') {
+        return `🖼️ number from the picture (${listing.similarity.toFixed(2)}) — compare with the reference`;
+      }
+      return `✅ picture matches reference (${listing.similarity.toFixed(2)})`;
     case 'unconfirmed':
       return '⚠️ number unconfirmed — compare with the reference';
     case 'bundle':
@@ -104,6 +106,17 @@ function footer(listing: StoredListing): string | null {
     case 'reference':
       return null;
   }
+}
+
+/** The reference picture goes beside a number the picture alone gave, or one it did not back. */
+function showsReference(listing: StoredListing): boolean {
+  if (listing.matchStatus === 'unconfirmed') return true;
+  return (
+    listing.matchStatus === 'confirmed' &&
+    listing.idSource === 'picture' &&
+    !listing.manualOverride &&
+    listing.similarity !== null
+  );
 }
 
 function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
@@ -128,7 +141,7 @@ function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
   if (imageUrl) embed.setImage(imageUrl);
   const text = footer(listing);
   if (text) embed.setFooter({ text });
-  if (listing.matchStatus === 'unconfirmed') {
+  if (showsReference(listing)) {
     const reference = item.cardIds[0] ? catalogManager.getCard(item.cardIds[0]) : undefined;
     const thumbnail = validUrl(reference?.referenceImageUrl);
     if (thumbnail) embed.setThumbnail(thumbnail);

@@ -108,11 +108,11 @@ function unseen(l: StoredListing, last: RunSummary): boolean {
 
 /**
  * Sort key, lower is better: seen in the latest check, then in stock beats paused after a
- * report beats sold out or ended, then a backed picture (never a bundle), then the lowest price
- * (none last).
+ * report or held back as a mismatch beats sold out or ended, then a backed picture (never a
+ * bundle), then the lowest price (none last).
  */
 function sortKey(l: StoredListing, last: RunSummary, now: number): number[] {
-  const tier = !l.available || ended(l, now) ? 2 : l.onHold ? 1 : 0;
+  const tier = !l.available || ended(l, now) ? 2 : l.onHold || l.matchStatus === 'mismatch' ? 1 : 0;
   return [
     unseen(l, last) ? 1 : 0,
     tier,
@@ -201,10 +201,12 @@ function cellFor(card: CardId, shop: ShopId, input: StatusInput): Cell {
   const l = best(here, last, input.now);
   if (unseen(l, last) || needsLastSuccess(last, shop, input.enabledShops)) markers.add('*');
   if (l.cardIds.length > 1) markers.add('+');
-  else if (!pictureBacked(l)) markers.add('!');
+  else if (!pictureBacked(l) && l.matchStatus !== 'mismatch') markers.add('!');
   if (!l.available) return { value: 'sold out', markers };
   if (ended(l, input.now)) return { value: 'ended', markers };
   if (l.onHold) return { value: 'paused', markers };
+  // The picture shows another card: never sent to users until the admin maps it.
+  if (l.matchStatus === 'mismatch') return { value: 'held back', markers };
   const value = l.price ? formatPrice(l.price) : 'in stock';
   const url = validUrl(l.url);
   return url ? { value, markers, link: { url, listing: l } } : { value, markers };

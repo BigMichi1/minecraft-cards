@@ -252,6 +252,34 @@ describe('notification messages', () => {
     expect(msgs.map((m) => m.items.map((x) => x.listing.id))).toEqual([[1], [2], [3]]);
   });
 
+  test('a card number from the picture says so and shows the reference beside it', () => {
+    const e = embedJson(
+      atMsg(
+        buildNotificationMessages([
+          item(1, {
+            shop: 'ebay',
+            title: 'Lego Minecraft Karte Serie 3 Squid Ultra Rare',
+            idSource: 'picture',
+            pictureCardId: cid('12'),
+            similarity: 0.91,
+          }),
+        ]),
+        0
+      )
+    );
+    expect(e.title).toBe('🟢 Card #12 Squid is available');
+    expect(e.footer.text).toBe('🖼️ number from the picture (0.91) — compare with the reference');
+    expect(e.thumbnail.url).toBe(referenceUrl);
+  });
+
+  test('a title number the picture confirms keeps the plain footer and no thumbnail', () => {
+    const e = embedJson(
+      atMsg(buildNotificationMessages([item(1, { pictureCardId: cid('12') })]), 0)
+    );
+    expect(e.footer.text).toBe('✅ picture matches reference (0.94)');
+    expect(e.thumbnail).toBeUndefined();
+  });
+
   test('a mismatch (never sent to users) names the card the picture shows', () => {
     const e = embedJson(
       atMsg(

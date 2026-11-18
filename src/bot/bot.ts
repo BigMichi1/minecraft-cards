@@ -19,7 +19,7 @@ import {
   handleReportReason,
   retryUnsentReports,
 } from './interactions/report';
-import { buttonRoute, isReportModal } from './interactions/router';
+import { dispatchButton, isReportModal } from './interactions/router';
 import { createShutdown, runChatCommand, type ChatCommand } from './lifecycle';
 import {
   createCachedEmbedder,
@@ -167,23 +167,13 @@ client.on(Events.InteractionCreate, async (interaction) => {
         clearDmFailure: (id) => userManager.clearDmFailure(id),
       });
     } else if (interaction.isButton()) {
-      switch (buttonRoute(interaction.customId)) {
-        case 'report':
-          await handleReportButton(interaction);
-          break;
-        case 'report-reason':
-          await handleReportReason(interaction);
-          break;
-        case 'catalog':
-          // No store argument: the module-level store is the one /admin catalog import fills.
-          await handleCatalogButton(interaction, { adminId: config.botAdminId });
-          break;
-        case 'stock':
-          await stockCommand.handleStockButton(interaction, { enabledShops });
-          break;
-        case null:
-          break;
-      }
+      await dispatchButton(interaction.customId, {
+        report: () => handleReportButton(interaction),
+        'report-reason': () => handleReportReason(interaction),
+        // No store argument: the module-level store is the one /admin catalog import fills.
+        catalog: () => handleCatalogButton(interaction, { adminId: config.botAdminId }),
+        stock: () => stockCommand.handleStockButton(interaction, { enabledShops }),
+      });
     } else if (interaction.isModalSubmit() && isReportModal(interaction.customId)) {
       await handleReportModal(interaction, dmAdmin);
     }

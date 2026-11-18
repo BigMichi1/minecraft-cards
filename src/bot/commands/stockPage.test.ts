@@ -6,7 +6,7 @@ import type { RunSummary } from '../check/runner';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import type { ShopId } from '../shops/types';
 import { DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
-import { ids } from '../../test/cardIds';
+import { cid, ids } from '../../test/cardIds';
 import { runOf, storedListing as listing, T } from '../../test/listings';
 import {
   buildStockPage,
@@ -51,7 +51,7 @@ function cells(page: StockPage): Map<string, string[]> {
     tableLines(page)
       .slice(1)
       .map((line) => {
-        const [card, ...rest] = line.split(/ +/);
+        const [card, ...rest] = line.trimEnd().split(/ +/);
         return [card!, rest];
       })
   );
@@ -78,9 +78,10 @@ describe('buildStockPage', () => {
       'Stock · all cards (2) · page 1/1',
       `Last check <t:${S}:R> · ✅ sammel-ente · ✅ blue-ocean · ✅ collect-it · ✅ eBay`,
       FENCE,
-      'Card  SE   BO   CI   EB',
-      '12    x    -    -    x',
-      '45    -    -    -    -',
+      // Rows are padded to the full width, so every row is as long as the next.
+      'Card  SE   BO   CI   EB ',
+      '12    x    -    -    x  ',
+      '45    -    -    -    -  ',
       FENCE,
       '`x` in stock · `-` not available · `?` not checked · `n/a` not enabled',
       'SE sammel-ente · BO blue-ocean · CI collect-it · EB eBay',
@@ -230,7 +231,30 @@ describe('buildStockPage', () => {
       expect(rows(worst(1))).toBeGreaterThanOrEqual(55);
       expect(rows(short)).toBeLessThanOrEqual(80);
       expect(rows(short)).toBeGreaterThan(rows(worst(1)));
-      expect(short.content.length).toBeLessThanOrEqual(DISCORD_MESSAGE_LIMIT);
+    });
+
+    test('a page holds as many rows as fit: one more row would exceed 2000', () => {
+      const short = buildStockPage(input({ cards: CATALOG }));
+      for (const page of [worst(1), short]) {
+        const [, ...rows] = tableLines(page);
+        const width = rows[0]!.length;
+        expect(rows.every((r) => r.length === width)).toBe(true);
+        expect(page.content.length).toBeLessThanOrEqual(DISCORD_MESSAGE_LIMIT);
+        expect(page.content.length + width + 1).toBeGreaterThan(DISCORD_MESSAGE_LIMIT);
+      }
+    });
+
+    test('ten pages or more still fit: the page label widens to two digits', () => {
+      const many = Array.from({ length: 800 }, (_, i) => cid(String(i + 1)));
+      const at = (page: number) => buildStockPage(input({ cards: many, page }));
+      const count = Number(/page 1\/(\d+)/.exec(at(1).content)?.[1]);
+      expect(count).toBeGreaterThanOrEqual(10);
+      const seen: string[] = [];
+      for (let p = 1; p <= count; p++) {
+        expect(at(p).content.length).toBeLessThanOrEqual(DISCORD_MESSAGE_LIMIT);
+        seen.push(...cells(at(p)).keys());
+      }
+      expect(seen).toEqual(many);
     });
 
     test('first page: ◀ disabled, ▶ goes to page 2', () => {
@@ -285,14 +309,39 @@ describe('buildStockPage', () => {
     });
 
     test('columns line up: every cell starts where its header does', () => {
-      const [header, ...rows] = tableLines(worst(1));
-      const starts = ['SE', 'BO', 'CI', 'EB'].map((h) => header!.indexOf(h));
-      for (const line of rows) {
-        for (const at of starts) {
-          expect(line.slice(at - 2, at)).toBe('  ');
-          expect(line[at]).not.toBe(' ');
+      // A page that mixes x, -, ? and n/a, and the all-? worst page.
+      const mixed = buildStockPage(
+        input({
+          cards: CATALOG,
+          enabledShops: ['sammel-ente', 'blue-ocean', 'collect-it'],
+          latest: {
+            summary: runOf(['sammel-ente', 'blue-ocean'], ['collect-it']),
+            newerUnreadable: false,
+          },
+          lastSuccess: { 'collect-it': null },
+          listings: [
+            listing('sammel-ente', ids('1', '2')),
+            listing('blue-ocean', ids('2')),
+            listing('collect-it', ids('3')),
+          ],
+        })
+      );
+      const values = new Set(
+        tableLines(mixed)
+          .slice(1)
+          .flatMap((l) => l.trim().split(/ +/).slice(1))
+      );
+      expect([...values].sort()).toEqual(['-', '?', 'n/a', 'x']);
+      for (const page of [mixed, worst(1)]) {
+        const [header, ...rows] = tableLines(page);
+        const starts = ['SE', 'BO', 'CI', 'EB'].map((h) => header!.indexOf(h));
+        for (const line of rows) {
+          expect(line.length).toBe(header!.length);
+          for (const at of starts) {
+            expect(line.slice(at - 2, at)).toBe('  ');
+            expect(line[at]).not.toBe(' ');
+          }
         }
-        expect(line).toBe(line.trimEnd());
       }
     });
   });

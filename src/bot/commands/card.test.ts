@@ -218,6 +218,28 @@ describe('/card', () => {
     let log: ReturnType<typeof spyOn>;
     afterEach(() => log.mockRestore());
 
+    test('a deferReply that throws is logged and does not reject', async () => {
+      log = spyOn(logger, 'log').mockImplementation(() => logger);
+      const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+      const interaction = command('12');
+      (interaction as unknown as { deferReply: () => Promise<void> }).deferReply = async () => {
+        throw new Error('Unknown interaction');
+      };
+      try {
+        await expect(execute(interaction, ctx())).resolves.toBeUndefined();
+        expect(
+          log.mock.calls.some((c: unknown[]) =>
+            String(c[1]).includes('/card 12 failed: Unknown interaction')
+          )
+        ).toBe(true);
+        // The error reply cannot be delivered either; that is a warning, not a rejection.
+        expect(warn).toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+      expect(edits).toEqual([]);
+    });
+
     test('a failing read answers with an error reply and logs', async () => {
       log = spyOn(logger, 'log').mockImplementation(() => logger);
       const read = spyOn(listingManager, 'listingsForCards').mockImplementation(() => {

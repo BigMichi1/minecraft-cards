@@ -134,7 +134,7 @@ describe('buildCardReply', () => {
     expect(lines(reply)[0]).toBe('✅ sammel-ente: in stock');
   });
 
-  test('several available listings give the offer count; the button opens the cheapest', () => {
+  test('several available listings give the offer count; the button opens the cheapest backed single', () => {
     const reply = buildCardReply(
       input({
         shop: 'ebay',
@@ -143,7 +143,12 @@ describe('buildCardReply', () => {
           listing('ebay', ids('12'), {
             ...euro(150),
             matchStatus: 'unconfirmed',
-            url: 'https://eb.example/cheap',
+            url: 'https://eb.example/unconfirmed',
+          }),
+          listing('ebay', ids('12', '13'), {
+            ...euro(100),
+            matchStatus: 'bundle',
+            url: 'https://eb.example/bundle',
           }),
           listing('ebay', ids('12'), { ...euro(200), url: 'https://eb.example/b' }),
           // Not offered: held back and paused are left out of the count and the link.
@@ -152,9 +157,74 @@ describe('buildCardReply', () => {
         ],
       })
     );
-    // The line shows the best listing (picture backed), the count and the cheapest price.
-    expect(lines(reply)[0]).toBe('✅ eBay: 2,00 € (3 offers, from 1,50 €)');
-    expect(links(reply)).toEqual([['Open eBay', 'https://eb.example/cheap']]);
+    // A backed single exists: neither the cheaper bundle nor the unconfirmed one is "from".
+    expect(lines(reply)[0]).toBe('✅ eBay: 2,00 € (4 offers)');
+    expect(links(reply)).toEqual([['Open eBay', 'https://eb.example/b']]);
+  });
+
+  test('without a backed single the cheapest single gives "from" and the link', () => {
+    const reply = buildCardReply(
+      input({
+        shop: 'ebay',
+        listings: [
+          // Admin-confirmed bundle without a price: the best listing, so it is shown.
+          listing('ebay', ids('12', '13'), {
+            price: null,
+            matchStatus: 'confirmed',
+            url: 'https://eb.example/bundle',
+          }),
+          listing('ebay', ids('12'), {
+            ...euro(250),
+            matchStatus: 'pending',
+            url: 'https://eb.example/pending',
+          }),
+          listing('ebay', ids('12'), {
+            ...euro(150),
+            matchStatus: 'unconfirmed',
+            url: 'https://eb.example/unconfirmed',
+          }),
+        ],
+      })
+    );
+    // The shown listing has no price; a priced offer still gives ", from".
+    expect(lines(reply)[0]).toBe('✅ eBay: in stock (3 offers, from 1,50 €) · bundle');
+    expect(links(reply)).toEqual([['Open eBay', 'https://eb.example/unconfirmed']]);
+  });
+
+  test('an offer in another currency is never "from" and never cheaper', () => {
+    const reply = buildCardReply(
+      input({
+        shop: 'ebay',
+        listings: [
+          listing('ebay', ids('12'), { ...euro(200), url: 'https://eb.example/eur' }),
+          listing('ebay', ids('12'), {
+            price: { cents: 100, currency: 'USD' },
+            url: 'https://eb.example/usd',
+          }),
+        ],
+      })
+    );
+    expect(lines(reply)[0]).toBe('✅ eBay: 2,00 € (2 offers)');
+    expect(links(reply)).toEqual([['Open eBay', 'https://eb.example/eur']]);
+  });
+
+  test('a shown price in another currency compares with offers in that currency', () => {
+    const usd = (cents: number, url: string) =>
+      listing('ebay', ids('12'), { price: { cents, currency: 'USD' }, url });
+    const reply = buildCardReply(
+      input({
+        shop: 'ebay',
+        listings: [
+          usd(300, 'https://eb.example/a'),
+          listing('ebay', ids('12'), {
+            price: { cents: 100, currency: 'USD' },
+            matchStatus: 'unconfirmed',
+            url: 'https://eb.example/b',
+          }),
+        ],
+      })
+    );
+    expect(lines(reply)[0]).toBe('✅ eBay: 3.00 USD (2 offers)');
   });
 
   test('offers at the shown price give no "from"', () => {

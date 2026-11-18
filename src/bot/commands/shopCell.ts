@@ -30,7 +30,9 @@ export type ListingState = 'in_stock' | 'sold_out' | 'ended' | 'paused' | 'held_
  * One shop for one card: not enabled; unknown (no readable run, or nothing stored and the
  * shop's latest check failed or did not run); not listed (that check succeeded without it); or
  * its best listing. `stale` says the listing may be older than the last check; `offers` are the
- * in-stock listings, cheapest first (no price last), empty unless the best listing is in stock.
+ * in-stock listings, empty unless the best listing is in stock, in the order to link them:
+ * single cards backed by their picture, then other single cards, then bundles, each group
+ * cheapest first (no price, or a price in another currency, last).
  */
 export type ShopCell =
   | { kind: 'not_enabled' }
@@ -95,15 +97,42 @@ const TIER: Record<ListingState, number> = {
   ended: 2,
 };
 
-const price = (l: StoredListing) => l.price?.cents ?? Number.POSITIVE_INFINITY;
+/**
+ * The currency prices are compared in: EUR (every shop's own currency) when any listing has a
+ * EUR price, else the first priced listing's, so listings only in another currency still compare
+ * among themselves. A price in any other currency counts as no price.
+ */
+function referenceCurrency(listings: StoredListing[]): string {
+  const priced = listings.filter((l) => l.price !== null);
+  return priced.some((l) => l.price!.currency === 'EUR')
+    ? 'EUR'
+    : (priced[0]?.price!.currency ?? 'EUR');
+}
+
+function price(l: StoredListing, currency: string): number {
+  return l.price !== null && l.price.currency === currency
+    ? l.price.cents
+    : Number.POSITIVE_INFINITY;
+}
+
+/** Offer group, lower first: a backed single card, another single card, a bundle. */
+function offerRank(l: StoredListing): number {
+  if (l.cardIds.length > 1) return 2;
+  return pictureBacked(l) ? 0 : 1;
+}
 
 /**
  * Sort key, lower is better: seen in the latest check, then in stock beats paused after a
  * report or held back as a mismatch beats sold out or ended, then a backed picture (never a
  * bundle), then the lowest price (none last).
  */
-function sortKey(l: StoredListing, last: RunSummary, now: number): number[] {
-  return [unseen(l, last) ? 1 : 0, TIER[listingState(l, now)], pictureBacked(l) ? 0 : 1, price(l)];
+function sortKey(l: StoredListing, last: RunSummary, now: number, currency: string): number[] {
+  return [
+    unseen(l, last) ? 1 : 0,
+    TIER[listingState(l, now)],
+    pictureBacked(l) ? 0 : 1,
+    price(l, currency),
+  ];
 }
 
 function compareKeys(a: number[], b: number[]): number {
@@ -114,9 +143,14 @@ function compareKeys(a: number[], b: number[]): number {
 }
 
 /** The listing that best answers "can I buy this card here". */
-function best(candidates: StoredListing[], last: RunSummary, now: number): StoredListing {
+function best(
+  candidates: StoredListing[],
+  last: RunSummary,
+  now: number,
+  currency: string
+): StoredListing {
   return candidates.reduce((a, b) =>
-    compareKeys(sortKey(b, last, now), sortKey(a, last, now)) < 0 ? b : a
+    compareKeys(sortKey(b, last, now, currency), sortKey(a, last, now, currency)) < 0 ? b : a
   );
 }
 
@@ -143,7 +177,8 @@ export function shopCells(ctx: CellContext): (card: CardId, shop: ShopId) => Sho
     if (!last) return { kind: 'unknown' };
     const here = index.get(key(shop, card));
     if (!here) return succeeded(last, shop) ? { kind: 'not_listed' } : { kind: 'unknown' };
-    const listing = best(here, last, ctx.now);
+    const currency = referenceCurrency(here);
+    const listing = best(here, last, ctx.now, currency);
     const state = listingState(listing, ctx.now);
     const stale = unseen(listing, last) || needsLastSuccess(last, shop, ctx.enabledShops);
     const offers =
@@ -153,7 +188,11 @@ export function shopCells(ctx: CellContext): (card: CardId, shop: ShopId) => Sho
               (l) =>
                 listingState(l, ctx.now) === 'in_stock' && unseen(l, last) === unseen(listing, last)
             )
-            .sort((a, b) => price(a) - price(b) || a.id - b.id)
+            .sort(
+              (a, b) =>
+                offerRank(a) - offerRank(b) ||
+                compareKeys([price(a, currency), a.id], [price(b, currency), b.id])
+            )
         : [];
     return { kind: 'listed', listing, state, stale, offers };
   };

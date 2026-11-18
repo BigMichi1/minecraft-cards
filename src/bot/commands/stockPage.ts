@@ -168,7 +168,7 @@ function pagingRow(page: number, pages: number, filter: StockFilter) {
  * block with a row per card and a column per shop (`x`, `-`, `?`, `n/a`), and a legend. The rows
  * per page follow from the widths: what the page holds without rows, counted with the widest
  * page label, leaves room for a whole number of rows of the table's full width, so every page
- * fits in Discord's 2000 characters. With more than one page, ◀ ▶ buttons page through it.
+ * fits in Discord's 2000 characters and one more row would not. With more than one page, ◀ ▶ buttons page through it.
  */
 export function buildStockPage(input: StockInput): StockPage {
   const cellAt = shopCells(input);
@@ -181,13 +181,12 @@ export function buildStockPage(input: StockInput): StockPage {
 
   const cardWidth = Math.max('Card'.length, ...shown.map((r) => r.card.length));
   const widths = SHOP_IDS.map((shop) => Math.max(SHORT[shop].length, NOT_ENABLED.length));
+  // Every line is padded to the full width (trailing spaces included), so each row costs the
+  // same and the page can be filled exactly.
   const line = (cells: string[]) =>
-    cells
-      .map((text, i) => text.padEnd(i === 0 ? cardWidth : widths[i - 1]!))
-      .join(GAP)
-      .trimEnd();
+    cells.map((text, i) => text.padEnd(i === 0 ? cardWidth : widths[i - 1]!)).join(GAP);
   const header = line(['Card', ...SHOP_IDS.map((shop) => SHORT[shop])]);
-  const rowWidth = cardWidth + widths.reduce((sum, w) => sum + GAP.length + w, 0);
+  const rowWidth = header.length;
   const status = statusLines(input);
 
   const render = (label: string, body: string[]) =>
@@ -200,11 +199,20 @@ export function buildStockPage(input: StockInput): StockPage {
       FENCE,
       ...LEGEND,
     ].join('\n');
-  // The page label is at most `n/n` with n the number of cards (one card per page).
-  const widest = String(shown.length);
-  const frame = render(`${widest}/${widest}`, []).length;
-  const perPage = Math.floor((DISCORD_MESSAGE_LIMIT - frame) / (rowWidth + 1));
-  const pages = Math.ceil(shown.length / perPage);
+  // The rows left after the frame, whose page label `x/y` is counted at its widest (`99/99` for
+  // a two-digit page count). The page count depends on the rows per page, so its digits are
+  // raised until they hold it; they only grow, so this ends.
+  let digits = 1;
+  let perPage: number;
+  let pages: number;
+  for (;;) {
+    const widest = '9'.repeat(digits);
+    const frame = render(`${widest}/${widest}`, []).length;
+    perPage = Math.floor((DISCORD_MESSAGE_LIMIT - frame) / (rowWidth + 1));
+    pages = Math.ceil(shown.length / perPage);
+    if (String(pages).length <= digits) break;
+    digits = String(pages).length;
+  }
   const page = Math.min(input.page, pages);
   const body = shown
     .slice((page - 1) * perPage, page * perPage)

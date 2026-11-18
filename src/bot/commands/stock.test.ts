@@ -7,6 +7,7 @@ import { catalogManager } from '../database/catalogManager';
 import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { userManager } from '../database/userManager';
+import { compareCardIds } from '../cards/cardId';
 import { cid } from '../../test/cardIds';
 import { runOf, storedListing as listing } from '../../test/listings';
 import logger from '../utils/logger';
@@ -105,6 +106,49 @@ describe('/stock', () => {
     expect(replies[0]!.content!.split('\n')[1]).toMatch(
       /❌ blue-ocean failed, as of <t:\d+:R> · ⚪ collect-it n\/a/
     );
+  });
+
+  test('an unknown only value falls back to all', async () => {
+    await execute(command('u1', 'bogus'), CTX);
+    expect(first(replies[0]!)).toMatch(/^Stock · all cards \(251\) · page 1\/\d+$/);
+  });
+
+  test('a shop without a success in the window says so', async () => {
+    db.delete(runs).run();
+    runManager.record(runOf(['sammel-ente'], ['blue-ocean']));
+    await execute(command('u1', null), CTX);
+    expect(replies[0]!.content!.split('\n')[1]).toContain(
+      '❌ blue-ocean failed, no success in 7 days'
+    );
+  });
+
+  test('stock:2:in-stock pages through a catalog-sized in-stock set', async () => {
+    const inStock = [...catalogManager.knownIds()].sort(compareCardIds).slice(0, 150);
+    const stored = inStock.map((card) => listing('sammel-ente', [card]));
+    const read = spyOn(listingManager, 'listingsForCards').mockImplementation(() => stored);
+    try {
+      await handleStockButton(button('u1', 'stock:2:in-stock'), CTX);
+    } finally {
+      read.mockRestore();
+    }
+    const page = updates[0]!;
+    expect(first(page)).toMatch(/^Stock · cards in stock \(150\) · page 2\/[3-9]$/);
+    const rows = page.content!.split('\n').filter((l) => /^\w+ +[x-] /.test(l));
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every((r) => /^\w+ +x /.test(r))).toBe(true);
+    // Page 2 starts right after page 1's last card.
+    expect(rows[0]!.split(' ')[0]).toBe(String(inStock[rows.length]));
+    expect(ids(page)).toEqual(['stock:1:in-stock', 'stock:3:in-stock']);
+  });
+
+  test('a stale click on a list that shrank shows its last page', async () => {
+    userManager.setList('u1', '1-228, LE1-LE22, XXL1');
+    await handleStockButton(button('u1', 'stock:9:missing'), CTX);
+    expect(first(updates[0]!)).toMatch(/^Stock · your missing cards \(251\) · page (\d+)\/\1$/);
+    userManager.setList('u1', '12, 45');
+    await handleStockButton(button('u1', 'stock:9:missing'), CTX);
+    expect(first(updates[1]!)).toBe('Stock · your missing cards (2) · page 1/1');
+    expect(updates[1]!.components).toEqual([]);
   });
 
   test('a stored in-stock listing shows as x', async () => {

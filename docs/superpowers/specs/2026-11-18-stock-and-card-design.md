@@ -78,3 +78,20 @@ to open the shop page for one card.
 - `/stock` cells show no price; prices and links are in `/card` and `/missing status`.
 - ASCII markers in the `/stock` code block, as learned in PR #17.
 - Held-back and paused listings count as not available in `/stock`.
+
+## Outcome
+
+- `/stock` columns are headed `SE`, `BO`, `CI`, `EB`, spelled out in a legend line under the
+  block, so a row is 24 characters. Every row is padded to that full width, and a page takes as
+  many rows as fit in 2000 characters (one more would not): about 68 with a normal header.
+- Offers of one shop for one card are the in-stock listings, seen as recently as the shown
+  (best) listing. They are ordered: single cards backed by their picture (confirmed or reference)
+  first, then other single cards (pending, unconfirmed and the like), then bundles, each group
+  cheapest first. `/card` uses the first offer with a valid URL for `Open <shop>` and for
+  `, from <price>`. A bundle or an unconfirmed picture is linked or named as "from" only when no
+  backed single is on offer.
+- Prices compare only in one currency: EUR when any listing of the shop and card has a EUR
+  price, else the first priced listing's currency. A price in another currency counts like a
+  missing price. "From" appears only when the first offer is in the shown listing's currency and
+  cheaper, or the shown listing has no price.
+- With `shop:` the Kleinanzeigen button is left out.

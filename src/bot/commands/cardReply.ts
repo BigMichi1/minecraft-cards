@@ -37,13 +37,18 @@ function priceText(l: StoredListing): string {
   return l.price ? formatPrice(l.price) : 'in stock';
 }
 
-/** `(3 offers)`, with `, from <price>` when the cheapest offer is cheaper than the one shown. */
+/**
+ * `(3 offers)`, with `, from <price>` when the first offer (a backed single when there is one)
+ * is cheaper than the listing shown, in the same currency, or the shown one has no price.
+ */
 function offersText(shown: StoredListing, offers: StoredListing[]): string {
   if (offers.length < 2) return '';
-  const cheapest = offers[0]!;
+  const first = offers[0]!.price;
   const cheaper =
-    cheapest.price !== null && (shown.price === null || cheapest.price.cents < shown.price.cents);
-  return ` (${offers.length} offers${cheaper ? `, from ${priceText(cheapest)}` : ''})`;
+    first !== null &&
+    (shown.price === null ||
+      (first.currency === shown.price.currency && first.cents < shown.price.cents));
+  return ` (${offers.length} offers${cheaper ? `, from ${formatPrice(first)}` : ''})`;
 }
 
 /** What the best listing's line adds: older than the last check, bundle, picture unconfirmed. */
@@ -100,8 +105,9 @@ export function linkRows(buttons: ButtonBuilder[]): ActionRowBuilder<ButtonBuild
  * The `/card` reply: an embed titled `#12 Squid` with one line per shop (the best listing, as in
  * `/missing status`, with the offer count when there are several), the last check, and the
  * reference picture as thumbnail. Each shop with an offer gets an `Open <shop>` link button to
- * its cheapest offer with a valid URL; held-back and paused listings are never offered. Without
- * `shop:` a Kleinanzeigen search button follows.
+ * its first offer with a valid URL (the cheapest backed single, else the cheapest other single,
+ * else the cheapest bundle); held-back and paused listings are never offered. Without `shop:` a
+ * Kleinanzeigen search button follows.
  */
 export function buildCardReply(input: CardInput): CardReply {
   const cellAt = shopCells(input);

@@ -128,8 +128,38 @@ describe('shopCells', () => {
       'ebay'
     );
     expect(c).toMatchObject({ listing: cheaper, stale: false });
-    // Offers: every in-stock listing, cheapest first, no price last.
-    expect(c.kind === 'listed' && c.offers).toEqual([unconfirmed, cheaper, backed, noPrice]);
+    // Offers: backed singles first, cheapest first, no price last; then the rest.
+    expect(c.kind === 'listed' && c.offers).toEqual([cheaper, backed, noPrice, unconfirmed]);
+  });
+
+  test('offers: backed singles, then other singles, then bundles, each cheapest first', () => {
+    const bundle = listing('ebay', ids('12', '13'), { matchStatus: 'bundle', ...euro(10) });
+    const pending = listing('ebay', ids('12'), { matchStatus: 'pending', ...euro(30) });
+    const unconfirmed = listing('ebay', ids('12'), { matchStatus: 'unconfirmed', ...euro(20) });
+    const single = listing('ebay', ids('12'), euro(500));
+    const at = (listings: ReturnType<typeof listing>[]) => {
+      const c = shopCells(ctx({ listings }))(cid('12'), 'ebay');
+      return c.kind === 'listed' ? c.offers : [];
+    };
+    expect(at([bundle, pending, unconfirmed, single])).toEqual([
+      single,
+      unconfirmed,
+      pending,
+      bundle,
+    ]);
+    // Without a backed single, the unbacked singles lead, a bundle comes last.
+    expect(at([bundle, pending, unconfirmed])).toEqual([unconfirmed, pending, bundle]);
+  });
+
+  test('prices in another currency count as no price, for the best listing and the offers', () => {
+    const eur = listing('ebay', ids('12'), euro(200));
+    const usd = listing('ebay', ids('12'), { price: { cents: 100, currency: 'USD' } });
+    const c = shopCells(ctx({ listings: [usd, eur] }))(cid('12'), 'ebay');
+    expect(c).toMatchObject({ listing: eur, offers: [eur, usd] });
+    // Only listings in another currency: they compare among themselves.
+    const usd2 = listing('ebay', ids('12'), { price: { cents: 50, currency: 'USD' } });
+    const d = shopCells(ctx({ listings: [usd, usd2] }))(cid('12'), 'ebay');
+    expect(d).toMatchObject({ listing: usd2, offers: [usd2, usd] });
   });
 
   test('offers leave out held-back, paused, sold-out and ended listings', () => {

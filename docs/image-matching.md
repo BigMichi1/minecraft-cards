@@ -125,7 +125,14 @@ before decoding or resizing. Pictures are fetched only over https from the shop 
 image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
 `www.collect-it.de`, `i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
 
-## Pictures in alerts
+## Alerts: layout and pictures
+
+A user with at most 5 pending listings in a check (`SINGLE_MESSAGE_LIMIT` in
+`src/bot/notify/messages.ts`) gets one DM per listing, each with its embed, picture and its
+own button row directly under it. More listings are batched 5 per message; Discord shows all
+button rows below all embeds, so each embed and its row carry the same position marker. At most
+25 listings go out per user and check; the rest follow in the next checks. Each message is
+recorded as sent only once Discord accepted it.
 
 The alert DM does not link the listing picture and the reference thumbnail; the bot downloads
 them with the same bounded download (`downloadImage` in `embedder.ts`: allowed hosts, 10 MB,

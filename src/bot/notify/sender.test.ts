@@ -279,6 +279,76 @@ describe('createDiscordSender', () => {
     });
   });
 
+  describe('one message per listing for up to 5 listings', () => {
+    test('3 listings are 3 messages, each with its own buttons', async () => {
+      const items = Array.from({ length: 3 }, (_, i) => pending(seedListing(i + 1)));
+      const client = fakeClient();
+      const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
+      expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 3, dmFailures: 0 });
+      expect(client.sent).toHaveLength(3);
+      for (const s of client.sent) {
+        const o = s.opts as { embeds: unknown[]; components: unknown[] };
+        expect(o.embeds).toHaveLength(1);
+        expect(o.components).toHaveLength(1);
+      }
+    });
+
+    test('closed DMs on message 2 of 3 record only message 1 and stop that user', async () => {
+      const items = Array.from({ length: 3 }, (_, i) => pending(seedListing(i + 1)));
+      const client = fakeClient({ failOnSend: 2 });
+      const sender = createDiscordSender(client, {
+        alert: noAlert,
+        sleep: async () => {},
+        now: () => 4242,
+      });
+      const batch = new Map([
+        ['u1', items],
+        ['u2', [items[0]!]],
+      ]);
+      expect(await sender.send(batch)).toEqual({ notified: 2, dmFailures: 1 });
+      expect(client.sent.map((s) => s.user)).toEqual(['u1', 'u2']);
+      const recorded = db.select().from(notifications).all();
+      expect(recorded.map((r) => [r.discordId, r.listingId])).toEqual([
+        ['u1', items[0]!.listing.id],
+        ['u2', items[0]!.listing.id],
+      ]);
+      expect(dmFailedAt('u1')).toBe(4242);
+    });
+
+    test('another failure on message 2 of 3 records only message 1 and does not mark the user', async () => {
+      const items = Array.from({ length: 3 }, (_, i) => pending(seedListing(i + 1)));
+      const client = fakeClient({ failOnSend: 2, error: () => new Error('503') });
+      const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
+      expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 1, dmFailures: 0 });
+      expect(client.sent).toHaveLength(1);
+      expect(
+        db
+          .select()
+          .from(notifications)
+          .all()
+          .map((r) => r.listingId)
+      ).toEqual([items[0]!.listing.id]);
+      expect(dmFailedAt('u1')).toBeNull();
+    });
+
+    test('each message attaches its own picture', async () => {
+      const items = Array.from({ length: 2 }, (_, i) => {
+        const l = seedListing(i + 1);
+        return pending({ ...l, imageUrl: `https://i.ebayimg.com/${i + 1}.jpg` });
+      });
+      const client = fakeClient();
+      const sender = createDiscordSender(client, {
+        alert: noAlert,
+        sleep: async () => {},
+        downloadImage: async () => new Uint8Array([0xff, 0xd8, 0xff, 1]),
+      });
+      await sender.send(new Map([['u1', items]]));
+      expect(
+        client.sent.map((s) => (s.opts as { files?: { name: string }[] }).files?.map((f) => f.name))
+      ).toEqual([['picture-1.jpg'], ['picture-1.jpg']]);
+    });
+  });
+
   test('isDmClosed is true only for Discord error 50007', () => {
     expect(isDmClosed(dmClosedError())).toBe(true);
     expect(isDmClosed(new Error('Cannot send messages to this user'))).toBe(false);

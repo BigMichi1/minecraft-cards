@@ -29,6 +29,17 @@ describe('clipText', () => {
     expect(clipText('abcdef', 4)).toBe('abc…');
   });
 
+  test('never splits a surrogate pair at the cut', () => {
+    // '🔥' is two UTF-16 units; a cut after 'ab' plus its high half would leave a lone surrogate.
+    const clipped = clipText('ab🔥cdef', 4);
+    expect(clipped).toBe('ab…');
+    expect(clipped.isWellFormed()).toBe(true);
+  });
+
+  test('keeps a whole surrogate pair that fits before the cut', () => {
+    expect(clipText('a🔥bcdef', 4)).toBe('a🔥…');
+  });
+
   test('defaults to the Discord message limit', () => {
     const clipped = clipText('x'.repeat(5000));
     expect(clipped).toHaveLength(DISCORD_MESSAGE_LIMIT);

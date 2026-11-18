@@ -1,8 +1,15 @@
 export const DISCORD_MESSAGE_LIMIT = 2000;
 
-/** `text` cut to at most `max` characters, ending in `…` when it was cut. */
+/**
+ * `text` cut to at most `max` UTF-16 units, ending in `…` when it was cut. The cut never splits a
+ * surrogate pair (an emoji), which would leave a garbled character.
+ */
 export function clipText(text: string, max: number = DISCORD_MESSAGE_LIMIT): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+  if (text.length <= max) return text;
+  let end = max - 1;
+  const last = text.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}…`;
 }
 
 /** Join items after a prefix; when over `limit` keep what fits plus `… and K more`. */

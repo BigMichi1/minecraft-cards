@@ -122,17 +122,24 @@ export const runManager = {
    * has no error. Undefined when it never was (or only in rows that can no longer be read).
    */
   lastSuccess(shop: ShopId): number | undefined {
-    const rows = db
-      .select({ id: runs.id, summary: runs.summary })
-      .from(runs)
-      .orderBy(desc(runs.id))
-      .all();
-    for (const row of rows) {
-      const summary = parseSummary(row.summary, row.id);
-      const entry = summary?.shops[shop];
-      if (summary && entry !== undefined && entry.error === undefined) return summary.startedAt;
+    // Newest first, a page at a time: the scan usually ends in the first page, and the runs
+    // table grows by one row per check forever.
+    const PAGE = 50;
+    for (let offset = 0; ; offset += PAGE) {
+      const rows = db
+        .select({ id: runs.id, summary: runs.summary })
+        .from(runs)
+        .orderBy(desc(runs.id))
+        .limit(PAGE)
+        .offset(offset)
+        .all();
+      for (const row of rows) {
+        const summary = parseSummary(row.summary, row.id);
+        const entry = summary?.shops[shop];
+        if (summary && entry !== undefined && entry.error === undefined) return summary.startedAt;
+      }
+      if (rows.length < PAGE) return undefined;
     }
-    return undefined;
   },
 
   /** True (and remembers `now`) when no alert with this key went out within `everyMs`. */

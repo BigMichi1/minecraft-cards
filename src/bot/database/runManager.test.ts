@@ -45,6 +45,19 @@ describe('runManager', () => {
     expect(runManager.lastSuccess('ebay')).toBeUndefined();
   });
 
+  test('lastSuccess stops at the newest successful run and does not read older rows', () => {
+    for (let i = 0; i < 120; i++)
+      db.insert(runs).values({ startedAt: i, finishedAt: i, summary: 'not json' }).run();
+    runManager.record({ ...summary, startedAt: 500 });
+    const warn = spyOn(logger, 'warn');
+    try {
+      expect(runManager.lastSuccess('blue-ocean')).toBe(500);
+      expect(warn).not.toHaveBeenCalled(); // the 120 unreadable older rows were never parsed
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('last returns the most recent recorded summary', () => {
     expect(runManager.last()).toBeUndefined();
     runManager.record(summary);

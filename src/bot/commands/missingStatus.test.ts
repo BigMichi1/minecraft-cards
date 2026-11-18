@@ -49,6 +49,7 @@ function input(over: Partial<StatusInput> = {}): StatusInput {
     lastSuccess: {},
     listings: [],
     names: new Map([[cid('12'), 'Squid']]),
+    now: T + 60_000,
     ...over,
   };
 }
@@ -85,9 +86,9 @@ describe('buildStatusReply', () => {
         listings: [listing('blue-ocean', ids('12'))],
       })
     );
-    expect(reply).toContain(`❌ blue-ocean: error at <t:${S}:t> – ${'x'.repeat(100)}`);
+    expect(reply).toContain(`❌ blue-ocean: error <t:${S}:R> – ${'x'.repeat(100)}`);
     expect(reply).not.toContain('x'.repeat(101));
-    expect(reply).toContain(`#12 Squid: blue-ocean 0,55 € in stock (as of <t:${S - 3600}:t>)`);
+    expect(reply).toContain(`#12 Squid: blue-ocean 0,55 € in stock (as of <t:${S - 3600}:R>)`);
   });
 
   test('a failed shop that never succeeded says so on its entries', () => {
@@ -170,5 +171,32 @@ describe('buildStatusReply', () => {
     const shown = reply.split('\n').filter((l) => /^#\d+: /.test(l)).length;
     expect(reply.endsWith(`… and ${228 - shown} more cards`)).toBe(true);
     expect(shown).toBeGreaterThan(10);
+  });
+  test('a shop missing from the last check marks its stored entries as of its last success', () => {
+    const reply = buildStatusReply(
+      input({
+        lastSuccess: { ebay: T - 86_400_000 },
+        listings: [listing('ebay', ids('12'))],
+      })
+    );
+    expect(reply).toContain('⚠️ eBay: not checked');
+    expect(reply).toContain(`#12 Squid: eBay 0,55 € in stock (as of <t:${S - 86_400}:R>)`);
+  });
+
+  test('a shop missing from the last check that never succeeded says so', () => {
+    const reply = buildStatusReply(input({ listings: [listing('ebay', ids('12'))] }));
+    expect(reply).toContain('eBay 0,55 € in stock (never checked successfully)');
+  });
+
+  test('an auction that has ended since the last check is not in stock', () => {
+    const reply = buildStatusReply(
+      input({
+        listings: [listing('ebay', ids('12'), { format: 'auction', auctionEndsAt: T + 30_000 })],
+        lastSuccess: { ebay: T },
+        last: { ...okRun, shops: { ...okRun.shops, ebay: { listings: 1 } } },
+      })
+    );
+    expect(reply).toContain('#12 Squid: eBay auction ended');
+    expect(reply).not.toContain('in stock');
   });
 });

@@ -73,10 +73,14 @@ function describeChange(change: ListChange): string {
 }
 
 /** Gather what `/missing status` shows (all reads) and format it. */
-function status(userId: string): string {
+function status(userId: string, now: number): string {
   const cards = userManager.getList(userId);
+  const last = runManager.last();
+  // Only shops whose latest check failed or did not run need their last success looked up.
   const lastSuccess: Partial<Record<ShopId, number>> = {};
   for (const shop of SHOP_IDS) {
+    const entry = last?.shops[shop];
+    if (!last || (entry !== undefined && entry.error === undefined)) continue;
     const at = runManager.lastSuccess(shop);
     if (at !== undefined) lastSuccess[shop] = at;
   }
@@ -87,10 +91,11 @@ function status(userId: string): string {
   }
   return buildStatusReply({
     cards,
-    last: runManager.last(),
+    last,
     lastSuccess,
     listings: listingManager.listingsForCards(cards),
     names,
+    now,
   });
 }
 
@@ -120,7 +125,7 @@ function run(interaction: ChatInputCommandInteraction): string {
       userManager.clearList(userId);
       return 'Your missing list is now empty.';
     case 'status':
-      return status(userId);
+      return status(userId, Date.now());
     default:
       throw new Error(`Unknown /missing subcommand: ${sub}`);
   }

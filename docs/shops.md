@@ -30,6 +30,16 @@ User-Agent):
   A canonical or next link is readable only as exactly the category URL (page 1) or the
   category URL plus `_sN`, with no trailing slash, query or fragment, and a next link must name
   the following page.
+- **Total and full pages**: each page has a pagination text, `Du hast 30 von 235 Artikeln
+gesehen` on a page with a next page and `Du hast alle 235 Artikel gesehen` on the last. Page 1
+  must have it; a later page may lack it, but one it has must be readable and name the same
+  total. At the end, the number of unique listings read must equal the total. Every page that
+  links a next page must hold exactly 30 products. Either check failing is a `ShopLayoutError`.
+  They catch a dropped `rel="next"` (page 1 alone would otherwise read as the whole shop) and a
+  card selling out during the walk, which moves a later card onto a page already read.
+- **Error texts**: shop-controlled values quoted in errors and warnings (links, titles,
+  availability, the pagination text) are clipped to 200 characters, and every admin alert is
+  clipped to Discord's 2000-character limit, so an alert is never rejected.
 - **Products**: `#product-list .c-product-box`, schema.org `Product` microdata. Title in
   `.c-product-box-content-title`; the product link around it.
 - **Card ids**: base cards are titled `12 - Squid - Charakterkarte - Serie 3`, with a variant

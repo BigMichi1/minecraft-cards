@@ -111,16 +111,10 @@ function needsMatch(l: StoredListing, now: number): boolean {
       return true;
     case 'image_unavailable':
       return l.matchCheckedAt === null || now - l.matchCheckedAt >= IMAGE_RETRY_MS;
-    case 'reference':
-    case 'confirmed':
-    case 'unconfirmed':
-    case 'bundle':
-    case 'mismatch':
+    default:
+      // Exhaustive: a new status must be added to a branch above or to this list.
+      status satisfies 'reference' | 'confirmed' | 'unconfirmed' | 'bundle' | 'mismatch';
       return false;
-    default: {
-      const unknown: never = status;
-      throw new Error(`needsMatch: unknown match status ${String(unknown)}`);
-    }
   }
 }
 

@@ -221,6 +221,47 @@ describe('runCheck', () => {
     expect(card.referenceImageUrl).toBe('https://ente/12.jpg');
   });
 
+  test('a sammel-ente listing without a name or with several ids leaves the catalog alone', async () => {
+    const nameless: Listing = {
+      ...blue12,
+      shop: 'sammel-ente',
+      url: 'https://shop-sammel-ente.de/x',
+      cardName: null,
+      imageUrl: 'https://ente/x.jpg',
+    };
+    const several: Listing = {
+      ...nameless,
+      url: 'https://shop-sammel-ente.de/y',
+      cardIds: [cid('12'), cid('13')],
+      cardName: 'Two',
+    };
+    await runCheck(depsWith([ok('sammel-ente', [nameless, several])]));
+    expect(catalogManager.getCard(cid('12'))).toMatchObject({
+      name: null,
+      referenceImageUrl: null,
+    });
+  });
+
+  test('a failing prune of old alert rows is logged and the run goes on', async () => {
+    const prune = spyOn(runManager, 'pruneAlerts').mockImplementation(() => {
+      throw new Error('SQLITE_BUSY: prune');
+    });
+    const log = spyOn(logger, 'log');
+    try {
+      const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+      expect(s.error).toBeUndefined();
+      expect(s.notified).toBe(1);
+      expect(
+        log.mock.calls.some((c: unknown[]) =>
+          String(c[1]).includes('pruning old admin alert rows failed')
+        )
+      ).toBe(true);
+    } finally {
+      prune.mockRestore();
+      log.mockRestore();
+    }
+  });
+
   const ente12: Listing = {
     ...blue12,
     shop: 'sammel-ente',

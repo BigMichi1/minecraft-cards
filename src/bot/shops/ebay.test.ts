@@ -2,6 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
 import {
   CARD_NAME_WORDS,
+  PRODUCT_WORDS,
   createEbayAdapter,
   extractCardIdsFromTitle,
   titleExclusion,
@@ -115,7 +116,8 @@ describe('extractCardIdsFromTitle', () => {
   });
 
   test('prices, counts and sizes after a prefix are not ids', () => {
-    expect(s3('Karte 1,50 €')).toEqual([cid('1')]);
+    // A price is not a card number (round 2, F1).
+    expect(s3('Karte 1,50 €')).toEqual([]);
     expect(s3('Nr. 12, 3er Set')).toEqual([cid('12')]);
     expect(s3('Karte 12 und 3 weitere')).toEqual([cid('12')]);
     expect(s3('Karte 3er Set')).toEqual([]);
@@ -178,6 +180,93 @@ describe('extractCardIdsFromTitle', () => {
       cid('107'),
     ]);
     expect(extractCardIdsFromTitle('LEGO Minecraft Series 3 Card')).toEqual([]);
+  });
+
+  test('the first number after a prefix is checked for counts and prices too (F1)', () => {
+    for (const title of [
+      'On Fire Karte 5 Stück',
+      'On Fire Karte 2 x',
+      'On Fire Karte 2 €',
+      'On Fire Karte 2€',
+      'On Fire Karte 1 Euro',
+      'On Fire Karte 10 Stk',
+      'On Fire Karte 1 Stueck',
+      'On Fire Card 2 Pack',
+      'On Fire Card 3 pcs',
+      'On Fire #1 Bestseller',
+      'On Fire Nr. 1 Händler',
+      'On Fire Karte 2 EUR',
+      'On Fire Karte 1.50',
+    ]) {
+      expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+    }
+    expect(s3('Karte 12, 3 Karten')).toEqual([cid('12')]);
+    expect(s3('Karte 12, 3 Cards')).toEqual([cid('12')]);
+    // Still read: a card number followed by its name or a card word.
+    expect(s3('Karte 12 Squid')).toEqual([cid('12')]);
+    expect(s3('#12 Karte')).toEqual([cid('12')]);
+    expect(s3('Karte 12 XXL1')).toEqual(ids('12', 'XXL1'));
+  });
+
+  test('a number before Karte/Card followed by a product word is not read (F2)', () => {
+    for (const title of [
+      'On Fire Zombie 2 Karte gratis',
+      'On Fire Wolf 3 Card Pack',
+      'On Fire Creeper 10 Card Lot',
+      'On Fire Steve 4 Karte dazu',
+    ]) {
+      expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+    }
+    expect(s3('ULTRA RARE ZOMBIE 68 Karte Trading Card')).toEqual([cid('68')]);
+  });
+
+  test('the dash form refuses more name words and a number after je or x (F3)', () => {
+    for (const word of ['Neu', 'Rare', 'Gold', 'Doppel', 'Karte', 'Sammelkarten']) {
+      const title = `On Fire 5 - ${word} - Charakterkarte`;
+      expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+    }
+    for (const title of [
+      'On Fire je 2 - Steve - Charakterkarte',
+      'On Fire x 2 - Steve - Charakterkarte',
+    ]) {
+      expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+    }
+    expect(s3('Karten 2 - Steve - Charakterkarte')).toEqual([cid('2')]);
+  });
+
+  test('LE and XXL followed by a count are not ids (F4)', () => {
+    for (const title of [
+      'On Fire LE 3 Karten',
+      'On Fire XXL 2 Stück',
+      'On Fire XXL 1 Stück',
+      'On Fire LE8 x',
+    ]) {
+      expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+    }
+    expect(s3('LE21 Karte Card')).toEqual([cid('LE21')]);
+    expect(s3('XXL1 Steve')).toEqual([cid('XXL1')]);
+  });
+
+  test('every product word blocks each form it guards (F5)', () => {
+    // prettier-ignore
+    expect(PRODUCT_WORDS).toEqual([
+      'Album', 'Blister', 'Booster', 'Box', 'Bundle', 'Cards', 'Display', 'Foil', 'Holo',
+      'Karten', 'Konvolut', 'Lot', 'Mappe', 'Multipack', 'Pack', 'Packs', 'Paket', 'Sammlung',
+      'Set', 'Starter', 'Stk', 'Stück',
+    ]);
+    for (const word of PRODUCT_WORDS) {
+      for (const w of [word, word.toUpperCase(), word.toLowerCase()]) {
+        for (const title of [
+          `On Fire Karten 5 - ${w} Steve - Charakterkarte`,
+          `On Fire Karte 5 ${w}`,
+          `On Fire #5 ${w}`,
+          `On Fire Zombie 5 Karte ${w}`,
+          `On Fire LE5 ${w}`,
+        ]) {
+          expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+        }
+      }
+    }
   });
 
   test('the dash forms refuse counts, product words and the series number (E2)', () => {
@@ -754,6 +843,59 @@ describe('createEbayAdapter', () => {
         expect(result.truncated![0]).toContain('more');
       } finally {
         warn.mockRestore();
+      }
+    });
+
+    test('a walk short of the total by the tolerance ends with a warning (F7)', async () => {
+      const warn = spyOn(logger, 'warn');
+      try {
+        // 455 announced, 450 delivered: within max(5, 2 %).
+        const { result, urls } = await run((url) => {
+          const answer = JSON.parse(paged(450)(url)) as Record<string, unknown>;
+          answer.total = 455;
+          return JSON.stringify(answer);
+        });
+        expect(urls).toHaveLength(4 * EBAY_QUERIES.length);
+        expect(result.listings).toHaveLength(450);
+        expect(result.truncated).toBeUndefined();
+        const lines = warn.mock.calls.map((c) => String(c[0]));
+        expect(
+          lines.some((l) => l.includes(EBAY_QUERIES[0]!) && l.includes('455') && l.includes('450'))
+        ).toBe(true);
+        // 2 % of 1000 is 20: 1000 announced, 980 delivered is accepted too.
+        const big = await run((url) => {
+          const answer = JSON.parse(paged(980)(url)) as Record<string, unknown>;
+          answer.total = 1000;
+          return JSON.stringify(answer);
+        });
+        expect(big.result.listings).toHaveLength(980);
+        expect(big.result.truncated).toBeUndefined();
+        // 979 of 1000 at the cap is beyond the tolerance: a cut search, not a complete one.
+        const cut = await run((url) => {
+          const answer = JSON.parse(paged(979)(url)) as Record<string, unknown>;
+          answer.total = 1000;
+          return JSON.stringify(answer);
+        });
+        expect(cut.result.truncated).toHaveLength(EBAY_QUERIES.length);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('a walk short of the total beyond the tolerance is a layout error (F7)', async () => {
+      for (const [total, delivered] of [
+        [600, 400],
+        // max(5, ceil(470 * 2 %)) = 10 < 20.
+        [470, 450],
+        [300, 200],
+      ] as const) {
+        const error = await runError((url) => {
+          const answer = JSON.parse(paged(delivered)(url)) as Record<string, unknown>;
+          answer.total = total;
+          return JSON.stringify(answer);
+        });
+        expect({ total, type: error.constructor.name }).toEqual({ total, type: 'ShopLayoutError' });
+        expect(error.message).toContain(String(total));
       }
     });
 

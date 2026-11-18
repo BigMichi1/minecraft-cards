@@ -67,11 +67,12 @@ export interface ShopAdapter {
 /**
  * A shop answered, but not with what a working shop sends: no card on any page, a page that
  * is not a category page (bot wall, maintenance), a page past the first without products, or
- * eBay searches that all came back empty; on eBay also an empty later page while the total says
- * more, a first page with neither items nor total, and an answer of the wrong shape. On collect-it, which hides sold-out cards, also any
- * walk it cannot finish (a missing, unreadable or wrong canonical or next link, the page cap),
- * a walk that does not add up to the shop's article total or has a short middle page, and any
- * product box it cannot read. The runner treats it like a failed fetch.
+ * eBay searches that all came back empty; on eBay also a walk ending further below the total
+ * than its tolerance, a first page with neither items nor total, and an answer of the wrong
+ * shape. On collect-it, which hides sold-out cards, also any walk it cannot finish (a
+ * missing, unreadable or wrong canonical or next link, the page cap), a walk that does not add
+ * up to the shop's article total or has a short middle page, and any product box it cannot
+ * read. The runner treats it like a failed fetch.
  */
 export class ShopLayoutError extends Error {
   constructor(message: string) {
@@ -80,7 +81,10 @@ export class ShopLayoutError extends Error {
   }
 }
 
-/** Test seam: how to wait (default `sleep`) and how long (default 1500 ms) between two page requests. */
+/**
+ * Test seam: how to wait (default `sleep`) and how long (default 1500 ms) between two page
+ * requests.
+ */
 export interface AdapterOptions {
   sleep?: (ms: number) => Promise<void>;
   delayMs?: number;

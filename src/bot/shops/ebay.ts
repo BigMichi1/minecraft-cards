@@ -22,6 +22,11 @@ const SEARCH_LIMIT = 200;
 /** Pages read per query: 1000 results. The broadest query had 295 on 2026-11-18. */
 const MAX_PAGES_PER_QUERY = 5;
 const PAGE_DELAY_MS = 1500;
+/** eBay's `total` is an estimate: a walk may end this many items short (the larger of the two). */
+const TOTAL_TOLERANCE_MIN = 5;
+const TOTAL_TOLERANCE_SHARE = 0.02;
+const tolerance = (total: number) =>
+  Math.max(TOTAL_TOLERANCE_MIN, Math.ceil(total * TOTAL_TOLERANCE_SHARE));
 
 export const EBAY_QUERIES = [
   'lego minecraft on fire karte',
@@ -48,23 +53,9 @@ const RANGE_PATTERN = new RegExp(
   'gi'
 );
 
-const LE_XXL_PATTERN = /\b(LE|XXL)\s?(\d+)\b/gi;
-// "12/228": only the series size counts, so dates (`11/2026`) and sizes (`10/12`) do not match.
-const FRACTION_PATTERN = /\b(\d+)\s*\/\s*228\b/g;
-const NOT_FOLLOWED_BY_WORD = '(?![\\dA-Za-zÄÖÜäöüß])';
-// A list item after the first must be a whole id, not a price or count ("3er Set", "3 weitere", "5 €").
-const LIST_ITEM = `#?\\d+${NOT_FOLLOWED_BY_WORD}(?!\\s*(?:€|EUR\\b|Stück|weitere|x\\b))`;
-// A prefix followed by a list: "#12, #45 und 107", "Nr. 12, 45", "Karte 12". A decimal comma
-// ("1,50") has no space after it, so it never continues a list.
-const PREFIXED_LIST_PATTERN = new RegExp(
-  `(?:#|\\b(?:Nr|No)\\.?|\\b(?:Karte|Card))\\s*(\\d+${NOT_FOLLOWED_BY_WORD}(?:(?:,\\s+|\\s*&\\s*|\\s+(?:und|and)\\s+)${LIST_ITEM})*)`,
-  'gi'
-);
-
-/** The card types of series 3 titles, as the 2026-11-18 probe spelled them. */
-const CARD_TYPES = ['Charakterkarte', 'Comickarte', 'Puzzlekarte', 'Setkarte'];
-// Words a pack, lot or variant name starts with; never the name of a card.
-const PRODUCT_WORDS = [
+// Pack, lot, count and variant words: never a card name, and a number right before one is a
+// count ("5 Stück", "3 Pack"), not a card number.
+export const PRODUCT_WORDS: readonly string[] = [
   'Album',
   'Blister',
   'Booster',
@@ -88,11 +79,54 @@ const PRODUCT_WORDS = [
   'Stk',
   'Stück',
 ];
+// Words after a number that make it a count or a price: the product words and these.
+const COUNT_WORDS = [
+  ...PRODUCT_WORDS,
+  'Bestseller',
+  'dazu',
+  'EUR',
+  'Euro',
+  'gratis',
+  'Händler',
+  'pcs',
+  'Stueck',
+  'weitere',
+  'x',
+];
+// After a number: not a decimal ("1,50", "1.50") and not a count or price word ("5 Stück",
+// "2 €", "2 x", "#1 Bestseller").
+const NOT_A_COUNT = `(?![,.]\\d)(?!\\s*(?:€|(?:${COUNT_WORDS.join('|')})(?![${LETTER}])))`;
+
+const LE_XXL_PATTERN = new RegExp(`\\b(LE|XXL)\\s?(\\d+)\\b${NOT_A_COUNT}`, 'gi');
+// "12/228": only the series size counts, so dates (`11/2026`) and sizes (`10/12`) do not match.
+const FRACTION_PATTERN = /\b(\d+)\s*\/\s*228\b/g;
+const NOT_FOLLOWED_BY_WORD = '(?![\\dA-Za-zÄÖÜäöüß])';
+// Every number of a list, the first included, must be a whole id, not a price or count
+// ("3er Set", "3 weitere", "5 €", "1,50", "5 Stück").
+const LIST_ITEM = `#?\\d+${NOT_FOLLOWED_BY_WORD}${NOT_A_COUNT}`;
+// A prefix followed by a list: "#12, #45 und 107", "Nr. 12, 45", "Karte 12".
+const PREFIXED_LIST_PATTERN = new RegExp(
+  `(?:#|\\b(?:Nr|No)\\.?|\\b(?:Karte|Card))\\s*(\\d+${NOT_FOLLOWED_BY_WORD}${NOT_A_COUNT}(?:(?:,\\s+|\\s*&\\s*|\\s+(?:und|and)\\s+)${LIST_ITEM})*)`,
+  'gi'
+);
+
+/** The card types of series 3 titles, as the 2026-11-18 probe spelled them. */
+const CARD_TYPES = ['Charakterkarte', 'Comickarte', 'Puzzlekarte', 'Setkarte'];
 // "Karten 30 - Steve - Charakterkarte", "Minecraft  132 - Wither Skeleton - Charakterkarte":
-// number, spaced dash, a name not starting with a product word (a hyphen inside it, as in
-// "End-Arena", is fine), spaced dash, a known card type.
+// number (not after "je" or "x", a count), spaced dash, a name not starting with a product word
+// (a hyphen inside it, as in "End-Arena", is fine), spaced dash, a known card type.
+// Words a card name in the dash form never starts with.
+const NOT_A_NAME_START = [
+  ...PRODUCT_WORDS,
+  'Doppel',
+  'Gold',
+  'Karte',
+  'Neu',
+  'Rare',
+  'Sammelkarten',
+];
 const NUMBER_NAME_TYPE_PATTERN = new RegExp(
-  `${NOT_AFTER_SERIES}(?:^|\\s)(\\d{1,3})\\s+[-–]\\s+(?!(?:${PRODUCT_WORDS.join('|')})(?![${LETTER}]))(?:(?!\\s[-–]\\s).)+?\\s+[-–]\\s+(?:${CARD_TYPES.join('|')})(?![${LETTER}])`,
+  `${NOT_AFTER_SERIES}(?<!\\b(?:je|x)\\s*)(?:^|\\s)(\\d{1,3})\\s+[-–]\\s+(?!(?:${NOT_A_NAME_START.join('|')})(?![${LETTER}]))(?:(?!\\s[-–]\\s).)+?\\s+[-–]\\s+(?:${CARD_TYPES.join('|')})(?![${LETTER}])`,
   'gi'
 );
 
@@ -100,6 +134,11 @@ const NUMBER_NAME_TYPE_PATTERN = new RegExp(
  * Card name words that may stand right before "N Karte" (`ULTRA RARE ZOMBIE 68 Karte`): the
  * characters and mobs of the series 3 card names in the 2026-11-18 probe. An allow-list, so a
  * pack or count word (`Booster 5 Karte`, `Holo 3 Karte`) never reads as a card number.
+ *
+ * To add a word: take it from the card's name in the catalog (the sammel-ente name, `/missing
+ * status` shows it), never a pack, count or variant word; add it here and to the equality test
+ * in ebay.test.ts; and add a real title using it to the fixture (src/test/fixtures/
+ * ebay-search.json) with its reviewed ids.
  */
 export const CARD_NAME_WORDS: readonly string[] = [
   'Adventurer',
@@ -154,9 +193,10 @@ export const CARD_NAME_WORDS: readonly string[] = [
   'Zombie',
 ];
 // "ZOMBIE 68 Karte", "VILLAGER 8 Card": a card name word, a number, then the singular "Karte"
-// or "Card". The plural ("6 Karten", "6 Cards") is a count.
+// or "Card", not followed by a product word ("3 Card Pack") or "gratis"/"dazu" (a free extra).
+// The plural ("6 Karten", "6 Cards") is a count.
 const NAME_NUMBER_CARD_PATTERN = new RegExp(
-  `(?<![${LETTER}\\d])(?:${CARD_NAME_WORDS.join('|')})\\s+(\\d{1,3})\\s+(?:Karte|Card)(?![${LETTER}])`,
+  `(?<![${LETTER}\\d])(?:${CARD_NAME_WORDS.join('|')})\\s+(\\d{1,3})\\s+(?:Karte|Card)(?![${LETTER}])(?!\\s*(?:${[...PRODUCT_WORDS, 'dazu', 'gratis'].join('|')})(?![${LETTER}]))`,
   'gi'
 );
 
@@ -455,6 +495,25 @@ export function createEbayAdapter(
   }
 
   /**
+   * A walk that ended (an empty page, or the cap) below the announced total.
+   * eBay's `total` is an estimate, so a gap of at most max(5, 2 % of the total) is accepted
+   * with a warning and no alert; a larger one is a ShopLayoutError, as a partial walk would mark
+   * the unread listings unavailable.
+   */
+  function endShort(query: string, total: number, read: number): void {
+    const allowed = tolerance(total);
+    if (total - read <= allowed) {
+      logger.warn(
+        `eBay search "${query}": total ${total}, but the walk ended at ${read} items; within the tolerance of ${allowed}, accepted`
+      );
+      return;
+    }
+    throw new ShopLayoutError(
+      `eBay search "${query}" offset ${read}: no more items, but the total is ${total} (tolerance ${allowed})`
+    );
+  }
+
+  /**
    * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. The
    * walk ends at the answer's total (a later page without a total keeps the earlier one) or,
    * without any total, at a short or empty page. An empty page while the total says more, or a
@@ -481,14 +540,15 @@ export function createEbayAdapter(
             `eBay search "${query}" offset 0: answer has neither itemSummaries nor total`
           );
         }
-        if (total !== null && total > offset) {
-          throw new ShopLayoutError(
-            `eBay search "${query}" offset ${offset}: empty page, but the total is ${total}`
-          );
-        }
+        if (total !== null && total > offset) endShort(query, total, offset);
         return all;
       }
       if (total !== null ? all.length >= total : items.length < SEARCH_LIMIT) return all;
+    }
+    // At the cap within the tolerance of the total: complete as far as eBay's estimate goes.
+    if (total !== null && total - all.length <= tolerance(total)) {
+      endShort(query, total, all.length);
+      return all;
     }
     const note = `search "${query}": ${total ?? 'more'} results, only the first ${all.length} read (${MAX_PAGES_PER_QUERY}-page cap)`;
     logger.warn(`eBay ${note}`);

@@ -1,11 +1,13 @@
 /** Which handler a button belongs to, by its customId prefix. */
-export type ButtonRoute = 'report' | 'report-reason' | 'catalog';
+export type ButtonRoute = 'report' | 'report-reason' | 'catalog' | 'stock';
 
 const BUTTON_PREFIXES: [prefix: string, route: ButtonRoute][] = [
   ['report:', 'report'],
   ['report-reason:', 'report-reason'],
   ['catalog-save:', 'catalog'],
   ['catalog-cancel:', 'catalog'],
+  // The /stock paging buttons; handleStockButton validates the rest of the id.
+  ['stock:', 'stock'],
 ];
 
 export function buttonRoute(customId: string): ButtonRoute | null {

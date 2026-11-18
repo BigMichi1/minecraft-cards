@@ -4,8 +4,10 @@ import { throttledAlert } from './check/adminAlert';
 import { runCheck, type RunDeps } from './check/runner';
 import { createScheduler } from './check/scheduler';
 import * as adminCommand from './commands/admin';
+import * as cardCommand from './commands/card';
 import * as helpCommand from './commands/help';
 import * as missingCommand from './commands/missing';
+import * as stockCommand from './commands/stock';
 import { ConfigError, loadConfig, type Config } from './config';
 import { catalogManager } from './database/catalogManager';
 import { closeDatabase, initializeDatabase } from './database/db';
@@ -58,7 +60,7 @@ try {
 
 const adapters = createShopAdapters(config.ebay);
 
-/** The shops this process checks; `/missing status` shows the others as not enabled. */
+/** The shops this process checks; `/missing status`, `/stock` and `/card` show the others as not enabled. */
 const enabledShops = adapters.map((a) => a.id);
 
 const client = new Client({
@@ -111,8 +113,16 @@ const commands: Record<string, ChatCommand> = {
   },
   [helpCommand.data.name]: helpCommand,
   [missingCommand.data.name]: { execute: (i) => missingCommand.execute(i, { enabledShops }) },
+  [stockCommand.data.name]: { execute: (i) => stockCommand.execute(i, { enabledShops }) },
+  [cardCommand.data.name]: { execute: (i) => cardCommand.execute(i, { enabledShops }) },
 };
-const commandData = [adminCommand.data, helpCommand.data, missingCommand.data];
+const commandData = [
+  adminCommand.data,
+  helpCommand.data,
+  missingCommand.data,
+  stockCommand.data,
+  cardCommand.data,
+];
 
 client.on(Events.ClientReady, async (ready) => {
   logger.info(`Logged in as ${ready.user.tag}`);
@@ -167,6 +177,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         case 'catalog':
           // No store argument: the module-level store is the one /admin catalog import fills.
           await handleCatalogButton(interaction, { adminId: config.botAdminId });
+          break;
+        case 'stock':
+          await stockCommand.handleStockButton(interaction, { enabledShops });
           break;
         case null:
           break;

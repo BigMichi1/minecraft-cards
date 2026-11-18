@@ -8,6 +8,13 @@ picture comparison against the sammel-ente card image marks a listing as confirm
 Users manage their list with `/missing set|add|remove|list|clear|status`; the admin runs `/admin`
 (`map`, `clear`, `status`, `run`, `catalog import`). `/help` explains the rest.
 
+- `/stock [only:all|missing|in-stock]` pages through every catalog card (one row each, one column
+  per shop): `x` in stock, `-` not available (held back and paused count as not available), `?`
+  not checked, `n/a` not enabled. ◀ ▶ buttons turn the pages; each page fits in one message.
+- `/card number:<id> [shop:<shop>]` shows one card per shop (the best listing, the offer count)
+  with its reference picture, an `Open <shop>` button to the cheapest offer of each shop and a
+  Kleinanzeigen search; `shop:` limits it to one shop.
+
 `/missing status` shows the last check per shop (with "data as of" for a shop whose check failed
 or did not run), then a table with one row per missing card and one column per shop:
 

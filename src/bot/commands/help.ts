@@ -33,6 +33,16 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
           value: 'Your missing cards with what each shop last showed, and how fresh that is.',
         },
         {
+          name: '/stock [only:all|missing|in-stock]',
+          value:
+            'Every card and which shop has it in stock (`x`), page by page with ◀ ▶. `only:missing` shows your list, `only:in-stock` the cards available somewhere.',
+        },
+        {
+          name: '/card number:<id> [shop:<shop>]',
+          value:
+            'One card in every shop (or just `shop:`), with buttons to the cheapest offer per shop. Example: `/card number:LE8`',
+        },
+        {
           name: 'Wrong card?',
           value:
             'If a notification shows the wrong card, press ❌ Wrong in the row with the same number (1️⃣, 2️⃣, …) as that card.',

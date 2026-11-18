@@ -7,11 +7,13 @@ describe('buttonRoute', () => {
     ['report-reason:12:wrong_number', 'report-reason'],
     ['catalog-save:abc', 'catalog'],
     ['catalog-cancel:abc', 'catalog'],
+    ['stock:2:all', 'stock'],
+    ['stock:anything', 'stock'],
   ])('routes %p to %p', (customId, route) => {
     expect(buttonRoute(customId)).toBe(route);
   });
 
-  test.each(['codes:1', 'reportx:1', 'report-modal:1:other', 'catalog:abc', ''])(
+  test.each(['codes:1', 'reportx:1', 'report-modal:1:other', 'catalog:abc', 'stocks:1:all', ''])(
     'ignores %p',
     (customId) => {
       expect(buttonRoute(customId)).toBeNull();

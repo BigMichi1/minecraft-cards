@@ -1,10 +1,11 @@
 import { compareCardIds, normalizeCardId } from '../cards/cardId';
 import type { CardId } from '../cards/cardId';
-import { errorMessage } from '../utils/async';
+import { errorMessage, sleep as realSleep } from '../utils/async';
 import { REQUEST_TIMEOUT_MS, USER_AGENT, HttpError } from '../utils/http';
 import logger from '../utils/logger';
 import {
   ShopLayoutError,
+  type AdapterOptions,
   type FetchFn,
   type FetchResult,
   type Listing,
@@ -16,13 +17,29 @@ const TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 const SEARCH_URL = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
 const ITEM_URL = 'https://www.ebay.de/itm/';
 const TOKEN_SAFETY_MARGIN_MS = 60_000;
+/** Items per search page, the Browse API maximum. */
 const SEARCH_LIMIT = 200;
+/** Pages read per query: 1000 results. The broadest query had 295 on 2026-11-18. */
+const MAX_PAGES_PER_QUERY = 5;
+const PAGE_DELAY_MS = 1500;
 
 export const EBAY_QUERIES = [
   'lego minecraft on fire karte',
   'lego minecraft tcc serie 3',
   'lego minecraft trading card on fire',
+  // Most single cards ("LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)").
+  'lego minecraft karten serie 3',
 ];
+
+const LETTER = 'A-Za-zÄÖÜäöüß';
+// "Serie 3", "Series 3", "Serie3", "On Fire".
+const SERIES_3_PATTERN = /\bSeries?\s*3\b|\bOn\s*Fire\b/i;
+// "Serie 1", "Series 2", but not "Serie 12".
+const SERIES_1_2_PATTERN = /\bSeries?\s*[12]\b/i;
+// A listing the buyer picks a card from: "zum aussuchen", "auswählen", "Auswahl", "du wählst".
+const MULTI_PICK_PATTERN = /aussuch|auswahl|w(?:ä|ae)hl|\bchoos|\bpick\b/i;
+// A number range: "1 - 228", "151-254", "LE1 - LE22", "1 bis 228".
+const RANGE_PATTERN = /\b(?:LE|XXL)?\d+\s*(?:-|–|bis\b)\s*(?:LE|XXL)?\d+\b/i;
 
 const LE_XXL_PATTERN = /\b(LE|XXL)\s?(\d+)\b/gi;
 // "12/228": only the series size counts, so dates (`11/2026`) and sizes (`10/12`) do not match.
@@ -37,11 +54,66 @@ const PREFIXED_LIST_PATTERN = new RegExp(
   'gi'
 );
 
+// "Karten 30 - Steve - …": the number after "Karten" and before a spaced dash.
+const KARTEN_DASH_PATTERN = /\bKarten\s+(\d{1,3})\s+[-–]\s/gi;
+// "Minecraft  132 - Wither Skeleton - Charakterkarte": number, name, card type ending in "karte".
+const NUMBER_NAME_TYPE_PATTERN = new RegExp(
+  `(?:^|\\s)(\\d{1,3})\\s+[-–]\\s+[^-–]+?\\s+[-–]\\s+[${LETTER}]*karte(?![${LETTER}])`,
+  'gi'
+);
+// "ZOMBIE 68 Karte", "VILLAGER 8 Card": a name, a number, then the singular "Karte" or "Card".
+// The plural ("6 Karten", "6 Cards") is a count.
+const NAME_NUMBER_CARD_PATTERN = new RegExp(
+  `(?<![${LETTER}\\d])([${LETTER}]+)\\s+(\\d{1,3})\\s+(?:Karte|Card)(?![${LETTER}])`,
+  'gi'
+);
+// Words before a number that make it a series number or a count, not a card number.
+const NOT_A_NAME = new Set([
+  'serie',
+  'series',
+  'staffel',
+  'season',
+  'inkl',
+  'incl',
+  'inklusive',
+  'including',
+  'plus',
+  'mit',
+  'with',
+  'und',
+  'and',
+  'je',
+  'nur',
+  'ab',
+  'x',
+  'ca',
+  'über',
+  'set',
+  'lot',
+]);
+
 /**
- * Card ids named in an eBay title. Only prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `LE8`) and
- * `n/228` count; bare numbers (`Serie 3`, `2026`) never do.
+ * True when a title can name a series 3 card: it names series 3 ("Serie 3", "On Fire"), names
+ * no other series (a lot mixing series 1 or 2 is ambiguous), and is not a listing to pick
+ * cards from or a number range ("Einzelkarten 1 - 228 zum aussuchen"): a range is not stock.
+ */
+function isSeries3Offer(title: string): boolean {
+  return (
+    SERIES_3_PATTERN.test(title) &&
+    !SERIES_1_2_PATTERN.test(title) &&
+    !MULTI_PICK_PATTERN.test(title) &&
+    !RANGE_PATTERN.test(title)
+  );
+}
+
+/**
+ * Card ids named in an eBay title, only for a title that offers series 3 cards (see
+ * isSeries3Offer). Prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `LE8`), `n/228`,
+ * `Karten 30 - Name`, `132 - Name - Charakterkarte` and `ZOMBIE 68 Karte` count; bare numbers
+ * (`Serie 3`, `2026`) and counts (`6 Karten`) never do.
  */
 export function extractCardIdsFromTitle(title: string): CardId[] {
+  if (!isSeries3Offer(title)) return [];
   const ids = new Set<CardId>();
   const add = (raw: string) => {
     const id = normalizeCardId(raw);
@@ -51,6 +123,11 @@ export function extractCardIdsFromTitle(title: string): CardId[] {
   for (const m of title.matchAll(FRACTION_PATTERN)) add(m[1] ?? '');
   for (const m of title.matchAll(PREFIXED_LIST_PATTERN)) {
     for (const num of (m[1] ?? '').match(/\d+/g) ?? []) add(num);
+  }
+  for (const m of title.matchAll(KARTEN_DASH_PATTERN)) add(m[1] ?? '');
+  for (const m of title.matchAll(NUMBER_NAME_TYPE_PATTERN)) add(m[1] ?? '');
+  for (const m of title.matchAll(NAME_NUMBER_CARD_PATTERN)) {
+    if (!NOT_A_NAME.has((m[1] ?? '').toLowerCase())) add(m[2] ?? '');
   }
   return [...ids].sort(compareCardIds);
 }
@@ -71,6 +148,7 @@ interface EbayItem {
   buyingOptions?: string[];
   shippingOptions?: { shippingCost?: EbayMoney }[];
   itemEndDate?: string;
+  itemGroupType?: string;
 }
 
 /** "1.49" -> 149 without float arithmetic. */
@@ -128,7 +206,9 @@ function toListing(item: EbayItem): Listing | null {
     shop: 'ebay',
     url,
     title: item.title,
-    cardIds: extractCardIdsFromTitle(item.title),
+    // A listing with variations (`SELLER_DEFINED_VARIATIONS`) sells a choice of cards under one
+    // title; which of them is in stock is not in the search answer.
+    cardIds: item.itemGroupType ? [] : extractCardIdsFromTitle(item.title),
     cardName: null,
     imageUrl: item.image?.imageUrl ?? null,
     price: totalPrice(item, isAuction),
@@ -145,12 +225,16 @@ interface SearchResponse {
   errors?: { message?: string; longMessage?: string }[];
 }
 
-export function createEbayAdapter(opts: {
-  clientId: string;
-  clientSecret: string;
-  fetchFn?: FetchFn;
-}): ShopAdapter {
+export function createEbayAdapter(
+  opts: {
+    clientId: string;
+    clientSecret: string;
+    fetchFn?: FetchFn;
+  } & AdapterOptions
+): ShopAdapter {
   const fetchFn = opts.fetchFn ?? fetch;
+  const sleep = opts.sleep ?? realSleep;
+  const delayMs = opts.delayMs ?? PAGE_DELAY_MS;
   let token: { value: string; expiresAt: number } | null = null;
 
   /** An error body without the client secret or access token in it. */
@@ -242,8 +326,14 @@ export function createEbayAdapter(opts: {
     return token.value;
   }
 
-  async function search(query: string): Promise<EbayItem[]> {
-    const url = `${SEARCH_URL}?q=${encodeURIComponent(query)}&limit=${SEARCH_LIMIT}`;
+  /** One page of a search; `pace` waits before every request but the first of a run. */
+  async function searchPage(
+    query: string,
+    offset: number,
+    pace: () => Promise<void>
+  ): Promise<{ items: EbayItem[]; total: number | null }> {
+    const url = `${SEARCH_URL}?q=${encodeURIComponent(query)}&limit=${SEARCH_LIMIT}&offset=${offset}`;
+    await pace();
     const response = await fetchFn(url, {
       headers: {
         Authorization: `Bearer ${await getToken()}`,
@@ -261,15 +351,33 @@ export function createEbayAdapter(opts: {
           `eBay search "${query}" failed: ${redact(errors.join('; ')).slice(0, 300)}`
         );
       }
-      return [];
     }
-    if (typeof body.total === 'number' && body.total > body.itemSummaries.length) {
-      // Only the first page is read; a search this broad needs a narrower query.
+    return {
+      items: body.itemSummaries ?? [],
+      total: typeof body.total === 'number' ? body.total : null,
+    };
+  }
+
+  /**
+   * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. The
+   * walk ends at an empty page, at the answer's total, or (without a total) at a short page.
+   */
+  async function search(query: string, pace: () => Promise<void>): Promise<EbayItem[]> {
+    const all: EbayItem[] = [];
+    let total: number | null = null;
+    for (let page = 0; page < MAX_PAGES_PER_QUERY; page++) {
+      const result = await searchPage(query, all.length, pace);
+      total = result.total ?? total;
+      all.push(...result.items);
+      if (result.items.length === 0) return all;
+      if (total !== null ? all.length >= total : result.items.length < SEARCH_LIMIT) return all;
+    }
+    if (total === null || total > all.length) {
       logger.warn(
-        `eBay search "${query}": ${body.total} results, only the first ${body.itemSummaries.length} read`
+        `eBay search "${query}": ${total ?? 'more'} results, only the first ${all.length} read (${MAX_PAGES_PER_QUERY}-page cap)`
       );
     }
-    return body.itemSummaries;
+    return all;
   }
 
   return {
@@ -279,8 +387,13 @@ export function createEbayAdapter(opts: {
       const skipped = new Set<string>();
       let skippedInvalid = 0;
       let itemsSeen = 0;
+      let requests = 0;
+      // 1500 ms between two search requests, as between two pages of a shop.
+      const pace = async () => {
+        if (requests++ > 0) await sleep(delayMs);
+      };
       for (const query of EBAY_QUERIES) {
-        const items = await search(query);
+        const items = await search(query, pace);
         itemsSeen += items.length;
         for (const item of items) {
           const listing = toListing(item);

@@ -14,6 +14,7 @@ Users manage their list with `/missing set|add|remove|list|clear|status`; the ad
 - [Configuration](docs/configuration.md): every environment variable
 - [Image matching](docs/image-matching.md): model choice, threshold measurement, caveats
 - [Deployment](docs/deployment.md): Docker image, Compose, first start
+- [Shops](docs/shops.md): which shops were checked, which sell single cards, which the bot reads
 - [Design](docs/superpowers/specs/2026-11-17-minecraft-cards-bot-design.md) and
   [implementation plan](docs/superpowers/plans/2026-11-17-minecraft-cards-bot.md)
 - [CLAUDE.md](CLAUDE.md): architecture and invariants for contributors and Claude Code

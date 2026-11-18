@@ -29,11 +29,12 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   results) per query. 1500 ms between two search requests, as between two shop pages.
 - **Errors**: a failing page is a shop error, like a failing shop page. So is a partial walk,
   because the unread listings would be marked unavailable: a walk that ends (an empty later page)
-  further below the `total` than its tolerance, a first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty
-  result), and an answer of the wrong shape (not an object, `itemSummaries` not a list of items,
+  further below the `total` than its tolerance, an empty first page with a `total` above 0, a
+  first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty result),
+  and an answer of the wrong shape (not an object, `itemSummaries` not a list of items,
   `total` not a number) are `ShopLayoutError`s naming the query and the offset. All searches
   together returning no item is a `ShopLayoutError` as before.
-- **Total tolerance**: eBay's `total` is an estimate, so a walk may end up to
+- **Total tolerance**: eBay's `total` is an estimate, so a walk past its first page may end up to
   max(5, ceil(2 % of the total)) items short of it (455 announced, 450 delivered). That gap is
   accepted with a warning naming the query, the total and the count read, and no admin alert; a
   larger gap (600 announced, 400 delivered) stays a `ShopLayoutError`. At the page cap, a gap
@@ -59,15 +60,26 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     lists such as `#12, #45 und 107`.
 
   Counts are not ids: `6 Karten`, `21 Packs à 6 Karten`, `193 verschiedene Karten`,
-  `incl. 1 special Card`, and the series number in `Serie 3 Karte`. Every number after a prefix
-  (the first one too) and every LE/XXL number is refused when a decimal (`1,50`) or a count or
-  price word follows it: the product words (`PRODUCT_WORDS`: Album, Blister, Booster, Box,
-  Bundle, Cards, Display, Foil, Holo, Karten, Konvolut, Lot, Mappe, Multipack, Pack, Packs,
-  Paket, Sammlung, Set, Starter, Stk, Stück) and `€`, EUR, Euro, Stueck, pcs, x, weitere,
-  Bestseller, Händler, gratis, dazu. So `Karte 5 Stück`, `Karte 2 €`, `#1 Bestseller`,
-  `LE 3 Karten` and `XXL 1 Stück` give no id. `NAME N Karte` is refused when a product word,
-  `gratis` or `dazu` follows (`Wolf 3 Card Pack`). The dash form also refuses names starting
-  with Neu, Rare, Gold, Doppel, Karte or Sammelkarten, and a number after `je` or `x`.
+  `incl. 1 special Card`, and the series number in `Serie 3 Karte`. Counts, units, prices and
+  slogans are never ids. One shared list, `COUNT_WORDS` in `src/bot/shops/ebay.ts`, holds them all:
+  - products and their plurals: Album, Alben, Blister(s), Booster(s), Box, Boxen, Bundle(s),
+    Cards, Display(s), Foil, Holo, Karten, Konvolut, Lot(s), Mappe(n), Multipack(s), Pack,
+    Packs, Packung(en), Paket(e), Sammlung, Set(s), Starter;
+  - counts and units: Exemplare, fach, mal, pcs, St., Stk, Stück, Stueck, Teile, weitere, x;
+  - prices and extras: dazu, EUR, Euro, gratis;
+  - seller slogans: Bestseller, Fan, Händler, Seller, Verkäufer;
+  - and the signs `€` and `-fach`.
+
+  Every number form checks it. A number after a prefix (the first one too), an LE/XXL number and
+  `NAME N Karte` (after the card word) are refused when a decimal (`1,50`) or a word of the list
+  follows. The dash form refuses a name starting with one. So `Karte 5 Stück`, `Karte 2 €`,
+  `Karte 2-fach`, `#1 Bestseller`, `LE 3 Karten`, `XXL 1 Stück`, `Wolf 3 Card Pack`,
+  `Zombie 2 Karte gratis` and `5 - Stueck - Charakterkarte` give no id. A word added to the list
+  guards every form; add it to the equality test in `ebay.test.ts` too. A number after
+  `#`/`Nr.`/`No.` followed by `in` is a slogan (`Nr. 1 in Deutschland`). The dash form also
+  refuses names starting with Neu, Neuware, Rare, Gold, Goldkarte, Doppel, Doppelt, Karte,
+  Sammelkarte or Sammelkarten, and a number after `je`, `2x`, `2 x` or a unit word
+  (`Stück 5 - …`).
 
 - **Extending `CARD_NAME_WORDS`**: when a real `NAME N Karte` title is missed because its name
   word is not in the list, take the word from that card's name in the catalog (the sammel-ente

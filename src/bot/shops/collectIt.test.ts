@@ -126,10 +126,55 @@ describe('parseCollectItPage', () => {
   });
 
   test('a variant suffix after the type does not end up in the name', () => {
-    const titles = new Map([...p1.listings, ...p8.listings].map((l) => [l.title, l.cardName]));
-    for (const [title, name] of titles) {
-      expect(title.startsWith(`${title.split(' - ')[0]} - ${name} - `)).toBe(true);
-    }
+    const nameOf = (title: string) => p1.listings.find((l) => l.title === title)?.cardName;
+    expect(nameOf('14 - Alex - Charakterkarte - Lava - Serie 3')).toBe('Alex');
+    expect(nameOf('13 - Skeleton - Charakterkarte - Holo - Serie 3')).toBe('Skeleton');
+    expect(nameOf('6 - Zombie - Charakterkarte - Ultra - Serie 3')).toBe('Zombie');
+  });
+
+  describe('titles and links', () => {
+    const withTitle = (title: string) =>
+      parseCollectItPage(
+        firstBoxOnly(($, box) => box.find('.c-product-box-content-title').text(title))
+      ).listings[0];
+
+    test('an XXL title maps to the XXL id', () => {
+      const xxl = withTitle('XXL1 - Ender Dragon - XXL Karte - Serie 3');
+      expect(xxl?.cardIds).toEqual([cid('XXL1')]);
+      expect(xxl?.cardName).toBe('Ender Dragon');
+    });
+
+    test('a title with nothing after the name keeps the name', () => {
+      const squid = withTitle('12 - Squid');
+      expect(squid?.cardIds).toEqual([cid('12')]);
+      expect(squid?.cardName).toBe('Squid');
+    });
+
+    test('a lowercase LE prefix is read and made canonical', () => {
+      // TITLE_PATTERN is case-insensitive and normalizeCardId uppercases the prefix.
+      expect(withTitle('le01 - Ender Dragon - Limitierte Karte - Serie 3')?.cardIds).toEqual([
+        cid('LE1'),
+      ]);
+    });
+
+    test('a relative product href is resolved against the shop', () => {
+      const html = firstBoxOnly(($, box) =>
+        box.find('a[href]').attr('href', '/1-Alex-Charakterkarte-Serie-3')
+      );
+      expect(parseCollectItPage(html).listings[0]?.url).toBe(
+        'https://www.collect-it.de/1-Alex-Charakterkarte-Serie-3'
+      );
+    });
+
+    test('a box with a link but no title is skipped as invalid, naming its link', () => {
+      const parsed = parseCollectItPage(
+        firstBoxOnly(($, box) => box.find('.c-product-box-content-title').remove())
+      );
+      expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
+      expect(parsed.firstSkipped).toBe(
+        'a product box without a title (https://www.collect-it.de/1-Alex-Charakterkarte-Serie-3)'
+      );
+    });
   });
 
   test('the listing agrees with the product page on price and stock', () => {
@@ -373,6 +418,13 @@ describe('createCollectItAdapter', () => {
       .catch((e: unknown) => e)) as Error;
     expect(error.message).toBe('collect-it: page 2 failed: The operation timed out.');
     expect(error.cause).toBe(timeout);
+  });
+
+  test('the same product URL on two pages counts once', async () => {
+    const { fetchFn } = fakeFetch({ Einzelkarten: asPage(P1, 1, true), _s2: asPage(P1, 2, false) });
+    const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
+    expect(listings).toHaveLength(30);
+    expect(new Set(listings.map((l) => l.url)).size).toBe(30);
   });
 
   test('an HTTP error rejects', async () => {

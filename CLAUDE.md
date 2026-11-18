@@ -33,7 +33,7 @@ Bun + TypeScript Discord bot (discord.js), SQLite through Drizzle. `src/bot/bot.
 
 - `config.ts`: env parsing, fails fast with a message naming the variable.
 - `cards/`: canonical card ids and the starter catalog.
-- `shops/`: adapters for sammel-ente, blue-ocean and eBay behind one `ShopAdapter` interface.
+- `shops/`: adapters for sammel-ente, blue-ocean, collect-it and eBay behind one `ShopAdapter` interface; `adapters.ts` builds the enabled list for `bot.ts`.
 - `check/`: `runner.ts` (one round for all users), `scheduler.ts` (interval, `/admin run`) and `adminAlert.ts` (throttled admin alerts, at most once a day per key; the registration and model-load DMs are not throttled, they go once per start).
 - `lifecycle.ts`: shutdown and the slash command runner (DM failure notice).
 - `matcher/`: image embedder (transformers.js), cosine similarity, bounded image download.
@@ -69,6 +69,7 @@ Docs: `docs/development.md`, `configuration.md`, `image-matching.md`, `deploymen
 ## Decisions to keep
 
 - blue-ocean card ids come from the URL suffix (`...-tcc-12`), and only "On Fire" (series 3) titles are kept; series 1 and 2 listings share the category and would get wrong ids.
+- collect-it pages are walked by each page's `<link rel="next">`, not by a page count: a page past the end redirects to page 1. A page whose canonical link names another page than the one asked for ends the walk. collect-it hides sold-out cards, so a card vanishing from the category is how it sells out.
 - The sammel-ente listing picture of the same card number is the image reference.
 - Production runs `bun run src/bot/bot.ts`, not the compiled binary: the compiled binary cannot load the image model (`docs/image-matching.md`). `bun run build` remains but is not what the Docker image uses.
 - `sharp` is bypassed: it hangs under Bun 1.4.4, so the embedder decodes and resizes with `Bun.Image`.

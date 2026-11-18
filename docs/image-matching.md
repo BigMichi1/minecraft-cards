@@ -109,7 +109,7 @@ Remote pictures are bounded before they reach the model: downloads over 10 MB ar
 pictures over 10000 px on a side or more elongated than 10:1 are refused from their header,
 before decoding or resizing. Pictures are fetched only over https from the shop and eBay
 image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
-`i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
+`www.collect-it.de`, `i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
 
 ## Match statuses
 

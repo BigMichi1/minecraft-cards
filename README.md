@@ -1,6 +1,6 @@
 # minecraft-cards-bot
 
-A Discord bot that checks shops (sammel-ente, blue-ocean, optionally eBay) every hour
+A Discord bot that checks shops (sammel-ente, blue-ocean, collect-it, optionally eBay) every hour
 (configurable, `CHECK_INTERVAL_MINUTES`) for
 Minecraft sticker card availability and DMs users about the cards they are missing. A
 picture comparison against the sammel-ente card image marks a listing as confirmed.

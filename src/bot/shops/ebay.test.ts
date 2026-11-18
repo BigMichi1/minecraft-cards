@@ -2,7 +2,7 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
 import {
   CARD_NAME_WORDS,
-  PRODUCT_WORDS,
+  COUNT_WORDS,
   createEbayAdapter,
   extractCardIdsFromTitle,
   titleExclusion,
@@ -247,26 +247,97 @@ describe('extractCardIdsFromTitle', () => {
     expect(s3('XXL1 Steve')).toEqual([cid('XXL1')]);
   });
 
-  test('every product word blocks each form it guards (F5)', () => {
-    // prettier-ignore
-    expect(PRODUCT_WORDS).toEqual([
-      'Album', 'Blister', 'Booster', 'Box', 'Bundle', 'Cards', 'Display', 'Foil', 'Holo',
-      'Karten', 'Konvolut', 'Lot', 'Mappe', 'Multipack', 'Pack', 'Packs', 'Paket', 'Sammlung',
-      'Set', 'Starter', 'Stk', 'Stück',
-    ]);
-    for (const word of PRODUCT_WORDS) {
-      for (const w of [word, word.toUpperCase(), word.toLowerCase()]) {
+  // prettier-ignore
+  const EXPECTED_COUNT_WORDS = [
+    // Products and their plurals.
+    'Album', 'Alben', 'Blister', 'Blisters', 'Booster', 'Boosters', 'Box', 'Boxen', 'Bundle',
+    'Bundles', 'Cards', 'Display', 'Displays', 'Foil', 'Holo', 'Karten', 'Konvolut', 'Lot',
+    'Lots', 'Mappe', 'Mappen', 'Multipack', 'Multipacks', 'Pack', 'Packs', 'Packung',
+    'Packungen', 'Paket', 'Pakete', 'Sammlung', 'Set', 'Sets', 'Starter',
+    // Counts and units.
+    'Exemplare', 'fach', 'mal', 'pcs', 'St.', 'Stk', 'Stück', 'Stueck', 'Teile', 'weitere', 'x',
+    // Prices.
+    'dazu', 'EUR', 'Euro', 'gratis',
+    // Seller slogans.
+    'Bestseller', 'Fan', 'Händler', 'Seller', 'Verkäufer',
+  ];
+
+  test('one shared count list guards every number form (structural, F5, G1-G4)', () => {
+    expect(COUNT_WORDS).toEqual(EXPECTED_COUNT_WORDS);
+    // The symbols and joined forms that are not words.
+    const extras = ['€', '-fach'];
+    for (const word of [...COUNT_WORDS, ...extras]) {
+      const cases = /^[A-Za-zÄÖÜäöüß.]+$/.test(word)
+        ? [word, word.toUpperCase(), word.toLowerCase()]
+        : [word];
+      for (const w of cases) {
+        const sep = w === '-fach' ? '' : ' ';
         for (const title of [
+          `On Fire Karte 5${sep}${w}`,
+          `On Fire Card 5${sep}${w}`,
+          `On Fire #5${sep}${w}`,
+          `On Fire Nr. 5${sep}${w}`,
+          `On Fire No. 5${sep}${w}`,
+          `On Fire Karte 12, 5${sep}${w}`,
+          `On Fire LE5${sep}${w}`,
+          `On Fire LE 5${sep}${w}`,
+          `On Fire XXL1${sep}${w}`,
+          `On Fire XXL 1${sep}${w}`,
+          `On Fire Zombie 5 Karte${sep}${w}`,
+          `On Fire Zombie 5 Card${sep}${w}`,
           `On Fire Karten 5 - ${w} Steve - Charakterkarte`,
-          `On Fire Karte 5 ${w}`,
-          `On Fire #5 ${w}`,
-          `On Fire Zombie 5 Karte ${w}`,
-          `On Fire LE5 ${w}`,
         ]) {
-          expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+          const got = extractCardIdsFromTitle(title).filter((id) => id !== '12');
+          expect({ title, ids: got }).toEqual({ title, ids: [] });
         }
       }
     }
+  });
+
+  test('the cases named in round 3 give no id (G1-G4)', () => {
+    for (const title of [
+      // G1
+      'On Fire Zombie 2 Card Stueck',
+      'On Fire Zombie 2 Karte x',
+      'On Fire Zombie 2 Karte Euro',
+      'On Fire Zombie 2 Karte €',
+      // G2
+      'On Fire Karte 2 St.',
+      'On Fire Karte 2 Teile',
+      'On Fire Karte 2 Exemplare',
+      'On Fire Karte 2 mal',
+      'On Fire Karte 2 fach',
+      'On Fire Karte 2-fach',
+      'On Fire Karte 2 Boosters',
+      'On Fire Karte 2 Packungen',
+      'On Fire LE 2 Boosters',
+      'On Fire XXL 1 Teile',
+      // G3
+      'On Fire #1 Verkäufer',
+      'On Fire Nr. 1 Seller',
+      'On Fire No. 1 Fan',
+      'On Fire Nr 1 in Deutschland',
+      'On Fire #1 in Deutschland',
+      'On Fire No. 1 in Germany',
+      // G4
+      'On Fire 5 - Stueck - Charakterkarte',
+      'On Fire 5 - Sammelkarte - Charakterkarte',
+      'On Fire 5 - Doppelt - Charakterkarte',
+      'On Fire 5 - Neuware - Charakterkarte',
+      'On Fire 5 - Goldkarte - Charakterkarte',
+      'On Fire 2x 5 - Steve - Charakterkarte',
+      'On Fire 2 x 5 - Steve - Charakterkarte',
+      'On Fire Stück 5 - Steve - Charakterkarte',
+      'On Fire Stk 5 - Steve - Charakterkarte',
+    ]) {
+      expect({ title, ids: extractCardIdsFromTitle(title) }).toEqual({ title, ids: [] });
+    }
+    // Still read.
+    expect(s3('#12 Squid')).toEqual([cid('12')]);
+    expect(s3('Nr. 12 Steve')).toEqual([cid('12')]);
+    expect(s3('Karte 12 Steve')).toEqual([cid('12')]);
+    expect(s3('Karten 5 - Steve - Charakterkarte')).toEqual([cid('5')]);
+    expect(s3('ZOMBIE 68 Karte Trading Card')).toEqual([cid('68')]);
   });
 
   test('the dash forms refuse counts, product words and the series number (E2)', () => {
@@ -738,6 +809,27 @@ describe('createEbayAdapter', () => {
       const { result } = await run((url) =>
         new URL(url).searchParams.get('q') === EBAY_QUERIES[1]
           ? JSON.stringify({ total: 0 })
+          : paged(10)(url)
+      );
+      expect(result.listings).toHaveLength(10);
+    });
+
+    test('an empty first page with a small total is a layout error, not tolerated (G5)', async () => {
+      for (const first of [
+        JSON.stringify({ total: 3 }),
+        JSON.stringify({ total: 3, itemSummaries: [] }),
+        JSON.stringify({ total: 1, itemSummaries: [] }),
+      ]) {
+        const error = await runError((url) =>
+          new URL(url).searchParams.get('q') === EBAY_QUERIES[1] ? first : paged(10)(url)
+        );
+        expect({ first, type: error.constructor.name }).toEqual({ first, type: 'ShopLayoutError' });
+        expect(error.message).toContain('offset 0');
+      }
+      // A page-1 {"total":0} with an empty list stays a valid empty result.
+      const { result } = await run((url) =>
+        new URL(url).searchParams.get('q') === EBAY_QUERIES[1]
+          ? JSON.stringify({ total: 0, itemSummaries: [] })
           : paged(10)(url)
       );
       expect(result.listings).toHaveLength(10);

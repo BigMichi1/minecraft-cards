@@ -53,49 +53,85 @@ const RANGE_PATTERN = new RegExp(
   'gi'
 );
 
-// Pack, lot, count and variant words: never a card name, and a number right before one is a
-// count ("5 Stück", "3 Pack"), not a card number.
-export const PRODUCT_WORDS: readonly string[] = [
+// Products and their plurals: never a card name, and a number right before one is a count
+// ("3 Pack", "2 Boosters"), not a card number.
+const PRODUCT_WORDS = [
   'Album',
+  'Alben',
   'Blister',
+  'Blisters',
   'Booster',
+  'Boosters',
   'Box',
+  'Boxen',
   'Bundle',
+  'Bundles',
   'Cards',
   'Display',
+  'Displays',
   'Foil',
   'Holo',
   'Karten',
   'Konvolut',
   'Lot',
+  'Lots',
   'Mappe',
+  'Mappen',
   'Multipack',
+  'Multipacks',
   'Pack',
   'Packs',
+  'Packung',
+  'Packungen',
   'Paket',
+  'Pakete',
   'Sammlung',
   'Set',
+  'Sets',
   'Starter',
+];
+// Counts and units: "5 Stück", "2 St.", "3 Teile", "2 mal", "2 x".
+const UNIT_WORDS = [
+  'Exemplare',
+  'fach',
+  'mal',
+  'pcs',
+  'St.',
   'Stk',
   'Stück',
-];
-// Words after a number that make it a count or a price: the product words and these.
-const COUNT_WORDS = [
-  ...PRODUCT_WORDS,
-  'Bestseller',
-  'dazu',
-  'EUR',
-  'Euro',
-  'gratis',
-  'Händler',
-  'pcs',
   'Stueck',
+  'Teile',
   'weitere',
   'x',
 ];
-// After a number: not a decimal ("1,50", "1.50") and not a count or price word ("5 Stück",
-// "2 €", "2 x", "#1 Bestseller").
-const NOT_A_COUNT = `(?![,.]\\d)(?!\\s*(?:€|(?:${COUNT_WORDS.join('|')})(?![${LETTER}])))`;
+// Prices and extras: "1 Euro", "2 EUR", "1 Karte gratis", "1 Karte dazu".
+const PRICE_WORDS = ['dazu', 'EUR', 'Euro', 'gratis'];
+// Seller slogans: "#1 Bestseller", "Nr. 1 Händler", "No. 1 Fan".
+const SLOGAN_WORDS = ['Bestseller', 'Fan', 'Händler', 'Seller', 'Verkäufer'];
+
+/**
+ * The one shared list of words after which a number is a count, unit, price or slogan, never a
+ * card id. Every number form checks it (NOT_A_COUNT): the prefixed list (`Karte 5 Stück`,
+ * `#1 Bestseller`), LE/XXL (`XXL 1 Stück`), `NAME N Karte` (`Zombie 2 Karte gratis`), and the
+ * dash form, whose name may not start with one (`5 - Stück - Charakterkarte`). A word added
+ * here guards all of them; add it to the equality test in ebay.test.ts too.
+ */
+export const COUNT_WORDS: readonly string[] = [
+  ...PRODUCT_WORDS,
+  ...UNIT_WORDS,
+  ...PRICE_WORDS,
+  ...SLOGAN_WORDS,
+];
+const escapeRegExp = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const wordsPattern = (words: readonly string[]) =>
+  `(?:${words.map(escapeRegExp).join('|')})(?![${LETTER}])`;
+// The count signs that are not words: "2 €", "2-fach".
+const COUNT_SYMBOLS = `(?:€|-fach(?![${LETTER}]))`;
+// After a number: not a decimal ("1,50", "1.50"), not a count sign, not a COUNT_WORDS word.
+const COUNT_AFTER = `(?!\\s*(?:${COUNT_SYMBOLS}|${wordsPattern(COUNT_WORDS)}))`;
+const NOT_A_COUNT = `(?![,.]\\d)${COUNT_AFTER}`;
+// Before a number: "je 2", "2x 5", "2 x 5", "Stück 5" make it a count.
+const NOT_AFTER_COUNT = `(?<!(?:\\bje|\\d\\s*x|\\b${wordsPattern(UNIT_WORDS)})\\s*)`;
 
 const LE_XXL_PATTERN = new RegExp(`\\b(LE|XXL)\\s?(\\d+)\\b${NOT_A_COUNT}`, 'gi');
 // "12/228": only the series size counts, so dates (`11/2026`) and sizes (`10/12`) do not match.
@@ -104,29 +140,35 @@ const NOT_FOLLOWED_BY_WORD = '(?![\\dA-Za-zÄÖÜäöüß])';
 // Every number of a list, the first included, must be a whole id, not a price or count
 // ("3er Set", "3 weitere", "5 €", "1,50", "5 Stück").
 const LIST_ITEM = `#?\\d+${NOT_FOLLOWED_BY_WORD}${NOT_A_COUNT}`;
-// A prefix followed by a list: "#12, #45 und 107", "Nr. 12, 45", "Karte 12".
+// A prefix followed by a list: "#12, #45 und 107", "Nr. 12, 45", "Karte 12". A first number
+// followed by "in" is a slogan ("Nr. 1 in Deutschland").
 const PREFIXED_LIST_PATTERN = new RegExp(
-  `(?:#|\\b(?:Nr|No)\\.?|\\b(?:Karte|Card))\\s*(\\d+${NOT_FOLLOWED_BY_WORD}${NOT_A_COUNT}(?:(?:,\\s+|\\s*&\\s*|\\s+(?:und|and)\\s+)${LIST_ITEM})*)`,
+  `(?:#|\\b(?:Nr|No)\\.?|\\b(?:Karte|Card))\\s*(\\d+${NOT_FOLLOWED_BY_WORD}${NOT_A_COUNT}(?!\\s+in(?![${LETTER}]))(?:(?:,\\s+|\\s*&\\s*|\\s+(?:und|and)\\s+)${LIST_ITEM})*)`,
   'gi'
 );
 
 /** The card types of series 3 titles, as the 2026-11-18 probe spelled them. */
 const CARD_TYPES = ['Charakterkarte', 'Comickarte', 'Puzzlekarte', 'Setkarte'];
-// "Karten 30 - Steve - Charakterkarte", "Minecraft  132 - Wither Skeleton - Charakterkarte":
-// number (not after "je" or "x", a count), spaced dash, a name not starting with a product word
-// (a hyphen inside it, as in "End-Arena", is fine), spaced dash, a known card type.
-// Words a card name in the dash form never starts with.
+// Words a card name in the dash form never starts with: the shared count list and these.
 const NOT_A_NAME_START = [
-  ...PRODUCT_WORDS,
+  ...COUNT_WORDS,
   'Doppel',
+  'Doppelt',
   'Gold',
+  'Goldkarte',
   'Karte',
   'Neu',
+  'Neuware',
   'Rare',
+  'Sammelkarte',
   'Sammelkarten',
 ];
+// "Karten 30 - Steve - Charakterkarte", "Minecraft  132 - Wither Skeleton - Charakterkarte":
+// a number (not after a count such as "je", "2x" or "Stück"), a spaced dash, a name not
+// starting with a NOT_A_NAME_START word (a hyphen inside it, as in "End-Arena", is fine), a
+// spaced dash and a known card type.
 const NUMBER_NAME_TYPE_PATTERN = new RegExp(
-  `${NOT_AFTER_SERIES}(?<!\\b(?:je|x)\\s*)(?:^|\\s)(\\d{1,3})\\s+[-–]\\s+(?!(?:${NOT_A_NAME_START.join('|')})(?![${LETTER}]))(?:(?!\\s[-–]\\s).)+?\\s+[-–]\\s+(?:${CARD_TYPES.join('|')})(?![${LETTER}])`,
+  `${NOT_AFTER_SERIES}${NOT_AFTER_COUNT}(?:^|\\s)(\\d{1,3})\\s+[-–]\\s+(?!${COUNT_SYMBOLS}|${wordsPattern(NOT_A_NAME_START)})(?:(?!\\s[-–]\\s).)+?\\s+[-–]\\s+(?:${CARD_TYPES.join('|')})(?![${LETTER}])`,
   'gi'
 );
 
@@ -193,10 +235,10 @@ export const CARD_NAME_WORDS: readonly string[] = [
   'Zombie',
 ];
 // "ZOMBIE 68 Karte", "VILLAGER 8 Card": a card name word, a number, then the singular "Karte"
-// or "Card", not followed by a product word ("3 Card Pack") or "gratis"/"dazu" (a free extra).
+// or "Card", not followed by a COUNT_WORDS word ("3 Card Pack", "2 Karte gratis", "2 Karte €").
 // The plural ("6 Karten", "6 Cards") is a count.
 const NAME_NUMBER_CARD_PATTERN = new RegExp(
-  `(?<![${LETTER}\\d])(?:${CARD_NAME_WORDS.join('|')})\\s+(\\d{1,3})\\s+(?:Karte|Card)(?![${LETTER}])(?!\\s*(?:${[...PRODUCT_WORDS, 'dazu', 'gratis'].join('|')})(?![${LETTER}]))`,
+  `(?<![${LETTER}\\d])(?:${CARD_NAME_WORDS.join('|')})\\s+(\\d{1,3})\\s+(?:Karte|Card)(?![${LETTER}])${COUNT_AFTER}`,
   'gi'
 );
 
@@ -516,9 +558,10 @@ export function createEbayAdapter(
   /**
    * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. The
    * walk ends at the answer's total (a later page without a total keeps the earlier one) or,
-   * without any total, at a short or empty page. An empty page while the total says more, or a
-   * first page with neither `itemSummaries` nor `total`, is a ShopLayoutError: a partial walk
-   * would mark the unread listings unavailable. A search cut at the cap is logged and added to
+   * without any total, at a short or empty page. A later empty page more than the tolerance
+   * below the total (endShort), an empty first page with a total above 0, or a first page with
+   * neither `itemSummaries` nor `total` is a ShopLayoutError: a partial walk would mark the
+   * unread listings unavailable. A search cut at the cap is logged and added to
    * `truncated`.
    */
   async function search(
@@ -540,7 +583,15 @@ export function createEbayAdapter(
             `eBay search "${query}" offset 0: answer has neither itemSummaries nor total`
           );
         }
-        if (total !== null && total > offset) endShort(query, total, offset);
+        if (total !== null && total > offset) {
+          // The tolerance is for the end of a walk; an empty first page with a total is wrong.
+          if (offset === 0) {
+            throw new ShopLayoutError(
+              `eBay search "${query}" offset 0: empty page, but the total is ${total}`
+            );
+          }
+          endShort(query, total, offset);
+        }
         return all;
       }
       if (total !== null ? all.length >= total : items.length < SEARCH_LIMIT) return all;

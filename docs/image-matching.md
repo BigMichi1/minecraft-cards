@@ -181,9 +181,10 @@ For single-card listings of every shop but sammel-ente (bundles are never compar
 An admin-mapped listing (`/admin map`) is never compared or identified again.
 
 **Puzzle cards** come from data: sammel-ente names them "Puzzlekarte <picture> <piece>"
-("#154 Puzzlekarte Oberwelt 1"). The puzzle flag is derived from the stored name on every read,
-not stored: names and reference pictures arrive together, so a card with a reference always
-has the name that says what it is, also for rows stored before this release. On 2026-11-18
+("#154 Puzzlekarte Oberwelt 1"). A card is a puzzle card when its current name says so or any
+earlier one did (`cards.puzzle_seen`, set on a name update and never cleared), so a rename
+cannot drop the mark; rows stored before that column count by their name, no backfill needed.
+On 2026-11-18
 that gave 36 cards (#154–#189), the same set as collect-it's "Puzzlekarte" titles.
 
 **Counts.** Each run counts the picture decisions (`decided`) and, per reason, the ones that

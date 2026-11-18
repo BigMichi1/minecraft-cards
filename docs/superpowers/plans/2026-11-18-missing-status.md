@@ -57,7 +57,7 @@
 
 Rules (exact texts):
 
-- Header: `Your missing cards (N) · last check <t:S:R>`, then `⚠️ The latest check record could not be read; showing the one before.` when a newer row was unreadable, then `❌ Last check failed: <error, cut to 100>` when the run has an error. With no run: `Your missing cards (N)` followed by the line `No check has run yet.`; with only unreadable rows: `⚠️ No readable check record.` and every card `unknown`.
+- Header: `Your missing cards (N) · last check <t:S:R>`, then `⚠️ The last check is older than <N> days; stock may have changed.` when `now - startedAt > LAST_SUCCESS_WINDOW_MS` (N from the constant), then `⚠️ The latest check record could not be read; showing the one before.` when a newer row was unreadable, then `❌ Last check failed: <error, cut to 100>` when the run has an error. With no run: `Your missing cards (N)` followed by the line `No check has run yet.`; with only unreadable rows: `⚠️ No readable check record.` and every card `unknown`.
 - Shop lines, in the order sammel-ente, blue-ocean, eBay:
   - `✅ <name>: <n> listings`
   - `❌ <name>: error <t:S:R> – <error, cut to 100 chars>`
@@ -65,9 +65,9 @@ Rules (exact texts):
   - `⚪ <name>: not enabled` (no adapter built; its listings are not shown)
 - Card line: `#12 Squid: sammel-ente 0,55 € in stock · blue-ocean sold out`.
   - Name omitted when unknown.
-  - Per shop, the best listing: seen in the latest check beats not seen; then in stock beats held beats sold out or ended auction; then a `reference`/`confirmed` picture; then the lowest price (no price last).
+  - Per shop, the best listing: seen in the latest check beats not seen; then in stock beats held beats sold out or ended auction; then a `reference`/`confirmed` picture (a bundle never counts as one); then the lowest price (no price last).
   - Held: `paused (reported)`. An auction whose end is before `now`: `auction ended`. A bundle appends ` (bundle)`; a single-card listing without a `reference`/`confirmed` picture appends ` (picture unconfirmed)`. A listing of a successful shop that the latest check did not return appends ` (not seen in last check)`.
-  - A shop whose last run entry has an error or is absent gets ` (as of <t:S:R>)` from `lastSuccess`, or ` (no successful check in 7 days)`.
+  - A shop whose last run entry has an error or is absent gets ` (as of <t:S:R>)` with `min(lastSuccess, listing.lastSeenAt)`, or ` (no successful check in <N> days)` (N from `LAST_SUCCESS_WINDOW_MS`).
   - Such a shop with no listing of the card: `<name> unknown (check failed)` / `<name> unknown (not checked)`.
   - `not listed in any shop` only when every enabled shop succeeded and none lists the card. With no run at all: `not checked yet`.
 - Empty card list: `You have no missing cards on your list.`
@@ -76,7 +76,7 @@ Rules (exact texts):
 - [ ] Failing tests for `buildStatusReply`, one per rule:
   - a normal reply;
   - a failed shop with "(as of)";
-  - a failed shop that was never successful;
+  - a failed shop without a success in the last 7 days;
   - held;
   - bundle;
   - best-listing choice;

@@ -3,6 +3,7 @@ import type { CardId } from '../cards/cardId';
 import type { RunSummary } from '../check/runner';
 import type { StoredListing } from '../database/listingManager';
 import type { ShopId } from '../shops/types';
+import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
 import { cid, ids } from '../../test/cardIds';
 import { buildStatusReply, needsLastSuccess, type StatusInput } from './missingStatus';
@@ -99,7 +100,7 @@ describe('buildStatusReply', () => {
     expect(cardLine(reply)).toBe(`#12 Squid: blue-ocean 0,55 € in stock (as of <t:${S - 3600}:R>)`);
   });
 
-  test('a failed shop without a success in the window says so on its entries', () => {
+  test('a failed shop without a success in the last 7 days says so on its entries', () => {
     const reply = buildStatusReply(
       input({
         latest: run(blueFailed),
@@ -107,8 +108,9 @@ describe('buildStatusReply', () => {
         listings: [listing('blue-ocean', ids('12'))],
       })
     );
+    const days = LAST_SUCCESS_WINDOW_MS / 86_400_000;
     expect(cardLine(reply)).toBe(
-      '#12 Squid: blue-ocean 0,55 € in stock (no successful check in 7 days)'
+      `#12 Squid: blue-ocean 0,55 € in stock (no successful check in ${days} days)`
     );
   });
 
@@ -152,6 +154,26 @@ describe('buildStatusReply', () => {
       })
     );
     expect(cardLine(reply)).toBe(`#12 Squid: eBay 0,55 € in stock (as of <t:${S - 86_400}:R>)`);
+  });
+
+  test('an entry last seen before the last success of its shop is as of when it was last seen', () => {
+    const reply = buildStatusReply(
+      input({
+        enabledShops: ['sammel-ente', 'blue-ocean', 'ebay'],
+        lastSuccess: { ebay: T - 3_600_000 },
+        listings: [listing('ebay', ids('12'), { lastSeenAt: T - 86_400_000 })],
+      })
+    );
+    expect(cardLine(reply)).toBe(`#12 Squid: eBay 0,55 € in stock (as of <t:${S - 86_400}:R>)`);
+  });
+
+  test('a last check older than the success window is warned about in the header', () => {
+    const days = LAST_SUCCESS_WINDOW_MS / 86_400_000;
+    const warning = `⚠️ The last check is older than ${days} days; stock may have changed.`;
+    const old = buildStatusReply(input({ now: T + LAST_SUCCESS_WINDOW_MS + 1 }));
+    expect(old.split('\n')[1]).toBe(warning);
+    expect(cardLine(old)).toBe('#12 Squid: not listed in any shop');
+    expect(buildStatusReply(input({ now: T + LAST_SUCCESS_WINDOW_MS }))).not.toContain(warning);
   });
 
   test('a disabled shop says so and its stored listings are not shown', () => {

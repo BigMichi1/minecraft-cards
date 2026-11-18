@@ -13,7 +13,8 @@ somewhere, and how fresh is that information" without waiting for a DM.
 
 - New subcommand `/missing status`. The reply is ephemeral, like every other `/missing` reply.
 - Header: the card count, plus the time of the last check as a Discord relative timestamp.
-- Header warnings: "⚠️ The latest check record could not be read; showing the one before." when
+- Header warnings: "⚠️ The last check is older than 7 days; stock may have changed." when the
+  last check started more than `LAST_SUCCESS_WINDOW_MS` (7 days) ago; "⚠️ The latest check record could not be read; showing the one before." when
   the newest run record is unreadable; "❌ Last check failed: <reason>" when the run failed outside
   a single shop.
 - Shop block: one line per shop (sammel-ente, blue-ocean, eBay), taken from the last run summary:
@@ -33,16 +34,20 @@ somewhere, and how fresh is that information" without waiting for a DM.
     "(picture unconfirmed)". A listing the shop's latest successful check did not return is marked
     "(not seen in last check)".
   - Best order: seen in the latest check, then in stock, paused, sold out or ended; then a backed
-    picture; then the lowest price.
+    picture; then the lowest price. Bundles are never compared, so they never count as
+    picture-backed.
   - For a shop whose last check failed or that was absent from it, its entries carry
-    "(as of <last successful check, relative>)", or "(no successful check in 7 days)". A card it
+    "(as of <t:…:R>)" with the earlier of the shop's last success and when a check last returned
+    the listing, or "(no successful check in 7 days)" (the days come from
+    `LAST_SUCCESS_WINDOW_MS`). A card it
     has no listing of reads "<shop> unknown (check failed)" or "<shop> unknown (not checked)".
   - "not listed in any shop" only when every enabled shop's latest check succeeded and none lists
     the card.
 - Length: Discord's 2000-character limit applies. Cards that don't fit end with
   "… and N more cards" (the `joinWithinLimit` style used elsewhere).
 - An empty list replies "You have no missing cards on your list." (same text as `/missing list`).
-- No run yet: the shop block says "No check has run yet." and the cards show "not checked yet".
+- No run yet: the line after the header says "No check has run yet." and the cards show
+  "not checked yet".
   Only unreadable run records: "⚠️ No readable check record." and every card "unknown".
 - A failure replies "Could not load your stock status. Please try again later."
 

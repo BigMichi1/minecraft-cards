@@ -1,7 +1,7 @@
 import type { CardId } from '../cards/cardId';
 import type { RunSummary } from '../check/runner';
 import type { StoredListing } from '../database/listingManager';
-import type { LatestRun } from '../database/runManager';
+import { LAST_SUCCESS_WINDOW_MS, type LatestRun } from '../database/runManager';
 import { formatPrice, SHOP_NAMES } from '../notify/messages';
 import { SHOP_IDS, type ShopId } from '../shops/types';
 import { DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
@@ -15,8 +15,8 @@ export interface StatusInput {
   /** The shops this process checks; any other shop shows as not enabled and has no entries. */
   enabledShops: readonly ShopId[];
   /**
-   * Per shop, the start of its newest successful check within the last 7 days; null when there
-   * is none. Only filled for shops that failed or did not run (`needsLastSuccess`).
+   * Per shop, the start of its newest successful check within LAST_SUCCESS_WINDOW_MS; null when
+   * there is none. Only filled for shops that failed or did not run (`needsLastSuccess`).
    */
   lastSuccess: Partial<Record<ShopId, number | null>>;
   /** Stored listings carrying any of `cards`. */
@@ -29,6 +29,7 @@ export interface StatusInput {
 
 const EMPTY_LIST = 'You have no missing cards on your list.';
 const MAX_ERROR = 100;
+const WINDOW_DAYS = LAST_SUCCESS_WINDOW_MS / (24 * 60 * 60 * 1000);
 
 function seconds(ms: number): number {
   return Math.floor(ms / 1000);
@@ -56,7 +57,10 @@ function ended(l: StoredListing, now: number): boolean {
   return l.auctionEndsAt !== null && l.auctionEndsAt < now;
 }
 
-/** Whether the listing's card number is backed by its picture (or the admin). */
+/**
+ * Whether the listing's card number is backed by its picture (or the admin). Bundles are never
+ * compared, so they never count as picture-backed.
+ */
 function pictureBacked(l: StoredListing): boolean {
   return l.matchStatus === 'reference' || l.matchStatus === 'confirmed';
 }
@@ -68,7 +72,8 @@ function unseen(l: StoredListing, last: RunSummary): boolean {
 
 /**
  * Sort key, lower is better: seen in the latest check, then in stock beats paused after a
- * report beats sold out or ended, then a backed picture, then the lowest price (none last).
+ * report beats sold out or ended, then a backed picture (never a bundle), then the lowest price
+ * (none last).
  */
 function sortKey(l: StoredListing, last: RunSummary, now: number): number[] {
   const tier = !l.available || ended(l, now) ? 2 : l.onHold ? 1 : 0;
@@ -120,16 +125,18 @@ function entryText(l: StoredListing, last: RunSummary, now: number): string {
 }
 
 /**
- * For a shop whose latest check failed or did not run at all: how old its stored listings are.
- * Relative (`:R`), so data from days ago never reads as today's.
+ * For a shop whose latest check failed or did not run at all: how old the shown listing is, the
+ * earlier of the shop's last success and when a check last returned the listing. Relative
+ * (`:R`), so data from days ago never reads as today's.
  */
-function staleness(shop: ShopId, input: StatusInput, last: RunSummary): string {
-  if (!needsLastSuccess(last, shop, input.enabledShops)) return '';
-  // buildStatusReply checked that every shop needing it was looked up.
-  const success = input.lastSuccess[shop];
-  return success === null || success === undefined
-    ? ' (no successful check in 7 days)'
-    : ` (as of <t:${seconds(success)}:R>)`;
+function staleness(l: StoredListing, input: StatusInput, last: RunSummary): string {
+  if (!needsLastSuccess(last, l.shop, input.enabledShops)) return '';
+  // buildStatusReply checked that every shop needing it was looked up, so undefined cannot
+  // occur here; only null (none in the window) is left.
+  const success = input.lastSuccess[l.shop]!;
+  return success === null
+    ? ` (no successful check in ${WINDOW_DAYS} days)`
+    : ` (as of <t:${seconds(Math.min(success, l.lastSeenAt))}:R>)`;
 }
 
 function cardLine(card: CardId, input: StatusInput): string {
@@ -142,9 +149,8 @@ function cardLine(card: CardId, input: StatusInput): string {
     if (!input.enabledShops.includes(shop)) continue;
     const here = input.listings.filter((l) => l.shop === shop && l.cardIds.includes(card));
     if (here.length > 0) {
-      parts.push(
-        entryText(best(here, last, input.now), last, input.now) + staleness(shop, input, last)
-      );
+      const shown = best(here, last, input.now);
+      parts.push(entryText(shown, last, input.now) + staleness(shown, input, last));
     } else if (!succeeded(last, shop)) {
       // Without a successful check there is no telling whether the shop lists the card.
       const why = last.shops[shop] === undefined ? 'not checked' : 'check failed';
@@ -164,6 +170,9 @@ function headLines(input: StatusInput): string[] {
     ];
   }
   const head = [`${count} · last check <t:${seconds(last.startedAt)}:R>`];
+  if (input.now - last.startedAt > LAST_SUCCESS_WINDOW_MS) {
+    head.push(`⚠️ The last check is older than ${WINDOW_DAYS} days; stock may have changed.`);
+  }
   if (input.latest.newerUnreadable) {
     head.push('⚠️ The latest check record could not be read; showing the one before.');
   }

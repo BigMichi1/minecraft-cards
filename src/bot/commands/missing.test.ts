@@ -79,7 +79,9 @@ describe('/missing', () => {
       ['list', undefined],
       ['clear', undefined],
     ] as const) {
+      const before = replies.length;
       await execute(fakeInteraction('u1', sub, list));
+      expect(replies.length).toBe(before + 1);
       expect(lastReply().embeds).toEqual([]);
     }
   });

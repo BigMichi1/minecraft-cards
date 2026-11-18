@@ -858,6 +858,34 @@ describe('buildStatusReply', () => {
     expect(cells(reply, '#12')![3]).toBe('1234,56 € *![48]');
     for (const line of tableLines(reply)) expect(line.length).toBeLessThanOrEqual(90);
   });
+
+  test('three-digit references stay aligned while the card column is at its minimum of 14', () => {
+    // Reachable within 2000 characters because column widths come from every row and the last
+    // column is not padded: one very wide eBay cell (row 26) forces the minimum, while rows 1-25
+    // stay short enough for 100 references to fit.
+    const cards = Array.from({ length: 26 }, (_, i) => cid(String(i + 1)));
+    const reply = buildStatusReply(
+      input({
+        cards,
+        names: new Map(cards.map((c) => [c, `Card number ${c} with a long name`])),
+        latest: run(allRun),
+        enabledShops: ALL,
+        listings: [
+          ...cards.slice(0, 25).flatMap((c) => ALL.map((shop) => listing(shop, [c]))),
+          listing('ebay', ids('26'), euro(1e20)),
+        ],
+      })
+    );
+    expect(reply.content.length).toBeLessThanOrEqual(DISCORD_MESSAGE_LIMIT);
+    expectAligned(reply);
+    expect(row(reply, '#1')![0]).toBe('#1 Card numbe…');
+    expect(cells(reply, '#25')).toEqual([
+      '0,55 € [97]',
+      '0,55 € [98]',
+      '0,55 € [99]',
+      '0,55 € [100]',
+    ]);
+  });
 });
 
 describe('linkList', () => {

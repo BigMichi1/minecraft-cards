@@ -7,7 +7,7 @@ import { runManager } from '../database/runManager';
 import { userManager, type ListChange } from '../database/userManager';
 import { SHOP_IDS, type ShopId } from '../shops/types';
 import type { CardId } from '../cards/cardId';
-import { buildStatusReply, needsLastSuccess } from './missingStatus';
+import { buildStatusReply, needsLastSuccess, type StatusReply } from './missingStatus';
 import { joinWithinLimit } from '../utils/messageLimit';
 import { replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
@@ -79,7 +79,7 @@ export interface MissingContext {
 }
 
 /** Gather what `/missing status` shows (all reads) and format it. */
-function status(userId: string, now: number, ctx: MissingContext): string {
+function status(userId: string, now: number, ctx: MissingContext): StatusReply {
   const cards = userManager.getList(userId);
   const latest = runManager.latestReadable();
   // Only enabled shops whose latest check failed or did not run need their last success; before
@@ -107,7 +107,17 @@ function status(userId: string, now: number, ctx: MissingContext): string {
   });
 }
 
-function run(interaction: ChatInputCommandInteraction, sub: string, ctx: MissingContext): string {
+/** The reply of `/missing <sub>`: text, plus the link embed for `status`. */
+function run(
+  interaction: ChatInputCommandInteraction,
+  sub: string,
+  ctx: MissingContext
+): StatusReply {
+  if (sub === 'status') return status(interaction.user.id, Date.now(), ctx);
+  return { content: runListChange(interaction, sub), embeds: [] };
+}
+
+function runListChange(interaction: ChatInputCommandInteraction, sub: string): string {
   const userId = interaction.user.id;
   switch (sub) {
     case 'set':
@@ -131,8 +141,6 @@ function run(interaction: ChatInputCommandInteraction, sub: string, ctx: Missing
     case 'clear':
       userManager.clearList(userId);
       return 'Your missing list is now empty.';
-    case 'status':
-      return status(userId, Date.now(), ctx);
     default:
       throw new Error(`Unknown /missing subcommand: ${sub}`);
   }
@@ -145,8 +153,8 @@ export async function execute(
   let sub: string | undefined;
   try {
     sub = interaction.options.getSubcommand();
-    const content = run(interaction, sub, ctx);
-    await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+    const { content, embeds } = run(interaction, sub, ctx);
+    await interaction.reply({ content, embeds, flags: MessageFlags.Ephemeral });
   } catch (error) {
     logError(`[MISSING COMMAND] /missing ${sub ?? '(no subcommand)'} failed`, error);
     await replyWithError(

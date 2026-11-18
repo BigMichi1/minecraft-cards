@@ -1,6 +1,6 @@
 import type { CardId } from '../cards/cardId';
 
-export const SHOP_IDS = ['sammel-ente', 'blue-ocean', 'ebay'] as const;
+export const SHOP_IDS = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay'] as const;
 export type ShopId = (typeof SHOP_IDS)[number];
 
 /** `shop`: a shop's own price; eBay listings are auctions or fixed price ("Buy It Now"). */
@@ -17,7 +17,10 @@ export interface Listing {
   url: string;
   title: string;
   cardIds: CardId[];
-  /** sammel-ente only: the card name taken from the title. */
+  /**
+   * sammel-ente and collect-it: the card name taken from the title. Only sammel-ente's names
+   * feed the catalog.
+   */
   cardName: string | null;
   imageUrl: string | null;
   price: Money | null;

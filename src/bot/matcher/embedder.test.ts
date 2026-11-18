@@ -206,6 +206,7 @@ describe('allowedImageUrl', () => {
       'https://shop-sammel-ente.de/media/a.jpg',
       'https://cdn.blue-ocean.de/a.jpg',
       'https://www.blue-ocean.de/a.jpg',
+      'https://www.collect-it.de/media/image/product/623996/md/12-squid-charakterkarte-serie-3.jpg',
       'https://i.ebayimg.com/images/g/a/s-l225.jpg',
     ]) {
       expect(allowedImageUrl(ok)).toBe(true);

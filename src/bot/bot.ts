@@ -25,10 +25,7 @@ import {
   type ImageEmbedder,
 } from './matcher/embedder';
 import { createDiscordSender } from './notify/sender';
-import { createBlueOceanAdapter } from './shops/blueOcean';
-import { createEbayAdapter } from './shops/ebay';
-import { createSammelEnteAdapter } from './shops/sammelEnte';
-import type { ShopAdapter } from './shops/types';
+import { createShopAdapters } from './shops/adapters';
 import { errorMessage } from './utils/async';
 import { replyWithError } from './utils/interactionReply';
 import logger, { logError } from './utils/logger';
@@ -59,12 +56,7 @@ try {
   logError(`Image model ${config.imageModel} could not be loaded`, error);
 }
 
-const adapters: ShopAdapter[] = [createSammelEnteAdapter(), createBlueOceanAdapter()];
-if (config.ebay) {
-  adapters.push(createEbayAdapter(config.ebay));
-} else {
-  logger.warn('eBay disabled: EBAY_CLIENT_ID/EBAY_CLIENT_SECRET not set');
-}
+const adapters = createShopAdapters(config.ebay);
 
 /** The shops this process checks; `/missing status` shows the others as not enabled. */
 const enabledShops = adapters.map((a) => a.id);

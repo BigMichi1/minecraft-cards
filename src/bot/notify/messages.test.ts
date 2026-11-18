@@ -4,7 +4,7 @@ import { db, initializeDatabase } from '../database/db';
 import { cards } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
 import type { StoredListing } from '../database/listingManager';
-import { buildNotificationMessages, kleinanzeigenSearchUrl } from './messages';
+import { buildNotificationMessages, kleinanzeigenSearchUrl, SHOP_NAMES } from './messages';
 import { cid } from '../../test/cardIds';
 
 const referenceUrl = 'https://ref/12.jpg';
@@ -52,6 +52,17 @@ function at<T>(list: T[], i: number): T {
   if (v === undefined) throw new Error(`no element ${i}`);
   return v;
 }
+
+describe('SHOP_NAMES', () => {
+  test('names every shop', () => {
+    expect(SHOP_NAMES).toEqual({
+      'sammel-ente': 'sammel-ente',
+      'blue-ocean': 'blue-ocean',
+      'collect-it': 'collect-it',
+      ebay: 'eBay',
+    });
+  });
+});
 
 describe('notification messages', () => {
   beforeAll(() => {

@@ -839,6 +839,40 @@ describe('runCheck', () => {
       });
     });
 
+    test('a placeholder reference is no reference: no_reference, never identified', async () => {
+      // sammel-ente shows the empty card mnc3_leer.jpg for LE10 and LE11 (2026-11-18).
+      const leer = 'https://ente/mnc3_leer.jpg';
+      angles[leer] = 120;
+      const placeholder = (id: string, name: string): Listing => ({
+        ...reference(id, name),
+        imageUrl: leer,
+      });
+      userManager.setList('u1', '12, LE10');
+      const blueLE10: Listing = {
+        ...blue12,
+        url: 'https://www.blue-ocean.de/p/le10',
+        cardIds: [cid('LE10')],
+        imageUrl: 'https://img/le10.jpg',
+      };
+      angles['https://img/le10.jpg'] = 120;
+      const candidate = candidateAt(120);
+      await run([
+        ok('sammel-ente', [
+          ...references,
+          placeholder('LE10', 'Exploding Creeper'),
+          placeholder('LE11', 'Iron Golem'),
+        ]),
+        ok('blue-ocean', [blueLE10]),
+        ok('ebay', [candidate]),
+      ]);
+      expect(listingManager.getByUrl(blueLE10.url)!.matchStatus).toBe('no_reference');
+      expect(listingManager.getByUrl(candidate.url)).toMatchObject({
+        cardIds: [],
+        pictureCardId: null,
+      });
+      expect(embedded).not.toContain(leer);
+    });
+
     test('references are embedded only when a listing needs a match', async () => {
       await run([ok('sammel-ente', references)]);
       expect(embedded).toEqual([]);

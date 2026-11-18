@@ -34,6 +34,32 @@ function isPuzzleCardName(name: string): boolean {
   return /\bPuzzlekarte\b/i.test(name);
 }
 
+// sammel-ente's empty card ("mnc3_leer.jpg", 2026-11-18 for LE10 and LE11).
+const PLACEHOLDER_FILE = /_leer\./i;
+
+/** The picture a URL names, without query or fragment (`?ts=` changes on every upload). */
+function pictureKey(url: string): string {
+  const parsed = URL.parse(url);
+  return parsed ? `${parsed.origin}${parsed.pathname}` : url;
+}
+
+/**
+ * The cards whose reference picture is a real one: not a placeholder file (`_leer.`) and not
+ * a picture the shop shows for more than one card. Neither tells cards apart, so such a card
+ * has no reference (`no_reference`) and is never identified by picture.
+ */
+function usableReferences(rows: ReferenceCard[]): ReferenceCard[] {
+  const uses = new Map<string, number>();
+  for (const r of rows) {
+    const key = pictureKey(r.referenceImageUrl);
+    uses.set(key, (uses.get(key) ?? 0) + 1);
+  }
+  return rows.filter((r) => {
+    const key = pictureKey(r.referenceImageUrl);
+    return !PLACEHOLDER_FILE.test(key) && uses.get(key) === 1;
+  });
+}
+
 export interface ImportPreview {
   counts: Record<CardType, number>;
   added: CardId[];
@@ -107,9 +133,9 @@ export const catalogManager = {
       .get();
   },
 
-  /** Every card with a reference picture, in card order. */
+  /** Every card with a usable reference picture (no placeholder, none shared), in card order. */
   referenceCards(): ReferenceCard[] {
-    return db
+    const all = db
       .select({
         cardId: cards.cardId,
         referenceImageUrl: cards.referenceImageUrl,
@@ -120,8 +146,13 @@ export const catalogManager = {
       .all()
       .flatMap((c) =>
         c.referenceImageUrl === null ? [] : [{ ...c, referenceImageUrl: c.referenceImageUrl }]
-      )
-      .sort((a, b) => compareCardIds(a.cardId, b.cardId));
+      );
+    return usableReferences(all).sort((a, b) => compareCardIds(a.cardId, b.cardId));
+  },
+
+  /** The card's reference picture to compare with; null when it has none or only a placeholder. */
+  usableReference(id: CardId): string | null {
+    return catalogManager.referenceCards().find((c) => c.cardId === id)?.referenceImageUrl ?? null;
   },
 
   /**

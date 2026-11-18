@@ -167,9 +167,7 @@ async function matchPending(
     if (!source) continue;
     const [only] = l.cardIds;
     const reference =
-      l.cardIds.length === 1 && only !== undefined
-        ? (catalogManager.getCard(only)?.referenceImageUrl ?? null)
-        : null;
+      l.cardIds.length === 1 && only !== undefined ? catalogManager.usableReference(only) : null;
     const result = await matchListing(
       { ...source, cardIds: l.cardIds, imageUrl: l.imageUrl, idSource: l.idSource },
       reference,

@@ -137,4 +137,33 @@ describe('catalogManager', () => {
       { cardId: cid('160'), referenceImageUrl: 'https://se/160.jpg', puzzle: true },
     ]);
   });
+  describe('placeholder references', () => {
+    // Live sammel-ente, 2026-11-18: LE10 and LE11 both show the empty card mnc3_leer.jpg.
+    const leer =
+      'https://shop-sammel-ente.de/media/38/d5/21/1791651554/mnc3_leer.jpg.watermarked.jpg?ts=1791651554';
+
+    test('a "_leer." picture is no reference: not listed, not usable', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('LE10'), name: 'Exploding Creeper', imageUrl: leer },
+        { cardId: cid('12'), name: 'Squid', imageUrl: 'https://se/mnc3_012.jpg' },
+      ]);
+      expect(catalogManager.referenceCards().map((c) => c.cardId)).toEqual([cid('12')]);
+      expect(catalogManager.usableReference(cid('LE10'))).toBeNull();
+      expect(catalogManager.usableReference(cid('12'))).toBe('https://se/mnc3_012.jpg');
+      expect(catalogManager.usableReference(cid('13'))).toBeNull();
+    });
+
+    test('one picture shown for several cards is no reference for any of them', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('LE10'), name: 'Exploding Creeper', imageUrl: 'https://se/same.jpg?ts=1' },
+        { cardId: cid('LE11'), name: 'Iron Golem', imageUrl: 'https://se/same.jpg?ts=2' },
+        { cardId: cid('12'), name: 'Squid', imageUrl: 'https://se/mnc3_012.jpg' },
+      ]);
+      expect(catalogManager.referenceCards().map((c) => c.cardId)).toEqual([cid('12')]);
+      expect(catalogManager.usableReference(cid('LE10'))).toBeNull();
+      expect(catalogManager.usableReference(cid('LE11'))).toBeNull();
+    });
+  });
 });

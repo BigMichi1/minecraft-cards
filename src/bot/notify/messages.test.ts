@@ -272,6 +272,21 @@ describe('notification messages', () => {
     expect(e.thumbnail.url).toBe(referenceUrl);
   });
 
+  test('a placeholder reference is never shown as the thumbnail', () => {
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('LE10'), name: 'Exploding Creeper', imageUrl: 'https://ref/mnc3_leer.jpg' },
+    ]);
+    const e = embedJson(
+      atMsg(
+        buildNotificationMessages([
+          item(1, { cardIds: [cid('LE10')], matchStatus: 'unconfirmed', similarity: 0.5 }),
+        ]),
+        0
+      )
+    );
+    expect(e.thumbnail).toBeUndefined();
+  });
+
   test('a title number the picture confirms keeps the plain footer and no thumbnail', () => {
     const e = embedJson(
       atMsg(buildNotificationMessages([item(1, { pictureCardId: cid('12') })]), 0)

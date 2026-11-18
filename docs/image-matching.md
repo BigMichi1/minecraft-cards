@@ -120,6 +120,15 @@ the next most alike pair 0.866 (LE5 and LE13). The live check found collect-it's
 XXL1 (0.885 against 0.853 for #59), which the twin rule and the title-card rule below keep from
 being a mismatch.
 
+**Placeholder references.** sammel-ente shows the empty card `mnc3_leer.jpg` for cards it has
+no picture of yet (LE10 and LE11 on 2026-11-18). A placeholder tells no card apart, so a
+reference whose file name contains `_leer.`, or a picture (URL without its query, `?ts=`
+changes on every upload) that sammel-ente shows for more than one card, counts as no reference
+at all (`catalogManager.referenceCards`, `usableReference`): the card's listings are
+`no_reference` (retried every check until a real picture arrives), the card is left out of the
+identification, so no picture is ever identified as it, and no alert shows the placeholder as
+its thumbnail.
+
 ### Rules
 
 For single-card listings of every shop but sammel-ente (bundles are never compared):
@@ -257,7 +266,7 @@ handled as before.
 | `unconfirmed`       | Below the threshold, a blue-ocean id conflict, or no picture to compare; a title naming no card whose picture decided nothing                                                         |
 | `mismatch`          | The picture decides another card than the title names; never sent to users, one admin note per listing                                                                                |
 | `bundle`            | Several cards in one listing; not compared                                                                                                                                            |
-| `no_reference`      | The card has no reference picture yet; retried every check                                                                                                                            |
+| `no_reference`      | The card has no reference picture yet, or only a placeholder (`_leer.`, one picture for several cards); retried every check                                                           |
 | `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check                                                                                                        |
 | `image_unavailable` | A picture could not be loaded (network, host, redirect, HTTP, size, decoding); retried once a day                                                                                     |
 

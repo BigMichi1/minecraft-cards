@@ -142,8 +142,9 @@ function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
   const text = footer(listing);
   if (text) embed.setFooter({ text });
   if (showsReference(listing)) {
-    const reference = item.cardIds[0] ? catalogManager.getCard(item.cardIds[0]) : undefined;
-    const thumbnail = validUrl(reference?.referenceImageUrl);
+    const thumbnail = validUrl(
+      item.cardIds[0] ? catalogManager.usableReference(item.cardIds[0]) : null
+    );
     if (thumbnail) embed.setThumbnail(thumbnail);
   }
   return embed;

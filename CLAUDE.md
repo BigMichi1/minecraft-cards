@@ -77,3 +77,4 @@ Docs: `docs/development.md`, `configuration.md`, `image-matching.md`, `deploymen
 - An empty catalog import (no card ids recognised) changes nothing.
 - Match statuses (`matcher/matchStatus.ts`, `docs/image-matching.md`): new single-card listings of shops other than sammel-ente start `pending`; `image_unavailable` is retried at most once a day; an admin-mapped listing is never reset by a rescrape.
 - Only Discord error 50007 counts as closed DMs; other DM failures are retried without marking the user.
+- eBay card ids come only from titles naming series 3 (`Serie 3`, `On Fire`) and no other series; none from pick lists (`aussuchen`, `Auswahl`, `choose`), number ranges (`1 - 228`) or listings with variations. A title without a series word gives no ids (series 1 and 2 used the same title forms). Searches are read by `offset`, at most 5 pages per query (`docs/shops.md`).

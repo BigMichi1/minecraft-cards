@@ -6,12 +6,52 @@ changes or a new one is suggested.
 
 ## Used by the bot
 
-| Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                               |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the image reference for every other shop.                                                          |
-| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. Card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`); the title's "Nr." is wrong. Only "On Fire" titles count; series 1 and 2 share the category. |
-| [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.          |
-| eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved; off until `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET` are set in the deployment. Card ids from the title.                                                                  |
+| Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the image reference for every other shop.                                                                                                                                |
+| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. Card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`); the title's "Nr." is wrong. Only "On Fire" titles count; series 1 and 2 share the category.                                                                       |
+| [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                |
+| eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. Four searches, every page by `offset`. Card ids from series 3 titles only (details below). |
+
+## eBay details
+
+Checked against a live probe of 2026-11-18 (234 unique items over six queries; 38 of them, without
+seller data, are in `src/test/fixtures/ebay-search.json`):
+
+- **Queries** (`EBAY_QUERIES`): `lego minecraft on fire karte`, `lego minecraft tcc serie 3`,
+  `lego minecraft trading card on fire` and `lego minecraft karten serie 3`. The last one finds the
+  single cards (295 results on 2026-11-18; the other three found 2 to 30 each, almost all of them
+  packs, limited cards and pick lists). `tcc serie 3` found nothing usable that day but is kept: it
+  costs one request and catches titles without "Karten" or "On Fire".
+- **Paging**: each search is read page by page, 200 items per page, with `offset`, until a page is
+  empty or the answer's `total` is reached (without a `total`, until a short page), at most 5
+  pages (1000 results) per query; a search past the cap logs a warning. 1500 ms between two search
+  requests, as between two shop pages. A failing page is a shop error, like a failing shop page;
+  all searches together returning no item at all is a `ShopLayoutError`.
+- **Title forms read**: `LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)` (also
+  Puzzle-, Set- and Comickarte), `LEGO Minecraft  132 - Wither Skeleton - Charakterkarte - Holo
+Serie 3 (2026)` (number, name, a type ending in `karte`), `… ULTRA RARE ZOMBIE 68 Karte` (a name,
+  then a number directly before the singular `Karte` / `Card`), and the earlier forms: `#12`,
+  `Nr. 12`, `Nr41`, `Karte 12`, `LE8`, `LE 08`, `XXL1`, `12/228` and lists such as `#12, #45 und
+107`. Counts are not ids: `6 Karten`, `21 Packs à 6 Karten`, `193 verschiedene Karten`,
+  `incl. 1 special Card`, and the series number in `Serie 3 Karte`.
+- **Series 3 only**: ids come only from a title that names series 3 (`Serie 3`, `Series 3`,
+  `Serie3`, `On Fire`) and no other series. A title naming series 1 or 2 gives no ids even when it
+  also names series 3: a mixed lot is ambiguous. A title with no series word gives no ids either,
+  even in the clear `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms
+  (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
+  single in the probe named its series.
+- **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
+  `auswählen`, `Auswahl`, `wählen`, `du wählst`, `choose`, `pick`), from titles with a number range
+  (`Einzelkarten 1 - 228`, `151-254`, `LE1 - LE22`, `1 bis 228`), or from listings with
+  seller-defined variations (`itemGroupType`): a range or a choice says nothing about which card is
+  in stock.
+- **Result**: on 2026-11-18 the adapter found 4 listings with ids before this change and 244
+  after (226 distinct card ids, no bundles); 85 items were skipped without ids (packs, displays,
+  pick lists, series 1 and 2).
+- **Fixture**: seller fields (`seller.username`, `feedbackScore`, `feedbackPercentage`, account
+  type), `itemLocation` and the other fields the adapter does not read are dropped; item ids,
+  titles, prices, shipping costs, image URLs, buying options and the variation group are kept.
 
 ## collect-it.de details
 

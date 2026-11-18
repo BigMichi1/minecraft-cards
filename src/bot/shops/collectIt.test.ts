@@ -1,6 +1,11 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import * as cheerio from 'cheerio';
-import { createCollectItAdapter, parseCollectItPage, type CollectItPage } from './collectIt';
+import {
+  createCollectItAdapter,
+  parseCollectItPage,
+  readArticleTotal,
+  type CollectItPage,
+} from './collectIt';
 import { ShopLayoutError } from './types';
 import logger from '../utils/logger';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
@@ -12,14 +17,38 @@ const P8 = readFixture('collect-it-p8.html');
 
 /**
  * A saved page served as page `n`: the canonical link names `n`, and `<link rel="next">` is
- * there only when `hasNext`. collect-it serves no page past the end (it redirects to page 1),
- * so middle pages are built from the saved first and last page.
+ * there only when `hasNext`. With `total`, the pagination text names that article total (the
+ * "N von total" form on a page with a next page, "alle total" on the last). collect-it serves
+ * no page past the end (it redirects to page 1), so middle pages are built from the saved first
+ * and last page.
  */
-function asPage(html: string, n: number, hasNext: boolean): string {
+function asPage(html: string, n: number, hasNext: boolean, total?: number): string {
   const $ = cheerio.load(html);
   $('link[rel="canonical"]').attr('href', n === 1 ? BASE : `${BASE}_s${n}`);
   $('link[rel="next"], link[rel="prev"]').remove();
   if (hasNext) $('head').append(`<link rel="next" href="${BASE}_s${n + 1}">`);
+  if (total !== undefined) {
+    $('.ci-pagination-meta').html(
+      hasNext
+        ? `Du hast <strong>${n * 30} von ${total}</strong> Artikeln gesehen`
+        : `Du hast <strong>alle ${total}</strong> Artikel gesehen`
+    );
+  }
+  return $.html();
+}
+
+/** `html` with its pagination text set to `text`, or removed when `text` is null. */
+function withCountText(html: string, text: string | null): string {
+  const $ = cheerio.load(html);
+  if (text === null) $('.ci-pagination-meta').remove();
+  else $('.ci-pagination-meta').text(text);
+  return $.html();
+}
+
+/** `html` with its last `n` product boxes removed. */
+function dropBoxes(html: string, n: number): string {
+  const $ = cheerio.load(html);
+  $('#product-list .c-product-box').slice(-n).remove();
   return $.html();
 }
 
@@ -307,14 +336,62 @@ describe('parseCollectItPage', () => {
       skippedNoId: 0,
       skippedInvalid: 0,
       firstSkipped: null,
+      countText: null,
     });
+  });
+
+  test('reads the pagination text of the first and the last page', () => {
+    expect(p1.countText).toBe('Du hast 30 von 235 Artikeln gesehen');
+    expect(p8.countText).toBe('Du hast alle 235 Artikel gesehen');
+  });
+
+  test('a link that is not a URL is an unreadable box, naming it', () => {
+    const parsed = parseCollectItPage(
+      firstBoxOnly(($, box) => box.find('a[href]').attr('href', 'http://['))
+    );
+    expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
+    expect(parsed.firstSkipped).toContain('unreadable link "http://["');
+  });
+
+  test('skipped boxes give one warning per page, with the count', () => {
+    const $ = cheerio.load(P1);
+    $('#product-list .c-product-box .c-product-box-content-title').slice(0, 3).text('Sammelmappe');
+    let parsed: CollectItPage | undefined;
+    const warned = warnings(() => (parsed = parseCollectItPage($.html())));
+    expect(parsed?.skippedNoId).toBe(3);
+    const skips = warned.filter((w) => w.includes('skipped'));
+    expect(skips).toHaveLength(1);
+    expect(skips[0]).toContain('3 product box(es)');
+  });
+
+  test('a very long title is clipped in what the parser reports', () => {
+    const long = 'X'.repeat(5000);
+    const parsed = parseCollectItPage(
+      firstBoxOnly(($, box) => box.find('.c-product-box-content-title').text(long))
+    );
+    expect(parsed.firstSkipped!.length).toBeLessThan(500);
+    expect(parsed.firstSkipped).toContain('…');
+  });
+});
+
+describe('readArticleTotal', () => {
+  test('reads both forms of the pagination text', () => {
+    expect(readArticleTotal('Du hast 30 von 235 Artikeln gesehen')).toBe(235);
+    expect(readArticleTotal('Du hast alle 235 Artikel gesehen')).toBe(235);
+    expect(readArticleTotal('Du hast alle 1 Artikel gesehen')).toBe(1);
+  });
+
+  test('anything else is null', () => {
+    expect(readArticleTotal('Du hast viele Artikel gesehen')).toBeNull();
+    expect(readArticleTotal('')).toBeNull();
+    expect(readArticleTotal('Du hast 30 von 235 Artikeln gesehen, danke')).toBeNull();
   });
 });
 
 describe('createCollectItAdapter', () => {
   const twoPages = () => ({
-    Einzelkarten: asPage(P1, 1, true),
-    _s2: asPage(P8, 2, false),
+    Einzelkarten: asPage(P1, 1, true, 55),
+    _s2: asPage(P8, 2, false, 55),
   });
 
   test('follows the next-page link and stops on the page without one', async () => {
@@ -384,14 +461,103 @@ describe('createCollectItAdapter', () => {
     expect((error as Error).message).toContain('page 2');
   });
 
-  test('zero cards over all pages is a ShopLayoutError', async () => {
+  test('a single page whose only box has no card id rejects', async () => {
     const noCards = firstBoxOnly(($, box) =>
       box.find('.c-product-box-content-title').text('Sammelmappe - Serie 3')
     );
-    const { fetchFn } = fakeFetch({ Einzelkarten: noCards });
-    await expect(
-      createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings()
-    ).rejects.toBeInstanceOf(ShopLayoutError);
+    const error = await rejection({ Einzelkarten: noCards });
+    expect(error.message).toContain('1 unreadable product box(es)');
+  });
+
+  describe('article total and full pages', () => {
+    test('page 1 without a next link rejects unless it holds every article', async () => {
+      // collect-it dropping rel="next" must not read page 1 alone as the whole shop.
+      const error = await rejection({ Einzelkarten: asPage(P1, 1, false) });
+      expect(error.message).toContain('read 30 listings, but page 1 counts 235 articles');
+    });
+
+    test('a total that does not match the listings read rejects, naming both', async () => {
+      const error = await rejection({
+        Einzelkarten: asPage(P1, 1, true, 56),
+        _s2: asPage(P8, 2, false, 56),
+      });
+      expect(error.message).toContain('read 55 listings, but page 1 counts 56 articles');
+    });
+
+    test('a card that sells out during the walk shifts the pages and rejects', async () => {
+      // A card on page 1 sold out after page 1 was read, so page 2 shows one product fewer.
+      const error = await rejection({
+        Einzelkarten: asPage(P1, 1, true, 55),
+        _s2: asPage(dropBoxes(P8, 1), 2, false, 55),
+      });
+      expect(error.message).toContain('read 54 listings, but page 1 counts 55 articles');
+    });
+
+    test('page 1 without the article count rejects', async () => {
+      const error = await rejection({ Einzelkarten: withCountText(asPage(P1, 1, true), null) });
+      expect(error.message).toContain('page 1 has no article count');
+    });
+
+    test('an unreadable article count rejects, quoting it', async () => {
+      const error = await rejection({
+        Einzelkarten: withCountText(asPage(P1, 1, true), 'Du hast viele Artikel gesehen'),
+      });
+      expect(error.message).toContain(
+        'page 1 has an unreadable article count "Du hast viele Artikel gesehen"'
+      );
+    });
+
+    test('a later page without the count is accepted', async () => {
+      const { fetchFn } = fakeFetch({
+        Einzelkarten: asPage(P1, 1, true, 55),
+        _s2: withCountText(asPage(P8, 2, false), null),
+      });
+      const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
+      expect(listings).toHaveLength(55);
+    });
+
+    test('a later page with an unreadable count rejects', async () => {
+      const error = await rejection({
+        Einzelkarten: asPage(P1, 1, true, 55),
+        _s2: withCountText(asPage(P8, 2, false), 'kaputt'),
+      });
+      expect(error.message).toContain('page 2 has an unreadable article count');
+    });
+
+    test('a later page with another total rejects', async () => {
+      const error = await rejection({
+        Einzelkarten: asPage(P1, 1, true, 55),
+        _s2: asPage(P8, 2, false, 54),
+      });
+      expect(error.message).toContain('page 2 counts 54 articles, page 1 counted 55');
+    });
+
+    test('a page with a next link must be full (30 products)', async () => {
+      const error = await rejection({
+        Einzelkarten: asPage(dropBoxes(P1, 1), 1, true, 54),
+        _s2: asPage(P8, 2, false, 54),
+      });
+      expect(error.message).toContain('page 1 has 29 products, but links a next page');
+    });
+
+    test('the saved first and last page pass both checks', () => {
+      for (const [html, hasNext] of [
+        [P1, true],
+        [P8, false],
+      ] as const) {
+        const parsed = parseCollectItPage(html);
+        expect(readArticleTotal(parsed.countText!)).toBe(235);
+        if (hasNext) expect(parsed.productCount).toBe(30);
+        else expect(parsed.productCount).toBeLessThanOrEqual(30);
+      }
+    });
+  });
+
+  test('a very long canonical link is clipped in the error', async () => {
+    const href = `${BASE}?${'x'.repeat(5000)}`;
+    const error = await rejection({ Einzelkarten: withCanonical(asPage(P1, 1, false), href) });
+    expect(error.message.length).toBeLessThan(400);
+    expect(error.message).toContain('…');
   });
 
   test('a failed page is not logged by the adapter (the runner logs it once)', async () => {
@@ -421,7 +587,10 @@ describe('createCollectItAdapter', () => {
   });
 
   test('the same product URL on two pages counts once', async () => {
-    const { fetchFn } = fakeFetch({ Einzelkarten: asPage(P1, 1, true), _s2: asPage(P1, 2, false) });
+    const { fetchFn } = fakeFetch({
+      Einzelkarten: asPage(P1, 1, true, 30),
+      _s2: asPage(P1, 2, false, 30),
+    });
     const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
     expect(listings).toHaveLength(30);
     expect(new Set(listings.map((l) => l.url)).size).toBe(30);
@@ -447,7 +616,7 @@ describe('createCollectItAdapter', () => {
     const fetchFn = async (url: string) => {
       calls.push(url);
       const n = Number(/_s(\d+)$/.exec(url)?.[1] ?? '1');
-      return new Response(asPage(P8, n, true));
+      return new Response(asPage(P1, n, true));
     };
     const error = await createCollectItAdapter(fetchFn, { delayMs: 0 })
       .fetchListings()
@@ -490,6 +659,9 @@ describe('createCollectItAdapter', () => {
     ['another host', 'https://collect-it.example/sammelkarten/lego/minecraft/serie-3/Einzelkarten'],
     ['a page suffix with a trailing slash', `${BASE}_s2/`],
     ['page 0', `${BASE}_s0`],
+    ['a leading zero in the page suffix', `${BASE}_s02`],
+    ['an empty query', `${BASE}?`],
+    ['an empty fragment', `${BASE}#`],
   ] as const) {
     test(`a canonical link with ${format} is unreadable and rejects`, async () => {
       const error = await rejection({ Einzelkarten: withCanonical(asPage(P1, 1, false), href) });
@@ -501,22 +673,22 @@ describe('createCollectItAdapter', () => {
   test('follows the next-page href, resolved against the category URL', async () => {
     const { fetchFn, calls } = fakeFetch({
       Einzelkarten: withNext(
-        asPage(P1, 1, true),
+        asPage(P1, 1, true, 55),
         '/sammelkarten/lego/minecraft/serie-3/Einzelkarten_s2'
       ),
-      _s2: asPage(P8, 2, false),
+      _s2: asPage(P8, 2, false, 55),
     });
     const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
     expect(calls).toEqual([BASE, `${BASE}_s2`]);
     expect(listings).toHaveLength(55);
   });
 
-  test('an unreadable next-page href rejects', async () => {
-    const error = await rejection({
-      Einzelkarten: withNext(asPage(P1, 1, true), `${BASE}_s2?a=1`),
+  for (const href of [`${BASE}_s2?a=1`, `${BASE}_s2?`, `${BASE}_s2#`, `${BASE}_s02`]) {
+    test(`an unreadable next-page href ${href.slice(BASE.length)} rejects`, async () => {
+      const error = await rejection({ Einzelkarten: withNext(asPage(P1, 1, true), href) });
+      expect(error.message).toContain(`unreadable next-page link "${href}"`);
     });
-    expect(error.message).toContain('unreadable next-page link');
-  });
+  }
 
   test('a next-page href that skips a page rejects', async () => {
     const error = await rejection({

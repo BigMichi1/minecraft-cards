@@ -3,6 +3,7 @@ import { normalizeCardId } from '../cards/cardId';
 import { errorMessage, sleep as realSleep } from '../utils/async';
 import { fetchText, HttpError } from '../utils/http';
 import logger from '../utils/logger';
+import { clipText } from '../utils/messageLimit';
 import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopAdapter, ShopId } from './types';
 import { ShopLayoutError } from './types';
 
@@ -10,7 +11,26 @@ const SHOP = 'collect-it' satisfies ShopId;
 const BASE_URL = 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten';
 const PAGE_DELAY_MS = 1500;
 const MAX_PAGES = 60;
+/** Products on every page but the last (from the saved pages). */
+const PAGE_SIZE = 30;
 const BOX = '#product-list .c-product-box';
+/** Longest shop-controlled value quoted in a log or error message. */
+const MAX_QUOTED = 200;
+
+/** A shop-controlled value in double quotes, clipped so an error stays a readable admin DM. */
+function quote(value: string): string {
+  return `"${clipText(value, MAX_QUOTED)}"`;
+}
+
+// "Du hast 30 von 235 Artikeln gesehen" (a page with a next page) or
+// "Du hast alle 235 Artikel gesehen" (the last page): 235 articles in the category.
+const ARTICLE_TOTAL = /^Du hast (?:\d+ von|alle) (\d+) Artikeln? gesehen$/;
+
+/** The category's article total from the pagination text, null when it cannot be read. */
+export function readArticleTotal(text: string): number | null {
+  const match = ARTICLE_TOTAL.exec(text);
+  return match ? Number.parseInt(match[1] ?? '', 10) : null;
+}
 
 // "12 - Squid - Charakterkarte - Serie 3" -> id "12", name "Squid";
 // "LE01 - Ender Dragon - Limitierte Karte - Serie 3" -> id "LE1" (canonical, normalizeCardId).
@@ -73,7 +93,7 @@ function parsePrice(
     return null;
   }
   if (!/^\d+(?:\.\d{1,2})?$/.test(amount)) {
-    logger.warn(`collect-it: ${what} has a malformed price "${amount}"`);
+    logger.warn(`collect-it: ${what} has a malformed price ${quote(amount)}`);
     return null;
   }
   return { cents: Math.round(Number.parseFloat(amount) * 100), currency: currency || 'EUR' };
@@ -99,6 +119,8 @@ export interface CollectItPage {
   skippedInvalid: number;
   /** What the first skipped box lacked, naming its title or link; null when none was skipped. */
   firstSkipped: string | null;
+  /** The pagination text (`.ci-pagination-meta`), whitespace collapsed; null when absent. */
+  countText: string | null;
 }
 
 /**
@@ -113,7 +135,6 @@ export function parseCollectItPage(html: string): CollectItPage {
   let skippedInvalid = 0;
   let firstSkipped: string | null = null;
   const skip = (what: string): void => {
-    logger.warn(`collect-it: skipping ${what}`);
     firstSkipped ??= what;
   };
 
@@ -130,16 +151,22 @@ export function parseCollectItPage(html: string): CollectItPage {
     if (!href || !title) {
       skip(
         href
-          ? `a product box without a title (${href})`
-          : `a product box without a link (${title ? `"${title}"` : `box ${index + 1}`})`
+          ? `a product box without a title (${clipText(href, MAX_QUOTED)})`
+          : `a product box without a link (${title ? quote(title) : `box ${index + 1}`})`
       );
+      skippedInvalid++;
+      return;
+    }
+    const url = resolveUrl(href);
+    if (url === null) {
+      skip(`${quote(title)}: unreadable link ${quote(href)}`);
       skippedInvalid++;
       return;
     }
     const match = TITLE_PATTERN.exec(title);
     const cardId = match ? normalizeCardId(match[1] ?? '') : null;
     if (!match || !cardId) {
-      skip(`"${title}" (${href}): no card id`);
+      skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no card id`);
       skippedNoId++;
       return;
     }
@@ -147,14 +174,14 @@ export function parseCollectItPage(html: string): CollectItPage {
     const available = availabilityHref === undefined ? null : readAvailability(availabilityHref);
     if (available === null) {
       skip(
-        `"${title}" (${href}): ${availabilityHref === undefined ? 'no availability' : `unknown availability "${availabilityHref}"`}`
+        `${quote(title)} (${clipText(url, MAX_QUOTED)}): ${availabilityHref === undefined ? 'no availability' : `unknown availability ${quote(availabilityHref)}`}`
       );
       skippedInvalid++;
       return;
     }
     listings.push({
       shop: SHOP,
-      url: new URL(href, BASE_URL).toString(),
+      url,
       title,
       cardIds: [cardId],
       cardName: (match[2] ?? '').trim(),
@@ -166,7 +193,7 @@ export function parseCollectItPage(html: string): CollectItPage {
       price: parsePrice(
         box.find('meta[itemprop="price"]').first().attr('content'),
         box.find('meta[itemprop="priceCurrency"]').first().attr('content'),
-        `"${title}"`
+        quote(title)
       ),
       available,
       format: 'shop',
@@ -175,6 +202,11 @@ export function parseCollectItPage(html: string): CollectItPage {
     });
   });
 
+  const skipped = skippedNoId + skippedInvalid;
+  if (skipped > 0) {
+    logger.warn(`collect-it: ${skipped} product box(es) skipped on a page, first: ${firstSkipped}`);
+  }
+  const countText = $('.ci-pagination-meta').first().text().replace(/\s+/g, ' ').trim();
   return {
     listings,
     productCount: boxes.length,
@@ -183,6 +215,7 @@ export function parseCollectItPage(html: string): CollectItPage {
     skippedNoId,
     skippedInvalid,
     firstSkipped,
+    countText: $('.ci-pagination-meta').length > 0 ? countText : null,
   };
 }
 
@@ -196,7 +229,7 @@ function checkCanonical(canonical: string | null, asked: number): void {
   const page = categoryPageNumber(canonical);
   if (page === null) {
     throw new ShopLayoutError(
-      `collect-it: page ${asked} has an unreadable canonical link "${canonical}"`
+      `collect-it: page ${asked} has an unreadable canonical link ${quote(canonical)}`
     );
   }
   if (page !== asked) {
@@ -205,13 +238,31 @@ function checkCanonical(canonical: string | null, asked: number): void {
   }
 }
 
+/**
+ * The article total a page's pagination text names. Page 1 must have it; a later page may lack
+ * it (undefined), but when it has one it must be readable. Throws `ShopLayoutError` otherwise.
+ */
+function pageTotal(countText: string | null, page: number): number | undefined {
+  if (countText === null) {
+    if (page === 1) throw new ShopLayoutError('collect-it: page 1 has no article count');
+    return undefined;
+  }
+  const total = readArticleTotal(countText);
+  if (total === null) {
+    throw new ShopLayoutError(
+      `collect-it: page ${page} has an unreadable article count ${quote(countText)}`
+    );
+  }
+  return total;
+}
+
 /** The URL of the next page that `page` links, or null on the last page. */
 function nextPageUrl(next: string | null, page: number): string | null {
   if (next === null) return null;
   const nextPage = categoryPageNumber(next, BASE_URL);
   if (nextPage === null) {
     throw new ShopLayoutError(
-      `collect-it: page ${page} has an unreadable next-page link "${next}"`
+      `collect-it: page ${page} has an unreadable next-page link ${quote(next)}`
     );
   }
   if (nextPage !== page + 1) {
@@ -255,6 +306,7 @@ export function createCollectItAdapter(
     async fetchListings(): Promise<FetchResult> {
       const byUrl = new Map<string, Listing>();
       let url: string | null = BASE_URL;
+      let total: number | undefined;
       for (let page = 1; url !== null; page++) {
         if (page > MAX_PAGES) {
           throw new ShopLayoutError(`collect-it: still a next page after ${MAX_PAGES} pages`);
@@ -273,10 +325,30 @@ export function createCollectItAdapter(
             `collect-it: page ${page} has ${skipped} unreadable product box(es), first: ${parsed.firstSkipped}`
           );
         }
+        const pageCount = pageTotal(parsed.countText, page);
+        if (total === undefined) {
+          total = pageCount;
+        } else if (pageCount !== undefined && pageCount !== total) {
+          throw new ShopLayoutError(
+            `collect-it: page ${page} counts ${pageCount} articles, page 1 counted ${total}`
+          );
+        }
         for (const listing of parsed.listings) byUrl.set(listing.url, listing);
         url = nextPageUrl(parsed.next, page);
+        if (url !== null && parsed.productCount !== PAGE_SIZE) {
+          // Only the last page may be short; a short middle page means the pages shifted.
+          throw new ShopLayoutError(
+            `collect-it: page ${page} has ${parsed.productCount} products, but links a next page (a full page has ${PAGE_SIZE})`
+          );
+        }
       }
-      // Every page had products and none was skipped, so there is at least one listing.
+      // Catches a dropped rel="next" (page 1 read alone) and cards that moved between pages
+      // during the walk (one sold out, so a later card moved onto a page already read).
+      if (byUrl.size !== total) {
+        throw new ShopLayoutError(
+          `collect-it: read ${byUrl.size} listings, but page 1 counts ${total} articles`
+        );
+      }
       return { listings: [...byUrl.values()] };
     },
   };

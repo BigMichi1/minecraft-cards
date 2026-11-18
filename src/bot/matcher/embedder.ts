@@ -121,12 +121,12 @@ function firstVectorNormalised(tensor: FeatureTensor): Float32Array {
 /** Shop pictures are well under 2 MB; anything over 10 MB is refused. */
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
-/** Read the body, refusing a declared or streamed size over MAX_IMAGE_BYTES. */
-async function readCapped(response: Response, url: string): Promise<Uint8Array> {
+/** Read the body, refusing a declared or streamed size over `maxBytes`. */
+async function readCapped(response: Response, url: string, maxBytes: number): Promise<Uint8Array> {
   const declared = Number(response.headers.get('Content-Length'));
-  if (declared > MAX_IMAGE_BYTES) {
+  if (declared > maxBytes) {
     await response.body?.cancel();
-    throw new ImageUnavailableError(`image ${url} is ${declared} bytes, over ${MAX_IMAGE_BYTES}`);
+    throw new ImageUnavailableError(`image ${url} is ${declared} bytes, over ${maxBytes}`);
   }
   if (!response.body) return new Uint8Array();
   const chunks: Uint8Array[] = [];
@@ -136,9 +136,9 @@ async function readCapped(response: Response, url: string): Promise<Uint8Array> 
     const { done, value } = await reader.read();
     if (done) break;
     total += value.byteLength;
-    if (total > MAX_IMAGE_BYTES) {
+    if (total > maxBytes) {
       await reader.cancel();
-      throw new ImageUnavailableError(`image ${url} is over ${MAX_IMAGE_BYTES} bytes`);
+      throw new ImageUnavailableError(`image ${url} is over ${maxBytes} bytes`);
     }
     chunks.push(value);
   }
@@ -206,12 +206,14 @@ async function fetchImage(fetchFn: FetchFn, imageUrl: string): Promise<Response>
 
 /**
  * Download a picture on an allowed host (IMAGE_HOSTS, redirects checked), with the bot
- * User-Agent, the request timeout and MAX_IMAGE_BYTES. Used for image matching and for
- * attaching pictures to notifications. Every failure is an ImageUnavailableError.
+ * User-Agent, the request timeout and a size cap (MAX_IMAGE_BYTES unless a smaller `maxBytes`
+ * is given). Used for image matching and for attaching pictures to notifications. Every
+ * failure is an ImageUnavailableError.
  */
 export async function downloadImage(
   imageUrl: string,
-  fetchFn: FetchFn = fetch
+  fetchFn: FetchFn = fetch,
+  maxBytes: number = MAX_IMAGE_BYTES
 ): Promise<Uint8Array> {
   const response = await fetchImage(fetchFn, imageUrl);
   if (!response.ok) {
@@ -220,7 +222,7 @@ export async function downloadImage(
     throw new ImageUnavailableError(error.message, { cause: error });
   }
   try {
-    return await readCapped(response, imageUrl);
+    return await readCapped(response, imageUrl, maxBytes);
   } catch (error) {
     if (error instanceof ImageUnavailableError) throw error;
     throw new ImageUnavailableError(`image ${imageUrl}: ${errorMessage(error)}`, {

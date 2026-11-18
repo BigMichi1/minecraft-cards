@@ -12,9 +12,9 @@ import {
 import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { userManager } from '../database/userManager';
-import { DiscordAPIError, RESTJSONErrorCodes } from 'discord.js';
+import { DiscordAPIError, HTTPError, RESTJSONErrorCodes } from 'discord.js';
 import type { PendingNotification } from '../database/listingManager';
-import { createDiscordSender, isDmClosed } from './sender';
+import { createDiscordSender, isDmClosed, isPayloadRejection } from './sender';
 import { cid, ids } from '../../test/cardIds';
 
 function seedListing(n: number): StoredListing {
@@ -68,17 +68,24 @@ function fakeClient(
     /** Fail the n-th send (1-based) of every user. */
     failOnSend?: number;
     fetchFails?: boolean;
+    /** What a send carrying files throws (before the other failure options). */
+    rejectFiles?: () => unknown;
   } = {}
 ) {
   const sent: { user: string; opts: unknown }[] = [];
+  const attempts: { user: string; files: number }[] = [];
   const sends = new Map<string, number>();
   return {
     sent,
+    attempts,
     users: {
       fetch: async (id: string) => {
         if (opts.fetchFails) throw new Error('Unknown User');
         return {
           send: async (o: unknown) => {
+            const fileCount = (o as { files?: unknown[] }).files?.length ?? 0;
+            attempts.push({ user: id, files: fileCount });
+            if (opts.rejectFiles && fileCount > 0) throw opts.rejectFiles();
             const n = (sends.get(id) ?? 0) + 1;
             sends.set(id, n);
             if (opts.failAll || id === opts.failFor || n === opts.failOnSend) {
@@ -90,6 +97,17 @@ function fakeClient(
       },
     },
   };
+}
+
+function apiError(code: number, status: number): DiscordAPIError {
+  return new DiscordAPIError(
+    { code, message: `error ${code}` },
+    code,
+    status,
+    'POST',
+    'https://discord.com/api/v10/channels/1/messages',
+    {}
+  );
 }
 
 function dmFailedAt(discordId: string): number | null | undefined {
@@ -347,6 +365,195 @@ describe('createDiscordSender', () => {
         client.sent.map((s) => (s.opts as { files?: { name: string }[] }).files?.map((f) => f.name))
       ).toEqual([['picture-1.jpg'], ['picture-1.jpg']]);
     });
+  });
+
+  describe('pictures Discord rejects', () => {
+    const picture = 'https://www.collect-it.de/media/image/product/1/md/12.jpg';
+    const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9]);
+    function setup(client: ReturnType<typeof fakeClient>) {
+      const alerts: { key: string; text: string }[] = [];
+      const sender = createDiscordSender(client, {
+        sleep: async () => {},
+        alert: async (key, text) => void alerts.push({ key, text }),
+        downloadImage: async () => JPEG,
+      });
+      const l = { ...seedListing(1), imageUrl: picture };
+      return { alerts, sender, batch: new Map([['u1', [pending(l)]]]) };
+    }
+
+    test('a 50035 rejection is resent without pictures, recorded and alerted', async () => {
+      const client = fakeClient({ rejectFiles: () => apiError(50035, 400) });
+      const { alerts, sender, batch } = setup(client);
+      expect(await sender.send(batch)).toEqual({ notified: 1, dmFailures: 0 });
+      expect(client.attempts.map((a) => a.files)).toEqual([1, 0]);
+      expect(db.select().from(notifications).all()).toHaveLength(1);
+      expect(alerts.map((a) => a.key)).toEqual(['notify-attachment-rejected']);
+      expect(alerts[0]?.text).toContain('error 50035');
+    });
+
+    test('a 413 rejection is resent without pictures', async () => {
+      const client = fakeClient({ rejectFiles: () => apiError(40005, 413) });
+      const { sender, batch } = setup(client);
+      expect(await sender.send(batch)).toEqual({ notified: 1, dmFailures: 0 });
+      expect(client.attempts.map((a) => a.files)).toEqual([1, 0]);
+    });
+
+    test('the plain resend failing too records nothing', async () => {
+      const client = fakeClient({
+        rejectFiles: () => apiError(50035, 400),
+        failAll: true,
+        error: () => apiError(50035, 400),
+      });
+      const { alerts, sender, batch } = setup(client);
+      expect(await sender.send(batch)).toEqual({ notified: 0, dmFailures: 0 });
+      expect(client.attempts.map((a) => a.files)).toEqual([1, 0]);
+      expect(db.select().from(notifications).all()).toHaveLength(0);
+      expect(dmFailedAt('u1')).toBeNull();
+      expect(alerts.map((a) => a.key)).toContain('notify-attachment-rejected');
+    });
+
+    test('a 5xx is not resent without pictures', async () => {
+      const client = fakeClient({ rejectFiles: () => apiError(0, 503) });
+      const { sender, batch } = setup(client);
+      expect(await sender.send(batch)).toEqual({ notified: 0, dmFailures: 0 });
+      expect(client.attempts).toHaveLength(1);
+      expect(db.select().from(notifications).all()).toHaveLength(0);
+    });
+
+    test('a network error is not resent without pictures', async () => {
+      const client = fakeClient({ rejectFiles: () => new Error('ECONNRESET') });
+      const { sender, batch } = setup(client);
+      expect(await sender.send(batch)).toEqual({ notified: 0, dmFailures: 0 });
+      expect(client.attempts).toHaveLength(1);
+    });
+
+    test('closed DMs with pictures are not resent and mark the user', async () => {
+      const client = fakeClient({ rejectFiles: dmClosedError });
+      const { sender, batch } = setup(client);
+      expect(await sender.send(batch)).toEqual({ notified: 0, dmFailures: 1 });
+      expect(client.attempts).toHaveLength(1);
+      expect(dmFailedAt('u1')).not.toBeNull();
+    });
+  });
+
+  describe('picture downloads per run', () => {
+    const reference = 'https://shop-sammel-ente.de/media/12.png';
+    const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+    test('the reference thumbnail is fetched once across single messages', async () => {
+      catalogManager.updateNamesAndReferences([
+        { cardId: cid('12'), name: 'Squid', imageUrl: reference },
+      ]);
+      const items = Array.from({ length: 3 }, (_, i) =>
+        pending({ ...seedListing(i + 1), matchStatus: 'unconfirmed' })
+      );
+      const downloads: string[] = [];
+      const client = fakeClient();
+      const sender = createDiscordSender(client, {
+        alert: noAlert,
+        sleep: async () => {},
+        downloadImage: async (url) => {
+          downloads.push(url);
+          return PNG;
+        },
+      });
+      await sender.send(new Map([['u1', items]]));
+      expect(downloads).toEqual([reference]);
+      expect(client.attempts.map((a) => a.files)).toEqual([1, 1, 1]);
+    });
+
+    test('nothing is downloaded while shutting down', async () => {
+      const l = { ...seedListing(1), imageUrl: 'https://i.ebayimg.com/1.jpg' };
+      const downloads: string[] = [];
+      const client = fakeClient();
+      const sender = createDiscordSender(client, {
+        alert: noAlert,
+        sleep: async () => {},
+        isShuttingDown: () => true,
+        downloadImage: async (url) => {
+          downloads.push(url);
+          return PNG;
+        },
+      });
+      await sender.send(new Map([['u1', [pending(l)]]]));
+      expect(downloads).toEqual([]);
+      expect(client.attempts.map((a) => a.files)).toEqual([0]);
+    });
+
+    test('pictures that fall back raise one throttled alert per run naming the host', async () => {
+      const items = Array.from({ length: 2 }, (_, i) =>
+        pending({
+          ...seedListing(i + 1),
+          imageUrl: `https://www.collect-it.de/media/${i + 1}.jpg`,
+        })
+      );
+      const alerts: { key: string; text: string }[] = [];
+      const sender = createDiscordSender(fakeClient(), {
+        sleep: async () => {},
+        alert: async (key, text) => void alerts.push({ key, text }),
+        downloadImage: async () => {
+          throw new Error('HTTP 403');
+        },
+      });
+      expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 2, dmFailures: 0 });
+      expect(alerts.map((a) => a.key)).toEqual(['notify-pictures']);
+      expect(alerts[0]?.text).toContain('www.collect-it.de 2 of 2');
+      expect(alerts[0]?.text).toContain('HTTP 403');
+    });
+
+    test('no picture alert when the pictures attach', async () => {
+      const l = { ...seedListing(1), imageUrl: 'https://i.ebayimg.com/1.jpg' };
+      const keys: string[] = [];
+      const sender = createDiscordSender(fakeClient(), {
+        sleep: async () => {},
+        alert: async (key) => void keys.push(key),
+        downloadImage: async () => new Uint8Array([0xff, 0xd8, 0xff, 1]),
+      });
+      await sender.send(new Map([['u1', [pending(l)]]]));
+      expect(keys).toEqual([]);
+    });
+  });
+
+  describe('batched mode', () => {
+    test('6 listings are one message of 5 with markers and one of 1', async () => {
+      const items = Array.from({ length: 6 }, (_, i) => pending(seedListing(i + 1)));
+      const client = fakeClient();
+      const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
+      expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 6, dmFailures: 0 });
+      type Built = { toJSON(): { title?: string; components?: { label?: string }[] } };
+      const sent = client.sent.map((s) => s.opts as { embeds: Built[]; components: Built[] });
+      expect(sent.map((o) => [o.embeds.length, o.components.length])).toEqual([
+        [5, 5],
+        [1, 1],
+      ]);
+      ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'].forEach((marker, n) =>
+        expect(sent[0]!.embeds[n]!.toJSON().title).toStartWith(`${marker} `)
+      );
+      expect(sent[0]!.components[4]!.toJSON().components?.[0]?.label).toStartWith('5️⃣ ');
+      expect(sent[1]!.embeds[0]!.toJSON().title).toStartWith('1️⃣ ');
+    });
+
+    test('a failure on batched message 3 records only messages 1 and 2', async () => {
+      const items = Array.from({ length: 11 }, (_, i) => pending(seedListing(i + 1)));
+      const client = fakeClient({ failOnSend: 3, error: () => new Error('503') });
+      const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
+      expect(await sender.send(new Map([['u1', items]]))).toEqual({ notified: 10, dmFailures: 0 });
+      const recorded = db.select().from(notifications).all();
+      expect(recorded.map((r) => r.listingId).sort((a, b) => a - b)).toEqual(
+        items.slice(0, 10).map((i) => i.listing.id)
+      );
+      expect(dmFailedAt('u1')).toBeNull();
+    });
+  });
+
+  test('isPayloadRejection is true for 400 and 413 except closed DMs', () => {
+    expect(isPayloadRejection(apiError(50035, 400))).toBe(true);
+    expect(isPayloadRejection(apiError(40005, 413))).toBe(true);
+    expect(isPayloadRejection(new HTTPError(413, 'Payload Too Large', 'POST', 'u', {}))).toBe(true);
+    expect(isPayloadRejection(dmClosedError())).toBe(false);
+    expect(isPayloadRejection(apiError(0, 503))).toBe(false);
+    expect(isPayloadRejection(new HTTPError(502, 'Bad Gateway', 'POST', 'u', {}))).toBe(false);
+    expect(isPayloadRejection(new Error('400'))).toBe(false);
   });
 
   test('isDmClosed is true only for Discord error 50007', () => {

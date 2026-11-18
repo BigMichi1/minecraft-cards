@@ -135,13 +135,25 @@ button rows below all embeds, so each embed and its row carry the same position 
 recorded as sent only once Discord accepted it.
 
 The alert DM does not link the listing picture and the reference thumbnail; the bot downloads
-them with the same bounded download (`downloadImage` in `embedder.ts`: allowed hosts, 10 MB,
-timeout, User-Agent) and attaches them, and the embed points at `attachment://picture-<n>.<ext>`
-or `attachment://reference-<n>.<ext>` (n is the embed's position, the extension comes from the
-file's first bytes). Discord's media proxy shows no collect-it.de pictures, most likely because
-the shop blocks datacenter IPs. A picture on another host, a failed download, a file that is not
-JPEG / PNG / GIF / WebP, more than 10 attachments or more than 8 MB per message keep the URL
-(`src/bot/notify/pictures.ts`), so an alert is never lost because of a picture.
+them with the same bounded download (`downloadImage` in `embedder.ts`: allowed hosts, timeout,
+User-Agent, here capped at 2 MB per picture while downloading) and attaches them, and the embed
+points at `attachment://picture-<n>.<ext>` or `attachment://reference-<n>.<ext>` (n is the
+embed's position, the extension comes from the file's first bytes). Discord's media proxy shows
+no collect-it.de pictures, most likely because the shop blocks datacenter IPs. A message's
+downloads run in parallel, and one check fetches each URL once, so a shared reference is
+downloaded once. Nothing is downloaded while the bot shuts down.
+
+A picture on another host, a failed download, a file that is not JPEG / PNG / GIF / WebP, more
+than 10 attachments or more than 8 MB per message keep the URL (`src/bot/notify/pictures.ts`),
+so an alert is never lost because of a picture. Each of these is logged at warn (host not
+allowed, attachment limit and byte budget once per check). The admin gets a throttled alert
+(`notify-pictures`) naming the hosts and reasons when, in one check, more than half of the
+pictures fell back or every picture of a host did; the attachment limit and the byte budget do
+not count toward it. If Discord rejects a message with pictures as a bad payload (HTTP 400 or
+413 other than closed DMs, e.g. 40005, 50035, 50045), the sender logs it, alerts the admin
+(`notify-attachment-rejected`) and sends the message once more without pictures; it is recorded
+as sent only if that send succeeds. Other errors (5xx, network, closed DMs, shutdown) are
+handled as before.
 
 ## Match statuses
 

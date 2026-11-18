@@ -2,31 +2,33 @@ import { EmbedBuilder } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import type { RunSummary } from '../check/runner';
 import type { StoredListing } from '../database/listingManager';
-import { LAST_SUCCESS_WINDOW_MS, type LatestRun } from '../database/runManager';
+import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { formatPrice, SHOP_NAMES, validUrl } from '../notify/messages';
 import { SHOP_IDS, type ShopId } from '../shops/types';
+import {
+  needsLastSuccess,
+  pictureBacked,
+  shopCells,
+  type CellContext,
+  type ListingState,
+  type ShopCell,
+} from './shopCell';
 import { clipText, DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
 
 /** Everything `/missing status` shows; gathered by the command, formatted here without I/O. */
-export interface StatusInput {
+export interface StatusInput extends CellContext {
   /** The user's missing cards, in display order. */
   cards: CardId[];
-  /** The newest readable check run, and whether a newer record could not be read. */
-  latest: LatestRun;
-  /** The shops this process checks; any other shop shows as not enabled and has no entries. */
-  enabledShops: readonly ShopId[];
   /**
    * Per shop, the start of its newest successful check within LAST_SUCCESS_WINDOW_MS; null when
    * there is none. Only filled for shops that failed or did not run (`needsLastSuccess`).
    */
   lastSuccess: Partial<Record<ShopId, number | null>>;
-  /** Stored listings carrying any of `cards`. */
-  listings: StoredListing[];
   /** Catalog names of the cards that have one. */
   names: Map<CardId, string>;
-  /** Current time; an auction whose end is before it counts as ended. */
-  now: number;
 }
+
+export { needsLastSuccess };
 
 /** What `/missing status` replies: the message text and at most one embed with the links. */
 export interface StatusReply {
@@ -69,70 +71,6 @@ function reference(n: number): string {
 
 function seconds(ms: number): number {
   return Math.floor(ms / 1000);
-}
-
-function succeeded(last: RunSummary, shop: ShopId): boolean {
-  const entry = last.shops[shop];
-  return entry !== undefined && entry.error === undefined;
-}
-
-/**
- * Whether `/missing status` needs `shop`'s last success: it is enabled and its latest check
- * failed or did not run. Without a readable run nothing is shown per shop, so nothing is needed.
- */
-export function needsLastSuccess(
-  last: RunSummary | undefined,
-  shop: ShopId,
-  enabledShops: readonly ShopId[]
-): boolean {
-  return last !== undefined && enabledShops.includes(shop) && !succeeded(last, shop);
-}
-
-/** An auction whose end has passed is gone, even if the last check still saw it running. */
-function ended(l: StoredListing, now: number): boolean {
-  return l.auctionEndsAt !== null && l.auctionEndsAt < now;
-}
-
-/**
- * Whether the listing's card number is backed by its picture (or the admin). Bundles are never
- * compared, so they never count as picture-backed.
- */
-function pictureBacked(l: StoredListing): boolean {
-  return l.matchStatus === 'reference' || l.matchStatus === 'confirmed';
-}
-
-/** A listing of a shop whose latest check succeeded, but which that check did not return. */
-function unseen(l: StoredListing, last: RunSummary): boolean {
-  return succeeded(last, l.shop) && l.lastSeenAt < last.startedAt;
-}
-
-/**
- * Sort key, lower is better: seen in the latest check, then in stock beats paused after a
- * report or held back as a mismatch beats sold out or ended, then a backed picture (never a
- * bundle), then the lowest price (none last).
- */
-function sortKey(l: StoredListing, last: RunSummary, now: number): number[] {
-  const tier = !l.available || ended(l, now) ? 2 : l.onHold || l.matchStatus === 'mismatch' ? 1 : 0;
-  return [
-    unseen(l, last) ? 1 : 0,
-    tier,
-    pictureBacked(l) ? 0 : 1,
-    l.price?.cents ?? Number.POSITIVE_INFINITY,
-  ];
-}
-
-function compareKeys(a: number[], b: number[]): number {
-  for (let i = 0; i < a.length; i++) {
-    if (a[i] !== b[i]) return a[i]! < b[i]! ? -1 : 1;
-  }
-  return 0;
-}
-
-/** The listing that best answers "can I buy this card here". */
-function best(candidates: StoredListing[], last: RunSummary, now: number): StoredListing {
-  return candidates.reduce((a, b) =>
-    compareKeys(sortKey(b, last, now), sortKey(a, last, now)) < 0 ? b : a
-  );
 }
 
 /**
@@ -180,6 +118,15 @@ function headLines(input: StatusInput): string[] {
   return [...head, '', ...SHOP_IDS.map((shop) => shopLine(shop, input, last))];
 }
 
+/** The cell text of a listing that is not in stock. */
+const STATE_TEXT: Record<Exclude<ListingState, 'in_stock'>, string> = {
+  sold_out: 'sold out',
+  ended: 'ended',
+  paused: 'paused',
+  // The picture shows another card: never sent to users until the admin maps it.
+  held_back: 'held back',
+};
+
 /** One table cell; `link` is set only for an in-stock cell whose listing URL is valid. */
 interface Cell {
   value: string;
@@ -187,26 +134,24 @@ interface Cell {
   link?: { url: string; listing: StoredListing };
 }
 
-function cellFor(card: CardId, shop: ShopId, input: StatusInput): Cell {
+/** The `/missing status` cell of `cell`: its value, its markers, and its link when in stock. */
+function cellFor(cell: ShopCell): Cell {
   const markers = new Set<Marker>();
-  const last = input.latest.summary;
-  if (!input.enabledShops.includes(shop)) return { value: 'n/a', markers };
-  // Without a readable run there is no telling what any shop lists.
-  if (!last) return { value: '?', markers };
-  const here = input.listings.filter((l) => l.shop === shop && l.cardIds.includes(card));
-  if (here.length === 0) {
-    // Without a successful check there is no telling whether the shop lists the card.
-    return { value: succeeded(last, shop) ? '–' : '?', markers };
+  switch (cell.kind) {
+    case 'not_enabled':
+      return { value: 'n/a', markers };
+    case 'unknown':
+      return { value: '?', markers };
+    case 'not_listed':
+      return { value: '–', markers };
+    case 'listed':
+      break;
   }
-  const l = best(here, last, input.now);
-  if (unseen(l, last) || needsLastSuccess(last, shop, input.enabledShops)) markers.add('*');
+  const l = cell.listing;
+  if (cell.stale) markers.add('*');
   if (l.cardIds.length > 1) markers.add('+');
   else if (!pictureBacked(l) && l.matchStatus !== 'mismatch') markers.add('!');
-  if (!l.available) return { value: 'sold out', markers };
-  if (ended(l, input.now)) return { value: 'ended', markers };
-  if (l.onHold) return { value: 'paused', markers };
-  // The picture shows another card: never sent to users until the admin maps it.
-  if (l.matchStatus === 'mismatch') return { value: 'held back', markers };
+  if (cell.state !== 'in_stock') return { value: STATE_TEXT[cell.state], markers };
   const value = l.price ? formatPrice(l.price) : 'in stock';
   const url = validUrl(l.url);
   return url ? { value, markers, link: { url, listing: l } } : { value, markers };
@@ -269,12 +214,13 @@ interface Row {
  */
 function buildTable(input: StatusInput): { header: string; rows: Row[] } {
   let ref = 0;
+  const cellAt = shopCells(input);
   const built = input.cards.map((card) => {
     const label = cardLabel(card, input);
     const links: string[] = [];
     const markers = new Set<Marker>();
     const texts = SHOP_IDS.map((shop) => {
-      const cell = cellFor(card, shop, input);
+      const cell = cellFor(cellAt(card, shop));
       for (const m of cell.markers) markers.add(m);
       if (!cell.link) return cellText(cell, undefined);
       ref++;

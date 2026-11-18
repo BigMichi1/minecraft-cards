@@ -23,18 +23,39 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   single cards (295 results on 2026-11-18; the other three found 2 to 30 each, almost all of them
   packs, limited cards and pick lists). `tcc serie 3` found nothing usable that day but is kept: it
   costs one request and catches titles without "Karten" or "On Fire".
-- **Paging**: each search is read page by page, 200 items per page, with `offset`, until a page is
-  empty or the answer's `total` is reached (without a `total`, until a short page), at most 5
-  pages (1000 results) per query; a search past the cap logs a warning. 1500 ms between two search
-  requests, as between two shop pages. A failing page is a shop error, like a failing shop page;
-  all searches together returning no item at all is a `ShopLayoutError`.
-- **Title forms read**: `LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)` (also
-  Puzzle-, Set- and Comickarte), `LEGO Minecraft  132 - Wither Skeleton - Charakterkarte - Holo
-Serie 3 (2026)` (number, name, a type ending in `karte`), `… ULTRA RARE ZOMBIE 68 Karte` (a name,
-  then a number directly before the singular `Karte` / `Card`), and the earlier forms: `#12`,
-  `Nr. 12`, `Nr41`, `Karte 12`, `LE8`, `LE 08`, `XXL1`, `12/228` and lists such as `#12, #45 und
-107`. Counts are not ids: `6 Karten`, `21 Packs à 6 Karten`, `193 verschiedene Karten`,
+- **Paging**: each search is read page by page, 200 items per page, with `offset` (the number of
+  items read so far), until the answer's `total` is reached (a later page without a `total` keeps
+  the earlier one) or, without any `total`, until a short or empty page; at most 5 pages (1000
+  results) per query. 1500 ms between two search requests, as between two shop pages.
+- **Errors**: a failing page is a shop error, like a failing shop page. So is a partial walk,
+  because the unread listings would be marked unavailable: an empty later page while the `total`
+  says more, a first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty
+  result), and an answer of the wrong shape (not an object, `itemSummaries` not a list of items,
+  `total` not a number) are `ShopLayoutError`s naming the query and the offset. All searches
+  together returning no item is a `ShopLayoutError` as before.
+- **Page cap**: a search cut at the cap logs a warning and is reported in `FetchResult.truncated`;
+  the runner sends a throttled admin alert (`shop-truncated:ebay`, at most once a day), and
+  `/admin status` shows the number of cut searches.
+- **Title forms read** (allow-lists, since a false id sends a false DM):
+  - `LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)` and
+    `LEGO Minecraft  132 - Wither Skeleton - Charakterkarte - Holo Serie 3 (2026)`: a number, a
+    spaced dash, a name, a spaced dash and a known card type (`Charakterkarte`, `Comickarte`,
+    `Puzzlekarte`, `Setkarte`, the four of the probe; `Sammelkarte` or `Einzelkarte` is not a
+    type). A hyphen inside the name (`Die End-Arena`) is fine. The name must not start with a
+    pack or product word (`Booster`, `Pack`, `Lot`, `Set`, `Holo`, `Display`, `Konvolut`,
+    `Paket`, `Album`, `Stück`, …), and a number right after `Serie`, `Series` or `Staffel` is
+    never read (`Serie 3 - Steve - Charakterkarte` gives no id). `Karten N - Name` without a
+    card type is not read: every such title in the probe had one.
+  - `… ULTRA RARE ZOMBIE 68 Karte`: a number directly before the singular `Karte` / `Card`, only
+    right after a card name word (`CARD_NAME_WORDS`: the characters and mobs of the probe's
+    series 3 card names, such as `Zombie`, `Villager`, `Horseman`). `Booster 5 Karte`,
+    `Holo 3 Karte` or `neu 2 Karte` give no id.
+  - the earlier forms: `#12`, `Nr. 12`, `Nr41`, `Karte 12`, `LE8`, `LE 08`, `XXL1`, `12/228` and
+    lists such as `#12, #45 und 107`.
+
+  Counts are not ids: `6 Karten`, `21 Packs à 6 Karten`, `193 verschiedene Karten`,
   `incl. 1 special Card`, and the series number in `Serie 3 Karte`.
+
 - **Series 3 only**: ids come only from a title that names series 3 (`Serie 3`, `Series 3`,
   `Serie3`, `On Fire`) and no other series. A title naming series 1 or 2 gives no ids even when it
   also names series 3: a mixed lot is ambiguous. A title with no series word gives no ids either,
@@ -42,13 +63,21 @@ Serie 3 (2026)` (number, name, a type ending in `karte`), `… ULTRA RARE ZOMBIE
   (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
   single in the probe named its series.
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
-  `auswählen`, `Auswahl`, `wählen`, `du wählst`, `choose`, `pick`), from titles with a number range
-  (`Einzelkarten 1 - 228`, `151-254`, `LE1 - LE22`, `1 bis 228`), or from listings with
-  seller-defined variations (`itemGroupType`): a range or a choice says nothing about which card is
-  in stock.
-- **Result**: on 2026-11-18 the adapter found 4 listings with ids before this change and 244
-  after (226 distinct card ids, no bundles); 85 items were skipped without ids (packs, displays,
-  pick lists, series 1 and 2).
+  `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
+  `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,
+  `LE1 - LE22`, `1 bis 228`), or from listings with seller-defined variations (`itemGroupType`):
+  a range or a choice says nothing about which card is in stock. A range has at most three digits
+  on each side and a first number below the second, so `Serie 3 - 2026` and
+  `107/228 - 1 Stück` are not ranges.
+- **Counters**: titles excluded by the series, pick-list, range or variation rules are counted as
+  `skippedExcluded` ("not series 3 single cards" in `/admin status`), series 3 titles naming no
+  card as `skippedNoId` ("without card number"); both are logged with their reason at debug
+  level. Items without a link or title (`skippedInvalid`) are counted once per item, not once per
+  search that returns them.
+- **Result**: on 2026-11-18 the adapter found 4 listings with ids before this change and 243
+  after the review round (225 distinct card ids, no bundles); 30 items were excluded (series 1
+  and 2, no series word, pick lists, ranges, variations) and 53 skipped without a card id (packs,
+  displays, boosters).
 - **Fixture**: seller fields (`seller.username`, `feedbackScore`, `feedbackPercentage`, account
   type), `itemLocation` and the other fields the adapter does not read are dropped; item ids,
   titles, prices, shipping costs, image URLs, buying options and the variation group are kept.

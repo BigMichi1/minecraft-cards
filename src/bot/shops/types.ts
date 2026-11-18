@@ -67,7 +67,8 @@ export interface ShopAdapter {
 /**
  * A shop answered, but not with what a working shop sends: no card on any page, a page that
  * is not a category page (bot wall, maintenance), a page past the first without products, or
- * eBay searches that all came back empty. On collect-it, which hides sold-out cards, also any
+ * eBay searches that all came back empty; on eBay also an empty later page while the total says
+ * more, a first page with neither items nor total, and an answer of the wrong shape. On collect-it, which hides sold-out cards, also any
  * walk it cannot finish (a missing, unreadable or wrong canonical or next link, the page cap),
  * a walk that does not add up to the shop's article total or has a short middle page, and any
  * product box it cannot read. The runner treats it like a failed fetch.

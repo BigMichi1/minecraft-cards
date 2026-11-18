@@ -241,7 +241,8 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
  * read as sold out and re-notify on the next healthy run. So the walk follows each page's
  * `<link rel="next">`, and a page whose canonical link is missing, unreadable or names another
  * page than the one linked is a `ShopLayoutError` (a page past the end redirects to page 1), as is
- * reaching MAX_PAGES. The runner then leaves the stored listings untouched and retries next hour.
+ * reaching MAX_PAGES or any unreadable product box or title. The runner then leaves the stored
+ * listings untouched, and the run is retried next hour.
  */
 export function createCollectItAdapter(
   fetchFn?: FetchFn,

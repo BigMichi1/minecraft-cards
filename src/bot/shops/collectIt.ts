@@ -1,11 +1,12 @@
 import * as cheerio from 'cheerio';
 import { normalizeCardId } from '../cards/cardId';
-import { sleep as realSleep } from '../utils/async';
-import { fetchText } from '../utils/http';
-import logger, { logError } from '../utils/logger';
-import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopAdapter } from './types';
+import { errorMessage, sleep as realSleep } from '../utils/async';
+import { fetchText, HttpError } from '../utils/http';
+import logger from '../utils/logger';
+import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopAdapter, ShopId } from './types';
 import { ShopLayoutError } from './types';
 
+const SHOP = 'collect-it' satisfies ShopId;
 const BASE_URL = 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten';
 const PAGE_DELAY_MS = 1500;
 const MAX_PAGES = 60;
@@ -57,28 +58,55 @@ export function categoryPageNumber(href: string, base?: string): number | null {
   return suffix ? Number.parseInt(suffix[1] ?? '', 10) : null;
 }
 
-function parsePrice(amount: string | undefined, currency: string | undefined): Listing['price'] {
-  if (!amount || !/^\d+(?:\.\d{1,2})?$/.test(amount)) return null;
+/**
+ * The schema.org price (`0.55`, a dot and at most two decimals) in cents; currency EUR when
+ * `priceCurrency` is missing. A missing or malformed price is null (shown as unknown) with a
+ * warning naming `what` and the raw value.
+ */
+function parsePrice(
+  amount: string | undefined,
+  currency: string | undefined,
+  what: string
+): Listing['price'] {
+  if (amount === undefined) {
+    logger.warn(`collect-it: ${what} has no price`);
+    return null;
+  }
+  if (!/^\d+(?:\.\d{1,2})?$/.test(amount)) {
+    logger.warn(`collect-it: ${what} has a malformed price "${amount}"`);
+    return null;
+  }
   return { cents: Math.round(Number.parseFloat(amount) * 100), currency: currency || 'EUR' };
 }
 
-/**
- * Parse one category page. `productCount` counts every product box of the listing grid;
- * `skippedNoId` counts boxes whose title does not start with a card number (the category holds
- * only singles, so any such title is parser drift), `skippedInvalid` boxes without a link, a
- * title or a known schema.org availability; `firstSkipped` describes the first skipped box
- * (null when none was). The adapter rejects a page with any skipped box. `canonical` and `next` are the raw hrefs of `<link rel="canonical">` and
- * `<link rel="next">` (null when absent); the adapter checks them with `categoryPageNumber`.
- */
-export function parseCollectItPage(html: string): {
+/** `href` resolved against the shop, or null when it is missing or not a URL. */
+function resolveUrl(href: string | undefined): string | null {
+  return href ? (URL.parse(href, BASE_URL)?.toString() ?? null) : null;
+}
+
+/** One parsed category page; see `parseCollectItPage`. */
+export interface CollectItPage {
   listings: Listing[];
+  /** Every product box of the listing grid, read or not. */
   productCount: number;
+  /** The raw href of `<link rel="canonical">`, null when absent. */
   canonical: string | null;
+  /** The raw href of `<link rel="next">`, null when absent (the last page). */
   next: string | null;
+  /** Boxes whose title does not start with a card number. */
   skippedNoId: number;
+  /** Boxes without a link, a title or a known schema.org availability. */
   skippedInvalid: number;
+  /** What the first skipped box lacked, naming its title or link; null when none was skipped. */
   firstSkipped: string | null;
-} {
+}
+
+/**
+ * Parse one category page. The category holds only singles, so a skipped box is parser drift,
+ * and the adapter rejects a page with any. `canonical` and `next` are returned raw; the adapter
+ * checks them with `categoryPageNumber`.
+ */
+export function parseCollectItPage(html: string): CollectItPage {
   const $ = cheerio.load(html);
   const listings: Listing[] = [];
   let skippedNoId = 0;
@@ -125,19 +153,20 @@ export function parseCollectItPage(html: string): {
       return;
     }
     listings.push({
-      shop: 'collect-it',
+      shop: SHOP,
       url: new URL(href, BASE_URL).toString(),
       title,
       cardIds: [cardId],
       cardName: (match[2] ?? '').trim(),
-      // The 600 px picture; the <img> shows the 200 px one.
+      // The microdata picture is the `md` size (600w in the <img> srcset); the <img> src, the
+      // 200w `sm` size, is the fallback.
       imageUrl:
-        box.find('meta[itemprop="image"]').first().attr('content') ??
-        box.find('.c-product-box-thumbnail img').first().attr('src') ??
-        null,
+        resolveUrl(box.find('meta[itemprop="image"]').first().attr('content')) ??
+        resolveUrl(box.find('.c-product-box-thumbnail img').first().attr('src')),
       price: parsePrice(
         box.find('meta[itemprop="price"]').first().attr('content'),
-        box.find('meta[itemprop="priceCurrency"]').first().attr('content')
+        box.find('meta[itemprop="priceCurrency"]').first().attr('content'),
+        `"${title}"`
       ),
       available,
       format: 'shop',
@@ -192,6 +221,20 @@ function nextPageUrl(next: string | null, page: number): string | null {
 }
 
 /**
+ * Fetch one page. An HttpError already names the URL; any other failure (a timeout, a network
+ * error) is rethrown naming the page, with the original as `cause`. Nothing is logged here: the
+ * runner logs a failed shop once.
+ */
+async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined): Promise<string> {
+  try {
+    return await fetchText(url, fetchFn);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new Error(`collect-it: page ${page} failed: ${errorMessage(error)}`, { cause: error });
+  }
+}
+
+/**
  * collect-it.de lists every single card in one category, 30 per page. It hides sold-out products
  * instead of marking them, so a card that sells out simply vanishes (and the run marks the stored
  * listing unavailable). That makes a partial read dangerous: every card on an unread page would
@@ -207,7 +250,7 @@ export function createCollectItAdapter(
   const sleep = options.sleep ?? realSleep;
   const delayMs = options.delayMs ?? PAGE_DELAY_MS;
   return {
-    id: 'collect-it',
+    id: SHOP,
     async fetchListings(): Promise<FetchResult> {
       const byUrl = new Map<string, Listing>();
       let url: string | null = BASE_URL;
@@ -216,16 +259,10 @@ export function createCollectItAdapter(
           throw new ShopLayoutError(`collect-it: still a next page after ${MAX_PAGES} pages`);
         }
         if (page > 1) await sleep(delayMs);
-        let parsed: ReturnType<typeof parseCollectItPage>;
-        try {
-          parsed = parseCollectItPage(await fetchText(url, fetchFn));
-          if (parsed.productCount === 0) {
-            // A bot wall, maintenance page or empty category; a linked page always has products.
-            throw new ShopLayoutError(`collect-it: page ${page} has no products`);
-          }
-        } catch (error) {
-          logError(`collect-it page ${page} failed`, error);
-          throw error;
+        const parsed = parseCollectItPage(await fetchPage(url, page, fetchFn));
+        if (parsed.productCount === 0) {
+          // A bot wall, maintenance page or empty category; a linked page always has products.
+          throw new ShopLayoutError(`collect-it: page ${page} has no products`);
         }
         checkCanonical(parsed.canonical, page);
         const skipped = parsed.skippedNoId + parsed.skippedInvalid;

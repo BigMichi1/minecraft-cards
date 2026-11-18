@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import * as cheerio from 'cheerio';
-import { createCollectItAdapter, parseCollectItPage } from './collectIt';
+import { createCollectItAdapter, parseCollectItPage, type CollectItPage } from './collectIt';
 import { ShopLayoutError } from './types';
 import logger from '../utils/logger';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
@@ -61,9 +61,20 @@ function firstBoxOnly(edit: ($: cheerio.CheerioAPI, box: ReturnType<cheerio.Chee
   return $.html();
 }
 
+/** Runs `fn` with `logger.warn` spied, and returns the warned messages. */
+function warnings(fn: () => void): string[] {
+  const warn = spyOn(logger, 'warn');
+  try {
+    fn();
+    return warn.mock.calls.map((c) => String(c[0]));
+  } finally {
+    warn.mockRestore();
+  }
+}
+
 describe('parseCollectItPage', () => {
-  const p1 = parseCollectItPage(P1);
-  const p8 = parseCollectItPage(P8);
+  const p1: CollectItPage = parseCollectItPage(P1);
+  const p8: CollectItPage = parseCollectItPage(P8);
 
   test('reads id, name, price, stock, url and picture of a base card', () => {
     const squid = p1.listings.find((l) => l.cardIds[0] === '12')!;
@@ -194,9 +205,52 @@ describe('parseCollectItPage', () => {
     expect(parsed.firstSkipped).toContain('1 - Alex');
   });
 
-  test('a missing price is null, not a parse error', () => {
+  test('a missing price is null with a warning, not a parse error', () => {
     const html = firstBoxOnly(($, box) => box.find('meta[itemprop="price"]').remove());
-    expect(parseCollectItPage(html).listings[0]?.price).toBeNull();
+    let parsed: CollectItPage | undefined;
+    const warned = warnings(() => (parsed = parseCollectItPage(html)));
+    expect(parsed?.listings[0]?.price).toBeNull();
+    expect(warned.some((w) => w.includes('no price'))).toBe(true);
+  });
+
+  for (const raw of ['0,55', '0.555']) {
+    test(`a malformed price "${raw}" is null and the warning names the raw value`, () => {
+      const html = firstBoxOnly(($, box) =>
+        box.find('meta[itemprop="price"]').attr('content', raw)
+      );
+      let parsed: CollectItPage | undefined;
+      const warned = warnings(() => (parsed = parseCollectItPage(html)));
+      expect(parsed?.listings[0]?.price).toBeNull();
+      expect(warned.some((w) => w.includes(`"${raw}"`) && w.includes('1 - Alex'))).toBe(true);
+    });
+  }
+
+  test('a missing priceCurrency defaults to EUR', () => {
+    const html = firstBoxOnly(($, box) => box.find('meta[itemprop="priceCurrency"]').remove());
+    expect(parseCollectItPage(html).listings[0]?.price).toEqual({ cents: 55, currency: 'EUR' });
+  });
+
+  test('the picture falls back to the <img> src, resolved against the shop', () => {
+    const html = firstBoxOnly(($, box) => {
+      box.find('meta[itemprop="image"]').remove();
+      box
+        .find('.c-product-box-thumbnail img')
+        .attr('src', '/media/image/product/623985/sm/1-alex.jpg');
+    });
+    expect(parseCollectItPage(html).listings[0]?.imageUrl).toBe(
+      'https://www.collect-it.de/media/image/product/623985/sm/1-alex.jpg'
+    );
+  });
+
+  test('a relative image meta is resolved against the shop', () => {
+    const html = firstBoxOnly(($, box) =>
+      box
+        .find('meta[itemprop="image"]')
+        .attr('content', '/media/image/product/623985/md/1-alex.jpg')
+    );
+    expect(parseCollectItPage(html).listings[0]?.imageUrl).toBe(
+      'https://www.collect-it.de/media/image/product/623985/md/1-alex.jpg'
+    );
   });
 
   test('a page without products and without a canonical link', () => {
@@ -293,6 +347,32 @@ describe('createCollectItAdapter', () => {
     await expect(
       createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings()
     ).rejects.toBeInstanceOf(ShopLayoutError);
+  });
+
+  test('a failed page is not logged by the adapter (the runner logs it once)', async () => {
+    const log = spyOn(logger, 'log');
+    try {
+      const { fetchFn } = fakeFetch({ Einzelkarten: '<html>Just a moment...</html>' });
+      await createCollectItAdapter(fetchFn, { delayMs: 0 })
+        .fetchListings()
+        .catch(() => undefined);
+      expect(log.mock.calls.filter((c) => c[0] === 'error')).toEqual([]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('a network error names the page that failed and keeps the cause', async () => {
+    const timeout = new DOMException('The operation timed out.', 'TimeoutError');
+    const fetchFn = async (url: string) => {
+      if (url.endsWith('_s2')) throw timeout;
+      return new Response(asPage(P1, 1, true));
+    };
+    const error = (await createCollectItAdapter(fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e)) as Error;
+    expect(error.message).toBe('collect-it: page 2 failed: The operation timed out.');
+    expect(error.cause).toBe(timeout);
   });
 
   test('an HTTP error rejects', async () => {

@@ -73,6 +73,17 @@ Measured with transformers.js 4.3.2 on CPU; embedding two shop images (download 
   center-crops in JS, and turns the processor's own resize and crop off. The processor
   still converts to RGB, rescales and normalises.
 
+## collect-it.de pictures (2026-11-18)
+
+A spot check with the default model (`Xenova/dinov2-small`) on 40 collect-it listings: each listing's picture was compared with the sammel-ente reference of the same card (true pair), and with the reference of the next card (false pair).
+
+| Pairs      | min   | median | max   | at or above 0.78 |
+| ---------- | ----- | ------ | ----- | ---------------- |
+| same card  | 0.729 | 0.847  | 0.930 | 38 of 40         |
+| other card | 0.145 | 0.534  | 0.814 | 2 of 40          |
+
+This is close to the blue-ocean measurement, so the threshold stays at 0.78. About 5 % of unconfirmed matches would still show as "picture matches". That is somewhat more than with blue-ocean, but each case is still shown with the picture so the user can check it.
+
 ## Data quality finding
 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",

@@ -1,4 +1,9 @@
-import { DiscordAPIError, RESTJSONErrorCodes, type MessageCreateOptions } from 'discord.js';
+import {
+  DiscordAPIError,
+  HTTPError,
+  RESTJSONErrorCodes,
+  type MessageCreateOptions,
+} from 'discord.js';
 import type { AlertFn } from '../check/adminAlert';
 import type { NotificationSender } from '../check/runner';
 import {
@@ -9,7 +14,9 @@ import {
 import { userManager } from '../database/userManager';
 import { errorMessage } from '../utils/async';
 import logger, { logError } from '../utils/logger';
+import { downloadImage } from '../matcher/embedder';
 import { buildNotificationMessages, ITEMS_PER_MESSAGE, type NotificationMessage } from './messages';
+import { attachPictures, PictureRun, type DownloadFn } from './pictures';
 
 /** The only part of the Discord client the sender needs. */
 export interface DmClient {
@@ -25,6 +32,8 @@ export interface SenderOptions {
   isShuttingDown?: () => boolean;
   /** Throttled admin alert for failures that are not one user's closed DMs. */
   alert: AlertFn;
+  /** Downloads a listing or reference picture to attach; the bounded matcher download by default. */
+  downloadImage?: DownloadFn;
 }
 
 const PAUSE_MS = 500;
@@ -44,6 +53,18 @@ export function isDmClosed(error: unknown): boolean {
   );
 }
 
+/**
+ * Discord refused the payload itself (400 or 413, e.g. 40005 too large, 50035 invalid form
+ * body, 50045 file too large), not the user: closed DMs (50007) and 5xx are not this.
+ */
+export function isPayloadRejection(error: unknown): boolean {
+  if (isDmClosed(error)) return false;
+  return (
+    (error instanceof DiscordAPIError || error instanceof HTTPError) &&
+    (error.status === 400 || error.status === 413)
+  );
+}
+
 type UserOutcome = 'sent' | 'dm-closed' | 'failed' | 'interrupted';
 
 /**
@@ -59,6 +80,8 @@ export function createDiscordSender(client: DmClient, options: SenderOptions): N
   const now = options.now ?? Date.now;
   const isShuttingDown = options.isShuttingDown ?? (() => false);
   const { alert } = options;
+  const download: DownloadFn =
+    options.downloadImage ?? ((url, maxBytes) => downloadImage(url, fetch, maxBytes));
 
   return {
     async send(pending: PendingNotifications) {
@@ -67,6 +90,7 @@ export function createDiscordSender(client: DmClient, options: SenderOptions): N
       let first = true;
       const outcomes: UserOutcome[] = [];
       let firstError: string | undefined;
+      const pictures = new PictureRun(download);
 
       for (const [discordId, items] of pending) {
         let messages: NotificationMessage<PendingNotification>[];
@@ -94,7 +118,35 @@ export function createDiscordSender(client: DmClient, options: SenderOptions): N
           for (const { message, items: sent } of messages) {
             if (!first) await sleep(PAUSE_MS);
             first = false;
-            await user.send(message);
+            // attachPictures never rejects: a picture it cannot attach keeps its URL.
+            const withPictures = isShuttingDown()
+              ? message
+              : await attachPictures(message, pictures);
+            try {
+              await user.send(withPictures);
+            } catch (error) {
+              if (withPictures === message || isShuttingDown() || !isPayloadRejection(error)) {
+                throw error;
+              }
+              // The pictures may be what Discord refused: the alert itself must still go out.
+              logger.warn(
+                `DM to ${discordId} with pictures rejected, sending without: ${errorMessage(error)}`
+              );
+              let plainError: unknown;
+              try {
+                await user.send(message);
+              } catch (retryError) {
+                plainError = retryError;
+              }
+              await alert(
+                'notify-attachment-rejected',
+                `Discord rejected a notification with attached pictures (${errorMessage(error)}); ` +
+                  (plainError === undefined
+                    ? 'sent it without them.'
+                    : `sending it without them failed too: ${errorMessage(plainError)}`)
+              );
+              if (plainError !== undefined) throw plainError;
+            }
             try {
               for (const item of sent) {
                 listingManager.recordNotified(discordId, item.listing.id, item.availableSince);
@@ -128,6 +180,9 @@ export function createDiscordSender(client: DmClient, options: SenderOptions): N
         }
         outcomes.push(outcome);
       }
+
+      const picturesText = pictures.alertText();
+      if (picturesText) await alert('notify-pictures', picturesText);
 
       const attempted = outcomes.filter((o) => o !== 'interrupted');
       const allFailed = attempted.length > 0 && attempted.every((o) => o !== 'sent');

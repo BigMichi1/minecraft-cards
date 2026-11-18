@@ -125,6 +125,38 @@ before decoding or resizing. Pictures are fetched only over https from the shop 
 image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
 `www.collect-it.de`, `i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
 
+## Alerts: layout and pictures
+
+A user with at most 5 pending listings in a check (`SINGLE_MESSAGE_LIMIT` in
+`src/bot/notify/messages.ts`) gets one DM per listing, each with its embed, picture and its
+own button row directly under it. More listings are batched 5 per message; Discord shows all
+button rows below all embeds, so each embed and its row carry the same position marker. At most
+25 listings go out per user and check; the rest follow in the next checks. Each message is
+recorded as sent only once Discord accepted it.
+
+The alert DM does not link the listing picture and the reference thumbnail; the bot downloads
+them with the same bounded download (`downloadImage` in `embedder.ts`: allowed hosts, timeout,
+User-Agent, here capped at 2 MB per picture while downloading) and attaches them, and the embed
+points at `attachment://picture-<n>.<ext>` or `attachment://reference-<n>.<ext>` (n is the
+embed's position, the extension comes from the file's first bytes). Discord's media proxy shows
+no collect-it.de pictures, most likely because the shop blocks datacenter IPs. A message's
+downloads run in parallel. One check keeps the bytes of reference thumbnails only, so a shared
+reference is downloaded once; a listing picture keeps only a failure, so a failing picture is
+not retried within the check, and no listing bytes are kept after their message. Nothing is downloaded while the bot shuts down.
+
+A picture on another host, a failed download, a file that is not JPEG / PNG / GIF / WebP, more
+than 10 attachments or more than 8 MB per message keep the URL (`src/bot/notify/pictures.ts`),
+so an alert is never lost because of a picture. Each of these is logged at warn (host not
+allowed, attachment limit and byte budget once per check). The admin gets a throttled alert
+(`notify-pictures`) naming the hosts and reasons when, in one check, at least 2 pictures fell
+back (`MIN_FALLBACKS_FOR_ALERT`) and either more than half of the pictures fell back or every
+picture of a host did; the attachment limit and the byte budget do
+not count toward it. If Discord rejects a message with pictures as a bad payload (HTTP 400 or
+413 other than closed DMs, e.g. 40005, 50035, 50045), the sender logs it, alerts the admin
+(`notify-attachment-rejected`) and sends the message once more without pictures; it is recorded
+as sent only if that send succeeds. Other errors (5xx, network, closed DMs, shutdown) are
+handled as before.
+
 ## Match statuses
 
 | Status              | Meaning                                                                                                                          |

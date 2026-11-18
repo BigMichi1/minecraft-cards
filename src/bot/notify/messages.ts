@@ -16,12 +16,17 @@ export interface NotificationItem {
 }
 
 export const ITEMS_PER_MESSAGE = 5;
+/**
+ * Up to this many items (for one user in one run) each get their own message, so every
+ * listing has its buttons right under it. More items are batched ITEMS_PER_MESSAGE per message.
+ */
+export const SINGLE_MESSAGE_LIMIT = 5;
 const MAX_TITLE = 256;
 const MAX_FIELD = 1024;
 const MAX_LABEL = 80;
 /**
- * Discord shows all button rows below all embeds, so each embed title and its row carry the
- * same position marker (one per item of a message).
+ * Discord shows all button rows below all embeds, so in a batched message each embed title and
+ * its row carry the same position marker (one per item of a message).
  */
 const POSITION_MARKERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'] as const;
 
@@ -61,14 +66,15 @@ export function formatPrice(price: Money): string {
 
 function title(item: NotificationItem, marker: string): string {
   const { listing, cardIds } = item;
+  const prefix = marker ? `${marker} ` : '';
   if (cardIds.length > 1) {
     const ids = cardIds.map((id) => `#${id}`).join(', ');
-    return truncate(`${marker} 🟢 Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
+    return truncate(`${prefix}🟢 Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
   }
   const [id] = cardIds;
   const name = id === undefined ? undefined : catalogManager.getCard(id)?.name;
   return truncate(
-    `${marker} 🟢 Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`,
+    `${prefix}🟢 Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`,
     MAX_TITLE
   );
 }
@@ -164,7 +170,9 @@ function buildRow(item: NotificationItem, marker: string): ActionRowBuilder<Butt
         .setCustomId(`report:${listing.id}`),
   });
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    buttons.map((b, i) => b.build(truncate(i === 0 ? `${marker} ${b.label}` : b.label, MAX_LABEL)))
+    buttons.map((b, i) =>
+      b.build(truncate(i === 0 && marker ? `${marker} ${b.label}` : b.label, MAX_LABEL))
+    )
   );
 }
 
@@ -175,16 +183,19 @@ export interface NotificationMessage<T extends NotificationItem = NotificationIt
 }
 
 /**
- * One message per 5 items (Discord allows 10 embeds and 5 action rows per message). Embed n
- * and button row n start with the same position marker.
+ * Up to SINGLE_MESSAGE_LIMIT items: one message per item, its embed and button row, no
+ * position marker. More: one message per 5 items (Discord allows 10 embeds and 5 action rows
+ * per message), embed n and button row n starting with the same position marker.
  */
 export function buildNotificationMessages<T extends NotificationItem>(
   items: T[]
 ): NotificationMessage<T>[] {
   const messages: NotificationMessage<T>[] = [];
-  for (let i = 0; i < items.length; i += ITEMS_PER_MESSAGE) {
-    const chunk = items.slice(i, i + ITEMS_PER_MESSAGE);
-    const marker = (n: number) => POSITION_MARKERS[n] ?? `${n + 1}.`;
+  const single = items.length <= SINGLE_MESSAGE_LIMIT;
+  const perMessage = single ? 1 : ITEMS_PER_MESSAGE;
+  const marker = (n: number) => (single ? '' : (POSITION_MARKERS[n] ?? `${n + 1}.`));
+  for (let i = 0; i < items.length; i += perMessage) {
+    const chunk = items.slice(i, i + perMessage);
     messages.push({
       message: {
         embeds: chunk.map((item, n) => buildEmbed(item, marker(n))),

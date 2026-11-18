@@ -342,6 +342,24 @@ export const listingManager = {
   },
 
   /** Listings paused by a report, oldest first. */
+  /** Every stored listing (any shop, available or not) that carries one of `cardIds`. */
+  listingsForCards(cardIds: CardId[]): StoredListing[] {
+    if (cardIds.length === 0) return [];
+    return db.transaction((tx) => {
+      const ids = tx
+        .selectDistinct({ id: listingCards.listingId })
+        .from(listingCards)
+        .where(inArray(listingCards.cardId, cardIds))
+        .all()
+        .map((r) => r.id);
+      if (ids.length === 0) return [];
+      return load(
+        tx,
+        tx.select().from(listings).where(inArray(listings.id, ids)).orderBy(listings.id).all()
+      );
+    });
+  },
+
   onHold(): StoredListing[] {
     return db.transaction((tx) =>
       load(

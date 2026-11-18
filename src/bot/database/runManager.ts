@@ -117,6 +117,24 @@ export const runManager = {
     return peak;
   },
 
+  /**
+   * When `shop` was last checked successfully: the start of the newest run whose entry for it
+   * has no error. Undefined when it never was (or only in rows that can no longer be read).
+   */
+  lastSuccess(shop: ShopId): number | undefined {
+    const rows = db
+      .select({ id: runs.id, summary: runs.summary })
+      .from(runs)
+      .orderBy(desc(runs.id))
+      .all();
+    for (const row of rows) {
+      const summary = parseSummary(row.summary, row.id);
+      const entry = summary?.shops[shop];
+      if (summary && entry !== undefined && entry.error === undefined) return summary.startedAt;
+    }
+    return undefined;
+  },
+
   /** True (and remembers `now`) when no alert with this key went out within `everyMs`. */
   shouldAlert(key: string, now: number, everyMs: number): boolean {
     return db.transaction((tx) => {

@@ -25,6 +25,26 @@ describe('runManager', () => {
     resetWarnings();
   });
 
+  test('lastSuccess is the start of the newest run in which the shop had no error', () => {
+    runManager.record({
+      ...summary,
+      startedAt: 100,
+      shops: { 'blue-ocean': { listings: 0, error: 'down' } },
+    });
+    runManager.record({ ...summary, startedAt: 200, shops: { 'blue-ocean': { listings: 5 } } });
+    runManager.record({
+      ...summary,
+      startedAt: 300,
+      shops: { 'blue-ocean': { listings: 0, error: 'down' } },
+    });
+    expect(runManager.lastSuccess('blue-ocean')).toBe(200);
+  });
+
+  test('lastSuccess of a shop that never appeared is undefined', () => {
+    runManager.record(summary);
+    expect(runManager.lastSuccess('ebay')).toBeUndefined();
+  });
+
   test('last returns the most recent recorded summary', () => {
     expect(runManager.last()).toBeUndefined();
     runManager.record(summary);

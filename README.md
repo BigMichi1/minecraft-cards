@@ -5,7 +5,7 @@ A Discord bot that checks shops (sammel-ente, blue-ocean, optionally eBay) every
 Minecraft sticker card availability and DMs users about the cards they are missing. A
 picture comparison against the sammel-ente card image marks a listing as confirmed.
 
-Users manage their list with `/missing set|add|remove|list|clear`; the admin runs `/admin`
+Users manage their list with `/missing set|add|remove|list|clear|status`; the admin runs `/admin`
 (`map`, `clear`, `status`, `run`, `catalog import`). `/help` explains the rest.
 
 ## Documentation

@@ -13,7 +13,7 @@ describe('ShopLayoutError', () => {
 
 describe('SHOP_IDS and LISTING_FORMATS', () => {
   test('list each value once', () => {
-    expect(SHOP_IDS).toEqual(['sammel-ente', 'blue-ocean', 'ebay']);
+    expect(SHOP_IDS).toEqual(['sammel-ente', 'blue-ocean', 'collect-it', 'ebay']);
     expect(LISTING_FORMATS).toEqual(['shop', 'auction', 'fixed_price']);
   });
 });

@@ -81,10 +81,31 @@ describe('buildStatusReply', () => {
       '',
       '✅ sammel-ente: 251 listings',
       '✅ blue-ocean: 206 listings',
+      '⚪ collect-it: not enabled',
       '⚪ eBay: not enabled',
       '',
       '#12 Squid: sammel-ente 0,55 € in stock · blue-ocean sold out',
     ]);
+  });
+
+  test('collect-it has its own shop line and card entry, between blue-ocean and eBay', () => {
+    const reply = buildStatusReply(
+      input({
+        latest: run({ ...okRun, shops: { ...okRun.shops, 'collect-it': { listings: 235 } } }),
+        enabledShops: ['sammel-ente', 'blue-ocean', 'collect-it'],
+        listings: [
+          listing('collect-it', ids('12'), { price: { cents: 49, currency: 'EUR' } }),
+          listing('blue-ocean', ids('12'), { available: false }),
+        ],
+      })
+    );
+    expect(reply.split('\n').slice(2, 6)).toEqual([
+      '✅ sammel-ente: 251 listings',
+      '✅ blue-ocean: 206 listings',
+      '✅ collect-it: 235 listings',
+      '⚪ eBay: not enabled',
+    ]);
+    expect(cardLine(reply)).toBe('#12 Squid: blue-ocean sold out · collect-it 0,49 € in stock');
   });
 
   test('a shop whose last check failed shows the error and marks its entries as of the last success', () => {

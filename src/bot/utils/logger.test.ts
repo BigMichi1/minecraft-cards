@@ -104,4 +104,38 @@ describe('logError', () => {
       log.mockRestore();
     }
   });
+
+  test('an Error with a cause also logs the cause: name, message, code and stack', () => {
+    const log = spyOn(logger, 'log').mockImplementation(() => logger);
+    try {
+      const cause = Object.assign(new TypeError('fetch failed'), { code: 'ECONNRESET' });
+      const error = new Error('page 2 failed: fetch failed', { cause });
+      logError('shop failed', error);
+      expect(log).toHaveBeenCalledWith('error', 'shop failed: page 2 failed: fetch failed', {
+        stack: error.stack,
+        cause: {
+          name: 'TypeError',
+          message: 'fetch failed',
+          code: 'ECONNRESET',
+          stack: cause.stack,
+        },
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('a cause that is not an Error is logged as text', () => {
+    const log = spyOn(logger, 'log').mockImplementation(() => logger);
+    try {
+      const error = new Error('wrapped', { cause: 'socket hang up' });
+      logError('step failed', error);
+      expect(log).toHaveBeenCalledWith('error', 'step failed: wrapped', {
+        stack: error.stack,
+        cause: { message: 'socket hang up' },
+      });
+    } finally {
+      log.mockRestore();
+    }
+  });
 });

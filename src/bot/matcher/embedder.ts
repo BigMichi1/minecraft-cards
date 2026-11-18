@@ -150,6 +150,7 @@ export const IMAGE_HOSTS: ReadonlySet<string> = new Set([
   'shop-sammel-ente.de',
   'cdn.blue-ocean.de',
   'www.blue-ocean.de',
+  'www.collect-it.de',
   'i.ebayimg.com',
 ]);
 const MAX_REDIRECTS = 3;

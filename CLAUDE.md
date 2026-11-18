@@ -33,7 +33,7 @@ Bun + TypeScript Discord bot (discord.js), SQLite through Drizzle. `src/bot/bot.
 
 - `config.ts`: env parsing, fails fast with a message naming the variable.
 - `cards/`: canonical card ids and the starter catalog.
-- `shops/`: adapters for sammel-ente, blue-ocean and eBay behind one `ShopAdapter` interface.
+- `shops/`: adapters for sammel-ente, blue-ocean, collect-it and eBay behind one `ShopAdapter` interface; `adapters.ts` builds the enabled list for `bot.ts`.
 - `check/`: `runner.ts` (one round for all users), `scheduler.ts` (interval, `/admin run`) and `adminAlert.ts` (throttled admin alerts, at most once a day per key; the registration and model-load DMs are not throttled, they go once per start).
 - `lifecycle.ts`: shutdown and the slash command runner (DM failure notice).
 - `matcher/`: image embedder (transformers.js), cosine similarity, bounded image download.
@@ -60,7 +60,7 @@ Docs: `docs/development.md`, `configuration.md`, `image-matching.md`, `deploymen
 
 ## Review focus (each has a test)
 
-- A shop fetch that throws (HTTP error, timeout) or raises `ShopLayoutError` (no card on any page, a page that is not a category page such as a Cloudflare or maintenance page, a later page without products, eBay searches all empty) is a shop error with a throttled admin alert, and must not mark that shop's stored listings unavailable.
+- A shop fetch that throws (HTTP error, timeout) or raises `ShopLayoutError` (no card on any page, a page that is not a category page such as a Cloudflare or maintenance page, a later page without products, eBay searches all empty; on collect-it also any incomplete walk or unreadable product box) is a shop error with a throttled admin alert, and must not mark that shop's stored listings unavailable.
 - `/admin map` overrides survive the next scrape of the same listing.
 - Sold out then back in stock re-notifies exactly once; staying in stock never re-notifies.
 - A user with DMs closed does not stop other users' notifications, and their notification is not recorded as sent.
@@ -68,7 +68,8 @@ Docs: `docs/development.md`, `configuration.md`, `image-matching.md`, `deploymen
 
 ## Decisions to keep
 
-- blue-ocean card ids come from the URL suffix (`...-tcc-12`), and only "On Fire" (series 3) titles are kept; series 1 and 2 listings share the category and would get wrong ids.
+- blue-ocean card ids come from the URL suffix (`…-tcc-on-fire-2dd00088-12`), and only "On Fire" (series 3) titles are kept; series 1 and 2 listings share the category and would get wrong ids.
+- collect-it pages are walked by following each page's `<link rel="next">`, not by a page count: a page past the end redirects to page 1. collect-it hides sold-out cards, so a card vanishing from the category is how it sells out, and a partial read would mark real listings sold out. So a page whose canonical link is missing, unreadable, or names another page than the one linked is a shop error (`ShopLayoutError`), as is reaching the page cap or any unreadable product box or title. The walk must also read exactly the article total that page 1's pagination text names (`Du hast 30 von 235 Artikeln gesehen`), and every page that links a next page must hold a full page of 30 products; otherwise it is a `ShopLayoutError` too (this catches a dropped `rel="next"` and cards shifting between pages). The run is retried next hour, and stored listings are left untouched. Shop-controlled values in those errors are clipped to 200 characters, and admin alerts to Discord's 2000.
 - The sammel-ente listing picture of the same card number is the image reference.
 - Production runs `bun run src/bot/bot.ts`, not the compiled binary: the compiled binary cannot load the image model (`docs/image-matching.md`). `bun run build` remains but is not what the Docker image uses.
 - `sharp` is bypassed: it hangs under Bun 1.4.4, so the embedder decodes and resizes with `Bun.Image`.

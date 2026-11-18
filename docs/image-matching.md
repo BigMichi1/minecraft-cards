@@ -73,6 +73,20 @@ Measured with transformers.js 4.3.2 on CPU; embedding two shop images (download 
   center-crops in JS, and turns the processor's own resize and crop off. The processor
   still converts to RGB, rescales and normalises.
 
+## collect-it.de pictures (2026-11-18)
+
+A spot check with the default model (`Xenova/dinov2-small`) on 40 collect-it listings: each listing's picture was compared with the sammel-ente reference of the same card (true pair), and with the reference of the next card (false pair).
+
+| Pairs      | min   | median | max   | at or above 0.78 |
+| ---------- | ----- | ------ | ----- | ---------------- |
+| same card  | 0.729 | 0.847  | 0.930 | 38 of 40         |
+| other card | 0.145 | 0.534  | 0.814 | 2 of 40          |
+
+At 0.78, 2 of 40 wrong-card pairs (5 %; blue-ocean 6 of 203, about 3 %) would show as "picture
+matches", and 2 of 40 genuine matches (5 %; blue-ocean 4 of 203, about 2 %) would show as
+unconfirmed. Both rates are small, and measured on only 40 pairs, so the threshold stays at 0.78.
+The alert shows the listing picture, so the user can still spot a wrong card.
+
 ## Data quality finding
 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",
@@ -109,7 +123,7 @@ Remote pictures are bounded before they reach the model: downloads over 10 MB ar
 pictures over 10000 px on a side or more elongated than 10:1 are refused from their header,
 before decoding or resizing. Pictures are fetched only over https from the shop and eBay
 image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
-`i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
+`www.collect-it.de`, `i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
 
 ## Match statuses
 

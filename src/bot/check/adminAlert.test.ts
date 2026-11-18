@@ -18,6 +18,14 @@ describe('throttledAlert', () => {
 
   const send = async (text: string) => void sent.push(text);
 
+  test('clips a text over the Discord message limit, so the DM is not rejected', async () => {
+    await throttledAlert(send, () => clock)('a', `Shop x check failed: ${'y'.repeat(5000)}`);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toHaveLength(2000);
+    expect(sent[0]!.startsWith('Shop x check failed: y')).toBe(true);
+    expect(sent[0]!.endsWith('…')).toBe(true);
+  });
+
   test('sends each key at most once per day', async () => {
     const alert = throttledAlert(send, () => clock);
     await alert('a', 'one');

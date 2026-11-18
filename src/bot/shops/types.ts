@@ -1,6 +1,6 @@
 import type { CardId } from '../cards/cardId';
 
-export const SHOP_IDS = ['sammel-ente', 'blue-ocean', 'ebay'] as const;
+export const SHOP_IDS = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay'] as const;
 export type ShopId = (typeof SHOP_IDS)[number];
 
 /** `shop`: a shop's own price; eBay listings are auctions or fixed price ("Buy It Now"). */
@@ -17,7 +17,10 @@ export interface Listing {
   url: string;
   title: string;
   cardIds: CardId[];
-  /** sammel-ente only: the card name taken from the title. */
+  /**
+   * sammel-ente and collect-it: the card name taken from the title. Only sammel-ente's names
+   * feed the catalog.
+   */
   cardName: string | null;
   imageUrl: string | null;
   price: Money | null;
@@ -54,7 +57,10 @@ export interface ShopAdapter {
 /**
  * A shop answered, but not with what a working shop sends: no card on any page, a page that
  * is not a category page (bot wall, maintenance), a page past the first without products, or
- * eBay searches that all came back empty. The runner treats it like a failed fetch.
+ * eBay searches that all came back empty. On collect-it, which hides sold-out cards, also any
+ * walk it cannot finish (a missing, unreadable or wrong canonical or next link, the page cap),
+ * a walk that does not add up to the shop's article total or has a short middle page, and any
+ * product box it cannot read. The runner treats it like a failed fetch.
  */
 export class ShopLayoutError extends Error {
   constructor(message: string) {

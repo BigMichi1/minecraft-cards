@@ -28,6 +28,7 @@ const POSITION_MARKERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣']
 export const SHOP_NAMES: Record<ShopId, string> = {
   'sammel-ente': 'sammel-ente',
   'blue-ocean': 'blue-ocean',
+  'collect-it': 'collect-it',
   ebay: 'eBay',
 };
 

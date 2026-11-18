@@ -180,6 +180,23 @@ describe('listingManager', () => {
     });
   });
 
+  test('a new collect-it single starts pending and turns unavailable once it vanishes', () => {
+    const collect12: Listing = {
+      ...blue12,
+      shop: 'collect-it',
+      url: 'https://www.collect-it.de/12-Squid-Charakterkarte-Serie-3',
+    };
+    listingManager.upsertFromRun('collect-it', [collect12], 1000);
+    expect(listingManager.getByUrl(collect12.url)).toMatchObject({
+      shop: 'collect-it',
+      matchStatus: 'pending',
+      available: true,
+    });
+    // collect-it hides sold-out products: the listing just disappears from the category.
+    listingManager.upsertFromRun('collect-it', [], 2000);
+    expect(listingManager.getByUrl(collect12.url)!.available).toBe(false);
+  });
+
   test('vanished listings of another shop are untouched', () => {
     listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
     listingManager.upsertFromRun('sammel-ente', [], 2000);

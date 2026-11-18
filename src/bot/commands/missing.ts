@@ -1,7 +1,13 @@
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { formatCardList } from '../cards/cardId';
+import { catalogManager } from '../database/catalogManager';
+import { listingManager } from '../database/listingManager';
+import { runManager } from '../database/runManager';
 import { userManager, type ListChange } from '../database/userManager';
+import { SHOP_IDS, type ShopId } from '../shops/types';
+import type { CardId } from '../cards/cardId';
+import { buildStatusReply, needsLastSuccess } from './missingStatus';
 import { joinWithinLimit } from '../utils/messageLimit';
 import { replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
@@ -48,7 +54,12 @@ export const data = new SlashCommandBuilder()
       )
   )
   .addSubcommand((sub) => sub.setName('list').setDescription('Show your missing list'))
-  .addSubcommand((sub) => sub.setName('clear').setDescription('Empty your missing list'));
+  .addSubcommand((sub) => sub.setName('clear').setDescription('Empty your missing list'))
+  .addSubcommand((sub) =>
+    sub
+      .setName('status')
+      .setDescription('Your missing cards with what each shop last showed, and how fresh that is')
+  );
 
 function describeChange(change: ListChange): string {
   if (change.ok) {
@@ -61,9 +72,43 @@ function describeChange(change: ListChange): string {
   return joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(change.invalid)]);
 }
 
-function run(interaction: ChatInputCommandInteraction): string {
+/** What `/missing` needs from the bot's wiring. */
+export interface MissingContext {
+  /** The shops this process checks (one per adapter built in bot.ts). */
+  enabledShops: readonly ShopId[];
+}
+
+/** Gather what `/missing status` shows (all reads) and format it. */
+function status(userId: string, now: number, ctx: MissingContext): string {
+  const cards = userManager.getList(userId);
+  const latest = runManager.latestReadable();
+  // Only enabled shops whose latest check failed or did not run need their last success; before
+  // the first readable run nothing is shown per shop, so nothing is looked up. null records
+  // "looked up, none in the window", so the formatter can tell it from "not looked up".
+  const lastSuccess: Partial<Record<ShopId, number | null>> = {};
+  for (const shop of SHOP_IDS) {
+    if (needsLastSuccess(latest.summary, shop, ctx.enabledShops)) {
+      lastSuccess[shop] = runManager.lastSuccess(shop, now) ?? null;
+    }
+  }
+  const names = new Map<CardId, string>();
+  for (const card of cards) {
+    const name = catalogManager.getCard(card)?.name;
+    if (name) names.set(card, name);
+  }
+  return buildStatusReply({
+    cards,
+    latest,
+    enabledShops: ctx.enabledShops,
+    lastSuccess,
+    listings: listingManager.listingsForCards(cards),
+    names,
+    now,
+  });
+}
+
+function run(interaction: ChatInputCommandInteraction, sub: string, ctx: MissingContext): string {
   const userId = interaction.user.id;
-  const sub = interaction.options.getSubcommand();
   switch (sub) {
     case 'set':
       return describeChange(
@@ -86,17 +131,30 @@ function run(interaction: ChatInputCommandInteraction): string {
     case 'clear':
       userManager.clearList(userId);
       return 'Your missing list is now empty.';
+    case 'status':
+      return status(userId, Date.now(), ctx);
     default:
       throw new Error(`Unknown /missing subcommand: ${sub}`);
   }
 }
 
-export async function execute(interaction: ChatInputCommandInteraction): Promise<void> {
+export async function execute(
+  interaction: ChatInputCommandInteraction,
+  ctx: MissingContext
+): Promise<void> {
+  let sub: string | undefined;
   try {
-    const content = run(interaction);
+    sub = interaction.options.getSubcommand();
+    const content = run(interaction, sub, ctx);
     await interaction.reply({ content, flags: MessageFlags.Ephemeral });
   } catch (error) {
-    logError('[MISSING COMMAND] failed', error);
-    await replyWithError(interaction, 'Error', 'Something went wrong while updating your list.');
+    logError(`[MISSING COMMAND] /missing ${sub ?? '(no subcommand)'} failed`, error);
+    await replyWithError(
+      interaction,
+      'Error',
+      sub === 'status'
+        ? 'Could not load your stock status. Please try again later.'
+        : 'Something went wrong while updating your list.'
+    );
   }
 }

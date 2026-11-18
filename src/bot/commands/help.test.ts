@@ -21,7 +21,15 @@ describe('/help', () => {
     expect(payload.flags).toBe(MessageFlags.Ephemeral);
     expect(payload.embeds).toHaveLength(1);
     const text = JSON.stringify(payload.embeds[0].toJSON());
-    for (const s of ['/missing', '12, 45, LE8', '20-25', 'wrong', 'DM', 'hour']) {
+    for (const s of [
+      '/missing',
+      '/missing status',
+      '12, 45, LE8',
+      '20-25',
+      'wrong',
+      'DM',
+      'hour',
+    ]) {
       expect(text).toContain(s);
     }
   });

@@ -45,6 +45,40 @@ describe('listingManager', () => {
     catalogManager.seedIfEmpty();
   });
 
+  test('listingsForCards returns every stored listing carrying one of the cards, bundles included', () => {
+    const sammel12: Listing = {
+      ...blue12,
+      shop: 'sammel-ente',
+      url: 'https://se/12',
+      available: false,
+    };
+    const bundle: Listing = {
+      ...blue12,
+      shop: 'ebay',
+      url: 'https://www.ebay.de/itm/1',
+      cardIds: ids('12', '45'),
+    };
+    const blue45: Listing = {
+      ...blue12,
+      url: 'https://www.blue-ocean.de/p/45',
+      cardIds: [cid('45')],
+    };
+    listingManager.upsertFromRun('blue-ocean', [blue12, blue45], 1000);
+    listingManager.upsertFromRun('sammel-ente', [sammel12], 1000);
+    listingManager.upsertFromRun('ebay', [bundle], 1000);
+    const found = listingManager.listingsForCards([cid('12')]);
+    expect(found.map((l) => l.url).sort()).toEqual([blue12.url, bundle.url, sammel12.url].sort());
+    expect(found.find((l) => l.url === bundle.url)!.cardIds).toEqual(ids('12', '45'));
+    expect(listingManager.listingsForCards([])).toEqual([]);
+  });
+
+  test('a stored listing carries when it was last seen', () => {
+    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    expect(listingManager.getByUrl(blue12.url)!.lastSeenAt).toBe(1000);
+    listingManager.upsertFromRun('blue-ocean', [], 2000);
+    expect(listingManager.listingsForCards([cid('12')])[0]!.lastSeenAt).toBe(1000);
+  });
+
   describe('notification periods', () => {
     beforeEach(() => {
       userManager.setList('u1', '12');

@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
 import { db, initializeDatabase } from './db';
 import { adminAlerts, runs } from './schema/index';
-import { resetWarnings, runManager } from './runManager';
+import { LAST_SUCCESS_WINDOW_MS, resetWarnings, runManager } from './runManager';
 import type { RunSummary } from '../check/runner';
 
 const NOW = 10_000_000_000;
@@ -23,6 +23,89 @@ describe('runManager', () => {
     db.delete(runs).run();
     db.delete(adminAlerts).run();
     resetWarnings();
+  });
+
+  test('lastSuccess is the start of the newest run in which the shop had no error', () => {
+    runManager.record({
+      ...summary,
+      startedAt: 100,
+      shops: { 'blue-ocean': { listings: 0, error: 'down' } },
+    });
+    runManager.record({ ...summary, startedAt: 200, shops: { 'blue-ocean': { listings: 5 } } });
+    runManager.record({
+      ...summary,
+      startedAt: 300,
+      shops: { 'blue-ocean': { listings: 0, error: 'down' } },
+    });
+    expect(runManager.lastSuccess('blue-ocean', 300)).toBe(200);
+  });
+
+  test('lastSuccess of a shop that never appeared is undefined', () => {
+    runManager.record(summary);
+    expect(runManager.lastSuccess('ebay', NOW)).toBeUndefined();
+  });
+
+  test('lastSuccess stops at the newest successful run and does not read older rows', () => {
+    for (let i = 0; i < 120; i++)
+      db.insert(runs).values({ startedAt: i, finishedAt: i, summary: 'not json' }).run();
+    runManager.record({ ...summary, startedAt: 500 });
+    const warn = spyOn(logger, 'warn');
+    try {
+      expect(runManager.lastSuccess('blue-ocean', 500)).toBe(500);
+      expect(warn).not.toHaveBeenCalled(); // the 120 unreadable older rows were never parsed
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('lastSuccess pages past 50 rows: unreadable rows and 60 newer failures', () => {
+    runManager.record({ ...summary, startedAt: 1 });
+    for (let i = 0; i < 50; i++)
+      db.insert(runs).values({ startedAt: 2, finishedAt: 2, summary: 'not json' }).run();
+    for (let i = 0; i < 60; i++) {
+      runManager.record({
+        ...summary,
+        startedAt: 3 + i,
+        shops: { 'blue-ocean': { listings: 0, error: 'down' } },
+      });
+    }
+    const warn = spyOn(logger, 'warn');
+    try {
+      expect(runManager.lastSuccess('blue-ocean', 100)).toBe(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('lastSuccess only looks at runs that started within the last 7 days', () => {
+    runManager.record({ ...summary, startedAt: NOW });
+    expect(runManager.lastSuccess('blue-ocean', NOW + LAST_SUCCESS_WINDOW_MS)).toBe(NOW);
+    expect(runManager.lastSuccess('blue-ocean', NOW + LAST_SUCCESS_WINDOW_MS + 1)).toBeUndefined();
+    expect(LAST_SUCCESS_WINDOW_MS).toBe(7 * 24 * 60 * 60 * 1000);
+  });
+
+  test('latestReadable is the newest readable run and says whether a newer row was unreadable', () => {
+    expect(runManager.latestReadable()).toEqual({ summary: undefined, newerUnreadable: false });
+    runManager.record(summary);
+    expect(runManager.latestReadable()).toEqual({ summary, newerUnreadable: false });
+    const warn = spyOn(logger, 'warn');
+    try {
+      db.insert(runs).values({ startedAt: 1, finishedAt: 2, summary: 'not json' }).run();
+      expect(runManager.latestReadable()).toEqual({ summary, newerUnreadable: true });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('latestReadable with only unreadable rows has no summary but flags them', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      for (let i = 0; i < 60; i++)
+        db.insert(runs).values({ startedAt: 1, finishedAt: 2, summary: '{}' }).run();
+      expect(runManager.latestReadable()).toEqual({ summary: undefined, newerUnreadable: true });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('last returns the most recent recorded summary', () => {

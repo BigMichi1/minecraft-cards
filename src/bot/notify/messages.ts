@@ -25,7 +25,7 @@ const MAX_LABEL = 80;
  */
 const POSITION_MARKERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'] as const;
 
-const SHOP_NAMES: Record<ShopId, string> = {
+export const SHOP_NAMES: Record<ShopId, string> = {
   'sammel-ente': 'sammel-ente',
   'blue-ocean': 'blue-ocean',
   ebay: 'eBay',
@@ -52,7 +52,7 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
-function formatPrice(price: Money): string {
+export function formatPrice(price: Money): string {
   const amount = (price.cents / 100).toFixed(2);
   if (price.currency === 'EUR') return `${amount.replace('.', ',')} €`;
   return `${amount} ${price.currency}`;

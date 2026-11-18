@@ -29,6 +29,10 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
           value: 'Show your list, or empty it.',
         },
         {
+          name: '/missing status',
+          value: 'Your missing cards with what each shop last showed, and how fresh that is.',
+        },
+        {
           name: 'Wrong card?',
           value:
             'If a notification shows the wrong card, press ❌ Wrong in the row with the same number (1️⃣, 2️⃣, …) as that card.',

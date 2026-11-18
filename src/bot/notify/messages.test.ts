@@ -28,6 +28,7 @@ function listing(i: number, over: Partial<StoredListing> = {}): StoredListing {
     idConflict: false,
     onHold: false,
     manualOverride: false,
+    lastSeenAt: 1,
     ...over,
   };
 }

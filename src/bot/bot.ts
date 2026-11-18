@@ -66,6 +66,9 @@ if (config.ebay) {
   logger.warn('eBay disabled: EBAY_CLIENT_ID/EBAY_CLIENT_SECRET not set');
 }
 
+/** The shops this process checks; `/missing status` shows the others as not enabled. */
+const enabledShops = adapters.map((a) => a.id);
+
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],
 });
@@ -109,12 +112,11 @@ stopScheduler = () => scheduler.stop();
 // binary (a dynamic directory scan would not be bundled).
 const commands: Record<string, ChatCommand> = {
   [adminCommand.data.name]: {
-    data: adminCommand.data,
     execute: (i) =>
       adminCommand.execute(i, { adminId: config.botAdminId, trigger: () => scheduler.trigger() }),
   },
   [helpCommand.data.name]: helpCommand,
-  [missingCommand.data.name]: missingCommand,
+  [missingCommand.data.name]: { execute: (i) => missingCommand.execute(i, { enabledShops }) },
 };
 const commandData = [adminCommand.data, helpCommand.data, missingCommand.data];
 

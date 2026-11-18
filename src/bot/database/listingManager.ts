@@ -26,6 +26,8 @@ export type StoredListing = {
   idConflict: boolean;
   onHold: boolean;
   manualOverride: boolean;
+  /** When a check last returned this listing. */
+  lastSeenAt: number;
 };
 
 /** One listing to tell a user about: the cards of it they want, for this availability period. */
@@ -80,6 +82,7 @@ function toStored(row: ListingRow, cardIds: CardId[]): StoredListing {
     idConflict: row.idConflict,
     onHold: row.onHold,
     manualOverride: row.manualOverride,
+    lastSeenAt: row.lastSeenAt,
   };
 }
 
@@ -338,6 +341,24 @@ export const listingManager = {
       tx.update(listings).set({ onHold: false }).where(eq(listings.id, row.id)).run();
       resolveReports(tx, row.id, Date.now());
       return byUrl(tx, url);
+    });
+  },
+
+  /** Every stored listing (any shop, available or not) that carries one of `cardIds`. */
+  listingsForCards(cardIds: CardId[]): StoredListing[] {
+    if (cardIds.length === 0) return [];
+    return db.transaction((tx) => {
+      const ids = tx
+        .selectDistinct({ id: listingCards.listingId })
+        .from(listingCards)
+        .where(inArray(listingCards.cardId, cardIds))
+        .all()
+        .map((r) => r.id);
+      if (ids.length === 0) return [];
+      return load(
+        tx,
+        tx.select().from(listings).where(inArray(listings.id, ids)).orderBy(listings.id).all()
+      );
     });
   },
 

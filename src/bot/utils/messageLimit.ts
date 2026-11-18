@@ -1,5 +1,10 @@
 export const DISCORD_MESSAGE_LIMIT = 2000;
 
+/** `text` cut to at most `max` characters, ending in `…` when it was cut. */
+export function clipText(text: string, max: number = DISCORD_MESSAGE_LIMIT): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
 /** Join items after a prefix; when over `limit` keep what fits plus `… and K more`. */
 export function joinWithinLimit(
   prefix: string,

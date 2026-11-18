@@ -19,11 +19,10 @@ export interface Money {
   currency: string;
 }
 
-export interface Listing {
+interface ListingFields {
   shop: ShopId;
   url: string;
   title: string;
-  cardIds: CardId[];
   /**
    * sammel-ente and collect-it: the card name taken from the title. Only sammel-ente's names
    * feed the catalog.
@@ -36,13 +35,15 @@ export interface Listing {
   auctionEndsAt: number | null;
   /** blue-ocean only: the card number in the URL and in the image file name disagree. */
   idConflict: boolean;
-  /**
-   * Absent or `title` for every listing whose title names its cards. `picture` (eBay only): the
-   * title names no card but could be a single card, `cardIds` is empty, and the picture decides
-   * the card (docs/image-matching.md, rule 4).
-   */
-  idSource?: IdSource;
 }
+
+/**
+ * A listing as a shop returned it. Its title names its cards (`idSource` absent or `title`),
+ * or, eBay only, it names none but could be one single card (`idSource` `picture`, no card
+ * ids): the picture decides the card (docs/image-matching.md, rule 4).
+ */
+export type Listing = ListingFields &
+  ({ idSource?: 'title'; cardIds: CardId[] } | { idSource: 'picture'; cardIds: [] });
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 

@@ -672,7 +672,7 @@ describe('createEbayAdapter', () => {
       url: 'https://www.ebay.de/itm/110000000003',
     });
     // No legacyItemId on this item: the number comes from the middle of `v1|<n>|0`.
-    expect(listings.find((l) => l.cardIds.includes(cid('LE8')))).toMatchObject({
+    expect(listings.find((l) => l.cardIds.some((id) => id === cid('LE8')))).toMatchObject({
       format: 'fixed_price',
       cardIds: ['12', '45', 'LE8'],
       price: { cents: 599, currency: 'EUR' },

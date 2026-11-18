@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
-import type { MatchStatus, ResolvedMatchStatus } from '../matcher/matchStatus';
+import type { MatchResult, MatchStatus } from '../matcher/matchStatus';
 import type {
   IdSource,
   ListingFormat,
@@ -260,27 +260,107 @@ export const listingManager = {
   },
 
   /**
-   * Store a comparison. `pictureCardId` is the card the picture was taken for (matchListing's
-   * `picture`). A listing whose title names no card (`idSource` `picture`) gets exactly that
-   * card when confirmed and no card otherwise; an admin-mapped listing keeps the admin's cards.
+   * Store a comparison. `result.picture` becomes `pictureCardId` (see its column). A listing
+   * whose title names no card (`idSource` `picture`) gets exactly the picture's card when
+   * confirmed and no card otherwise; an admin-mapped listing keeps the admin's cards. A
+   * mismatch is due for its admin note (pendingMismatchNotes).
    */
   setMatch(
     listingId: number,
-    status: ResolvedMatchStatus,
-    similarity: number | null,
-    now: number,
-    pictureCardId: CardId | null = null
+    result: Pick<MatchResult, 'status' | 'similarity' | 'picture'>,
+    now: number
   ): void {
+    const pictureCardId = result.picture?.cardId ?? null;
     db.transaction((tx) => {
       const row = tx.select().from(listings).where(eq(listings.id, listingId)).get();
       if (!row) return;
       tx.update(listings)
-        .set({ matchStatus: status, similarity, matchCheckedAt: now, pictureCardId })
+        .set({
+          matchStatus: result.status,
+          similarity: result.similarity,
+          matchCheckedAt: now,
+          pictureCardId,
+          mismatchNotedAt: null,
+        })
         .where(eq(listings.id, listingId))
         .run();
       if (row.idSource === 'picture' && !row.manualOverride) {
-        writeCards(tx, listingId, status === 'confirmed' && pictureCardId ? [pictureCardId] : []);
+        writeCards(
+          tx,
+          listingId,
+          result.status === 'confirmed' && pictureCardId ? [pictureCardId] : []
+        );
       }
+    });
+  },
+
+  /** Mismatches whose admin note has not gone out yet, oldest first. */
+  pendingMismatchNotes(): StoredListing[] {
+    return db.transaction((tx) =>
+      load(
+        tx,
+        tx
+          .select()
+          .from(listings)
+          .where(
+            and(
+              eq(listings.matchStatus, 'mismatch'),
+              eq(listings.manualOverride, false),
+              isNull(listings.mismatchNotedAt)
+            )
+          )
+          .orderBy(listings.id)
+          .all()
+      )
+    );
+  },
+
+  markMismatchNoted(listingId: number, now: number): void {
+    db.update(listings).set({ mismatchNotedAt: now }).where(eq(listings.id, listingId)).run();
+  },
+
+  /**
+   * After the reference pictures of `cardIds` changed: compare again (back to `pending`) every
+   * mismatch whose title card or picture card is one of them, and every title naming no card
+   * whose picture decided nothing (a fuller reference set may decide it now).
+   */
+  rematchMismatches(cardIds: CardId[]): void {
+    if (cardIds.length === 0) return;
+    db.transaction((tx) => {
+      tx.update(listings)
+        .set({ matchStatus: 'pending', similarity: null, matchCheckedAt: null })
+        .where(
+          and(
+            eq(listings.idSource, 'picture'),
+            eq(listings.matchStatus, 'unconfirmed'),
+            eq(listings.manualOverride, false)
+          )
+        )
+        .run();
+      const byTitle = tx
+        .selectDistinct({ id: listingCards.listingId })
+        .from(listingCards)
+        .where(inArray(listingCards.cardId, cardIds))
+        .all()
+        .map((r) => r.id);
+      tx.update(listings)
+        .set({
+          matchStatus: 'pending',
+          similarity: null,
+          matchCheckedAt: null,
+          pictureCardId: null,
+        })
+        .where(
+          and(
+            eq(listings.matchStatus, 'mismatch'),
+            eq(listings.manualOverride, false),
+            or(
+              inArray(listings.pictureCardId, cardIds),
+              byTitle.length > 0 ? inArray(listings.id, byTitle) : undefined
+            )
+          )
+        )
+        .run();
     });
   },
 

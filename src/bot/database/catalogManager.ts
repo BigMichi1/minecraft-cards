@@ -1,4 +1,4 @@
-import { count, eq, inArray, isNotNull } from 'drizzle-orm';
+import { count, eq, inArray } from 'drizzle-orm';
 import {
   cardType,
   compareCardIds,
@@ -7,6 +7,7 @@ import {
   type CardType,
 } from '../cards/cardId';
 import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
+import type { MissingReference } from '../matcher/identify';
 import { db } from './db';
 import { cards, wantedCards } from './schema/index';
 
@@ -19,6 +20,12 @@ export interface CatalogCard {
   puzzle: boolean;
 }
 
+/** The usable reference pictures, and every catalog card without one (and why). */
+export interface ReferenceCatalog {
+  usable: ReferenceCard[];
+  missing: MissingReference[];
+}
+
 /** A card with a reference picture, for the picture identification. */
 export interface ReferenceCard {
   cardId: CardId;
@@ -28,10 +35,11 @@ export interface ReferenceCard {
 
 /**
  * sammel-ente names its puzzle cards "Puzzlekarte <picture> <piece>" ("#154 Puzzlekarte
- * Oberwelt 1", 2026-11-18); that is where the catalog learns which cards are puzzle cards.
+ * Oberwelt 1", 2026-11-18). Derived from the name on every read: name and reference picture
+ * arrive together, so a card with a reference always has the name that says what it is.
  */
-function isPuzzleCardName(name: string): boolean {
-  return /\bPuzzlekarte\b/i.test(name);
+function isPuzzleCardName(name: string | null): boolean {
+  return name !== null && /\bPuzzlekarte\b/i.test(name);
 }
 
 // sammel-ente's empty card ("mnc3_leer.jpg", 2026-11-18 for LE10 and LE11).
@@ -41,23 +49,6 @@ const PLACEHOLDER_FILE = /_leer\./i;
 function pictureKey(url: string): string {
   const parsed = URL.parse(url);
   return parsed ? `${parsed.origin}${parsed.pathname}` : url;
-}
-
-/**
- * The cards whose reference picture is a real one: not a placeholder file (`_leer.`) and not
- * a picture the shop shows for more than one card. Neither tells cards apart, so such a card
- * has no reference (`no_reference`) and is never identified by picture.
- */
-function usableReferences(rows: ReferenceCard[]): ReferenceCard[] {
-  const uses = new Map<string, number>();
-  for (const r of rows) {
-    const key = pictureKey(r.referenceImageUrl);
-    uses.set(key, (uses.get(key) ?? 0) + 1);
-  }
-  return rows.filter((r) => {
-    const key = pictureKey(r.referenceImageUrl);
-    return !PLACEHOLDER_FILE.test(key) && uses.get(key) === 1;
-  });
 }
 
 export interface ImportPreview {
@@ -120,64 +111,84 @@ export const catalogManager = {
   },
 
   getCard(id: CardId): CatalogCard | undefined {
-    return db
+    const row = db
       .select({
         cardId: cards.cardId,
         type: cards.type,
         name: cards.name,
         referenceImageUrl: cards.referenceImageUrl,
-        puzzle: cards.puzzle,
       })
       .from(cards)
       .where(eq(cards.cardId, id))
       .get();
+    return row ? { ...row, puzzle: isPuzzleCardName(row.name) } : undefined;
   },
 
-  /** Every card with a usable reference picture (no placeholder, none shared), in card order. */
-  referenceCards(): ReferenceCard[] {
-    const all = db
-      .select({
-        cardId: cards.cardId,
-        referenceImageUrl: cards.referenceImageUrl,
-        puzzle: cards.puzzle,
-      })
+  /**
+   * Every catalog card, in card order, split into the usable reference pictures and the cards
+   * without one: no picture yet (`no_picture`), a placeholder file (`_leer.`, `placeholder`), or
+   * a picture the shop shows for more than one card (`shared`). The last two tell no card apart,
+   * so such a card has no reference (`no_reference`) and is never identified by picture.
+   */
+  referenceCatalog(): ReferenceCatalog {
+    const rows = db
+      .select({ cardId: cards.cardId, name: cards.name, url: cards.referenceImageUrl })
       .from(cards)
-      .where(isNotNull(cards.referenceImageUrl))
       .all()
-      .flatMap((c) =>
-        c.referenceImageUrl === null ? [] : [{ ...c, referenceImageUrl: c.referenceImageUrl }]
-      );
-    return usableReferences(all).sort((a, b) => compareCardIds(a.cardId, b.cardId));
-  },
-
-  /** The card's reference picture to compare with; null when it has none or only a placeholder. */
-  usableReference(id: CardId): string | null {
-    return catalogManager.referenceCards().find((c) => c.cardId === id)?.referenceImageUrl ?? null;
+      .sort((a, b) => compareCardIds(a.cardId, b.cardId));
+    const uses = new Map<string, number>();
+    for (const r of rows) {
+      if (r.url === null) continue;
+      const key = pictureKey(r.url);
+      uses.set(key, (uses.get(key) ?? 0) + 1);
+    }
+    const usable: ReferenceCard[] = [];
+    const missing: MissingReference[] = [];
+    for (const { cardId, name, url } of rows) {
+      if (url === null) {
+        missing.push({ cardId, reason: 'no_picture' });
+      } else if (PLACEHOLDER_FILE.test(pictureKey(url))) {
+        missing.push({ cardId, reason: 'placeholder' });
+      } else if ((uses.get(pictureKey(url)) ?? 0) > 1) {
+        missing.push({ cardId, reason: 'shared' });
+      } else {
+        usable.push({ cardId, referenceImageUrl: url, puzzle: isPuzzleCardName(name) });
+      }
+    }
+    return { usable, missing };
   },
 
   /**
    * Update name and reference image for catalog ids; unknown ids are ignored. An entry without
-   * a picture keeps the stored reference: a listing that lost its picture must not erase it. A
-   * puzzle card name (isPuzzleCardName) marks the card as a puzzle card; the mark is never
-   * lifted, so a renamed listing cannot make a puzzle card count as decided by its picture.
+   * a picture keeps the stored reference: a listing that lost its picture must not erase it.
+   * Returns the cards whose reference picture URL changed, so their mismatches are compared
+   * again.
    */
   updateNamesAndReferences(
     entries: { cardId: CardId; name: string; imageUrl: string | null }[]
-  ): void {
+  ): CardId[] {
     const now = Date.now();
+    const changed: CardId[] = [];
     db.transaction(() => {
       for (const e of entries) {
+        const before = db
+          .select({ url: cards.referenceImageUrl })
+          .from(cards)
+          .where(eq(cards.cardId, e.cardId))
+          .get();
+        if (!before) continue;
+        if (e.imageUrl !== null && e.imageUrl !== before.url) changed.push(e.cardId);
         db.update(cards)
           .set({
             name: e.name,
             ...(e.imageUrl === null ? {} : { referenceImageUrl: e.imageUrl }),
-            ...(isPuzzleCardName(e.name) ? { puzzle: true } : {}),
             updatedAt: now,
           })
           .where(eq(cards.cardId, e.cardId))
           .run();
       }
     });
+    return changed;
   },
 
   previewImport(ids: CardId[]): ImportPreview {

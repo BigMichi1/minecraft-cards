@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { LISTING_FORMATS, SHOP_IDS, ShopLayoutError } from './types';
+import { cid } from '../../test/cardIds';
+import { LISTING_FORMATS, SHOP_IDS, ShopLayoutError, type Listing } from './types';
 
 describe('ShopLayoutError', () => {
   test('is an Error with its own name', () => {
@@ -15,5 +16,28 @@ describe('SHOP_IDS and LISTING_FORMATS', () => {
   test('list each value once', () => {
     expect(SHOP_IDS).toEqual(['sammel-ente', 'blue-ocean', 'collect-it', 'ebay']);
     expect(LISTING_FORMATS).toEqual(['shop', 'auction', 'fixed_price']);
+  });
+});
+
+describe('Listing', () => {
+  const fields = {
+    shop: 'ebay',
+    url: 'https://www.ebay.de/itm/1',
+    title: 't',
+    cardName: null,
+    imageUrl: null,
+    price: null,
+    available: true,
+    format: 'fixed_price',
+    auctionEndsAt: null,
+    idConflict: false,
+  } as const;
+
+  test('a picture-only listing carries no card ids (checked by the type checker, T6)', () => {
+    const titled: Listing = { ...fields, cardIds: [cid('12')] };
+    const pictureOnly: Listing = { ...fields, idSource: 'picture', cardIds: [] };
+    // @ts-expect-error A listing whose card comes from the picture has no title ids.
+    const wrong: Listing = { ...fields, idSource: 'picture', cardIds: [cid('12')] };
+    expect([titled, pictureOnly, wrong].map((l) => l.cardIds.length)).toEqual([1, 0, 1]);
   });
 });

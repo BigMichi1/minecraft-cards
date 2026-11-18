@@ -1,5 +1,5 @@
 import type { CardId } from '../cards/cardId';
-import { catalogManager } from '../database/catalogManager';
+import { catalogManager, type ReferenceCatalog } from '../database/catalogManager';
 import {
   listingManager,
   type PendingNotifications,
@@ -7,17 +7,13 @@ import {
 } from '../database/listingManager';
 import { runManager, SHOP_PEAK_WINDOW_MS } from '../database/runManager';
 import { userManager } from '../database/userManager';
-import {
-  loadReferenceVectors,
-  matchListing,
-  type ImageEmbedder,
-  type PictureCard,
-} from '../matcher/embedder';
-import type { ReferenceVector } from '../matcher/identify';
+import { loadReferenceSet, matchListing, type ImageEmbedder } from '../matcher/embedder';
+import { isTransient, type ReferenceSet } from '../matcher/identify';
+import type { MatchResult, PictureRejection } from '../matcher/matchStatus';
 import type { FetchResult, Listing, ShopAdapter, ShopId } from '../shops/types';
 import { errorMessage } from '../utils/async';
 import logger, { logError } from '../utils/logger';
-import { throttledAlert, type AlertFn } from './adminAlert';
+import { ALERT_EVERY_MS, throttledAlert, type AlertFn } from './adminAlert';
 
 export interface ShopSummary extends Pick<
   FetchResult,
@@ -42,7 +38,15 @@ export interface RunSummary {
   dmFailures: number;
   /** Set when the run failed outside a single shop (database, matching, sending). */
   error?: string;
+  /**
+   * Picture identifications this run: `decided` (the picture's card counted: rule 1, a
+   * mismatch, a title naming none) and, per reason, the ones that did not count. Absent when
+   * nothing was compared with every reference.
+   */
+  pictures?: PictureCounts;
 }
+
+export type PictureCounts = Partial<Record<'decided' | PictureRejection, number>>;
 
 export type { PendingNotifications } from '../database/listingManager';
 
@@ -61,10 +65,19 @@ export interface RunDeps {
   intervalMs: number;
   /** Retry the admin DMs of reports whose DM failed (interactions/report.ts); never rejects. */
   retryReports?: () => Promise<unknown>;
+  /**
+   * Reference picture URL -> when it last failed to load. Kept across runs (bot.ts passes one
+   * map for the process), so a failing reference is tried again at most once per
+   * IMAGE_RETRY_MS. Without it every run tries again.
+   */
+  referenceFailures?: Map<string, number>;
 }
 
 /** A picture that could not be loaded is tried again at most once per day. */
 export const IMAGE_RETRY_MS = 24 * 60 * 60 * 1000;
+
+/** Throttle rows are kept this long past ALERT_EVERY_MS before they are pruned. */
+const ALERT_PRUNE_MARGIN_MS = 24 * 60 * 60 * 1000;
 
 /** A shop returning fewer than this share of its recent peak count alerts the admin. */
 const DROP_ALERT_SHARE = 0.5;
@@ -86,18 +99,28 @@ export function formatWindow(ms: number): string {
 /**
  * True when the picture has not been judged yet, or the last attempt could not judge it:
  * `pending` (new or changed listing), `no_reference` and `model_unavailable` (both cheap to
- * retry every run), and `image_unavailable` once IMAGE_RETRY_MS has passed since that attempt.
+ * retry every run), and `image_unavailable` once IMAGE_RETRY_MS has passed since that attempt
+ * (also when a reference picture failed to load, so the full set is tried again).
  */
 function needsMatch(l: StoredListing, now: number): boolean {
-  switch (l.matchStatus) {
+  const status = l.matchStatus;
+  switch (status) {
     case 'pending':
     case 'no_reference':
     case 'model_unavailable':
       return true;
     case 'image_unavailable':
       return l.matchCheckedAt === null || now - l.matchCheckedAt >= IMAGE_RETRY_MS;
-    default:
+    case 'reference':
+    case 'confirmed':
+    case 'unconfirmed':
+    case 'bundle':
+    case 'mismatch':
       return false;
+    default: {
+      const unknown: never = status;
+      throw new Error(`needsMatch: unknown match status ${String(unknown)}`);
+    }
   }
 }
 
@@ -107,46 +130,111 @@ function wantedOrPictureOnly(l: StoredListing, wanted: Set<CardId>): boolean {
   return l.cardIds.some((id) => wanted.has(id));
 }
 
+/** At most this many cards are named in a log line or an alert. */
+const MAX_NAMED = 10;
+
 /**
- * Every card's reference picture, embedded on first use and then reused for the rest of the
- * run (the embeddings come from the cache). A reference that cannot be loaded is skipped, with
- * one warning per run.
+ * Every catalog card's reference picture for this run: read from the catalog and embedded on
+ * first use (through the embedding cache), then reused. A reference that failed to load within
+ * IMAGE_RETRY_MS (`referenceFailures`) is not tried again. Placeholder and shared pictures are
+ * named in one warning; load failures in one warning and a throttled admin alert.
  */
-function referencesOnce(embedder: ImageEmbedder): () => Promise<ReferenceVector[]> {
-  let loading: Promise<ReferenceVector[]> | null = null;
+function referencesOnce(
+  deps: RunDeps,
+  embedder: ImageEmbedder,
+  alert: AlertFn,
+  catalogOf: () => ReferenceCatalog
+): () => Promise<ReferenceSet> {
+  let loading: Promise<ReferenceSet> | null = null;
+  const failures = deps.referenceFailures;
   return () => {
     loading ??= (async () => {
-      const skipped: string[] = [];
-      const vectors = await loadReferenceVectors(
-        catalogManager.referenceCards(),
-        embedder,
-        (status, reason) => skipped.push(`${status}: ${reason}`)
+      const now = deps.now();
+      const catalog = catalogOf();
+      const set = await loadReferenceSet(catalog, embedder, {
+        skip: (url) => {
+          const at = failures?.get(url);
+          return at !== undefined && now - at < IMAGE_RETRY_MS
+            ? `failed to load <t:${Math.floor(at / 1000)}:R>, tried again once a day`
+            : null;
+        },
+      });
+      const urlOf = new Map(catalog.usable.map((c) => [c.cardId, c.referenceImageUrl]));
+      const failed = set.missing.filter(isTransient);
+      if (failures) {
+        for (const c of catalog.usable) {
+          const url = c.referenceImageUrl;
+          const failedNow = failed.find((m) => m.cardId === c.cardId);
+          if (!failedNow) failures.delete(url);
+          else if (!failures.has(url) || now - failures.get(url)! >= IMAGE_RETRY_MS) {
+            failures.set(url, now);
+          }
+        }
+      }
+      const unusable = set.missing.filter(
+        (m) => m.reason === 'placeholder' || m.reason === 'shared'
       );
-      if (skipped.length > 0) {
+      if (unusable.length > 0) {
         logger.warn(
-          `${skipped.length} reference picture(s) skipped for the picture identification this run, first: ${skipped[0]}`
+          `${unusable.length} card(s) have no usable reference picture and are never identified by picture: ${unusable
+            .slice(0, MAX_NAMED)
+            .map((m) => `#${m.cardId} ${m.reason}`)
+            .join(', ')}`
         );
       }
-      return vectors;
+      if (failed.length > 0) {
+        const named = failed
+          .slice(0, MAX_NAMED)
+          .map(
+            (m) => `#${m.cardId} (${m.reason}: ${m.detail ?? '?'}, ${urlOf.get(m.cardId) ?? '?'})`
+          )
+          .join('; ');
+        const text = `${failed.length} reference picture(s) could not be loaded this run, so no picture decides a card on its own and no mismatch is made until they load: ${named}`;
+        logger.warn(text);
+        await alert('reference-unavailable', text);
+      }
+      return set;
     })();
     return loading;
   };
 }
 
 /** The admin note for a listing whose picture shows another card than its title names. */
-function mismatchNote(l: StoredListing, similarity: number | null, picture: PictureCard): string {
+function mismatchNote(l: StoredListing, pictureCard: CardId): string {
   const [titleCard] = l.cardIds;
-  const titleScore = similarity === null ? '' : `, #${titleCard} ${similarity.toFixed(2)}`;
+  const titleScore =
+    l.similarity === null ? '' : ` (#${titleCard} only ${l.similarity.toFixed(2)})`;
   return (
     `Picture mismatch, not sent to users: the title says #${titleCard}, the picture shows ` +
-    `#${picture.cardId} (#${picture.cardId} ${picture.similarity.toFixed(2)}${titleScore}). ` +
-    `${l.url} — if the title is wrong, fix it with /admin map.`
+    `#${pictureCard}${titleScore}. ${l.url} — if the title is wrong, fix it with /admin map.`
   );
+}
+
+/**
+ * Send every mismatch note that is due (listingManager.pendingMismatchNotes), throttled per
+ * listing and picture card. A note that fails stays due for the next run; a throttled one (the
+ * same mismatch again within a day) counts as sent.
+ */
+async function sendMismatchNotes(deps: RunDeps, alert: AlertFn): Promise<void> {
+  for (const l of listingManager.pendingMismatchNotes()) {
+    if (l.pictureCardId === null) continue;
+    const outcome = await alert(
+      `mismatch:${l.id}:${l.pictureCardId}`,
+      mismatchNote(l, l.pictureCardId)
+    );
+    if (outcome !== 'failed') listingManager.markMismatchNoted(l.id, deps.now());
+  }
+}
+
+function countPicture(counts: PictureCounts, result: MatchResult): void {
+  const key = result.picture ? 'decided' : result.rejected;
+  if (key) counts[key] = (counts[key] ?? 0) + 1;
 }
 
 async function matchPending(
   deps: RunDeps,
   alert: AlertFn,
+  summary: RunSummary,
   stored: StoredListing[],
   fetched: Map<string, Listing>,
   wanted: Set<CardId>
@@ -158,7 +246,19 @@ async function matchPending(
     reasons.push(reason);
     unavailable.set(status, reasons);
   };
-  const references = deps.embedder ? referencesOnce(deps.embedder) : undefined;
+  // The catalog is read once per run, on first need, for both lookups below.
+  let catalog: ReferenceCatalog | null = null;
+  const catalogOf = () => (catalog ??= catalogManager.referenceCatalog());
+  let usable: Map<CardId, string> | null = null;
+  const referenceOf = (id: CardId) => {
+    usable ??= new Map(catalogOf().usable.map((c) => [c.cardId, c.referenceImageUrl]));
+    return usable.get(id) ?? null;
+  };
+  const references = deps.embedder
+    ? referencesOnce(deps, deps.embedder, alert, catalogOf)
+    : undefined;
+  const counts: PictureCounts = {};
+  const failed: string[] = [];
   for (const l of stored) {
     if (!l.available || !needsMatch(l, deps.now()) || !wantedOrPictureOnly(l, wanted)) {
       continue;
@@ -166,31 +266,44 @@ async function matchPending(
     const source = fetched.get(l.url);
     if (!source) continue;
     const [only] = l.cardIds;
-    const reference =
-      l.cardIds.length === 1 && only !== undefined ? catalogManager.usableReference(only) : null;
-    const result = await matchListing(
-      { ...source, cardIds: l.cardIds, imageUrl: l.imageUrl, idSource: l.idSource },
-      reference,
-      deps.embedder,
-      deps.threshold,
-      { onUnavailable, ...(references ? { references } : {}) }
-    );
-    listingManager.setMatch(
-      l.id,
-      result.status,
-      result.similarity,
-      deps.now(),
-      result.picture?.cardId ?? null
-    );
-    if (result.status === 'mismatch' && result.picture) {
-      await alert(`mismatch:${l.id}`, mismatchNote(l, result.similarity, result.picture));
+    try {
+      const reference = l.cardIds.length === 1 && only !== undefined ? referenceOf(only) : null;
+      const result = await matchListing(
+        toShopListing(source, l),
+        reference,
+        deps.embedder,
+        deps.threshold,
+        { onUnavailable, ...(references ? { references } : {}) }
+      );
+      listingManager.setMatch(l.id, result, deps.now());
+      countPicture(counts, result);
+    } catch (error) {
+      // One listing's failure (the embedding cache's database, a bug) must not stop every DM:
+      // the listing stays as it was (pending or retryable) and is tried again next run.
+      logError(`matching ${l.url} failed`, error);
+      failed.push(`${l.url}: ${errorMessage(error)}`);
     }
   }
+  if (failed.length > 0) {
+    await alert(
+      'match-error',
+      `Matching failed for ${failed.length} listing(s), tried again next run: ${failed.slice(0, 3).join('; ')}`
+    );
+  }
+  if (Object.keys(counts).length > 0) summary.pictures = counts;
   for (const [status, reasons] of unavailable) {
     logger.warn(
       `image match unavailable (${status}) for ${reasons.length} listings this run: ${reasons[0]}`
     );
   }
+}
+
+/** The scraped listing with the stored cards, picture and id source matchListing compares. */
+function toShopListing(source: Listing, l: StoredListing): Listing {
+  const base = { ...source, imageUrl: l.imageUrl };
+  return l.idSource === 'picture' && l.cardIds.length === 0
+    ? { ...base, idSource: 'picture', cardIds: [] }
+    : { ...base, idSource: 'title', cardIds: l.cardIds };
 }
 
 /** The baseline for the drop check; a failed lookup is logged and only skips that check. */
@@ -251,7 +364,7 @@ async function checkShop(
     }
     for (const l of found) fetched.set(l.url, l);
     if (adapter.id === 'sammel-ente') {
-      catalogManager.updateNamesAndReferences(
+      const changed = catalogManager.updateNamesAndReferences(
         found.flatMap((l) => {
           const [cardId] = l.cardIds;
           return l.cardIds.length === 1 && cardId !== undefined && l.cardName !== null
@@ -259,6 +372,8 @@ async function checkShop(
             : [];
         })
       );
+      // A new reference picture may settle a mismatch either way: compare those again.
+      listingManager.rematchMismatches(changed);
     }
     summary.shops[adapter.id] = {
       listings: found.length,
@@ -291,6 +406,12 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
     dmFailures: 0,
   };
   const alert = throttledAlert(deps.alertAdmin, deps.now);
+  try {
+    // Throttle rows a day past their window no longer throttle anything.
+    runManager.pruneAlerts(startedAt - ALERT_EVERY_MS - ALERT_PRUNE_MARGIN_MS);
+  } catch (error) {
+    logError('pruning old admin alert rows failed', error);
+  }
 
   try {
     const wanted = userManager.allWantedIds();
@@ -300,7 +421,8 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
       for (const adapter of deps.adapters) {
         await checkShop(deps, alert, adapter, summary, stored, fetched);
       }
-      await matchPending(deps, alert, stored, fetched, wanted);
+      await matchPending(deps, alert, summary, stored, fetched, wanted);
+      await sendMismatchNotes(deps, alert);
       const now = deps.now();
       const sent = await deps.sender.send(
         listingManager.pendingNotifications({ now, seenSince: now - 2 * deps.intervalMs })

@@ -9,7 +9,8 @@ import {
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { formatCardList } from '../cards/cardId';
 import { parseChecklist } from '../cards/starterCatalog';
-import type { RunSummary } from '../check/runner';
+import type { PictureCounts, RunSummary } from '../check/runner';
+import { PICTURE_REJECTIONS, type PictureRejection } from '../matcher/matchStatus';
 import { catalogManager, parseKnownCardList } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { runManager } from '../database/runManager';
@@ -70,6 +71,22 @@ export const data = new SlashCommandBuilder()
 
 const ephemeral = (content: string) => ({ content, flags: MessageFlags.Ephemeral as const });
 
+const REJECTION_TEXT: Record<PictureRejection, string> = {
+  undecided: 'undecided',
+  puzzle: 'puzzle',
+  twin: 'twin',
+  incomplete: 'incomplete reference set',
+  title_fits: 'title card fits too',
+};
+
+/** `Pictures: 3 decided · not counted: 5 undecided, 1 puzzle` (zero counts left out). */
+function picturesLine(pictures: PictureCounts): string {
+  const rejected = PICTURE_REJECTIONS.filter((r) => pictures[r]).map(
+    (r) => `${pictures[r]} ${REJECTION_TEXT[r]}`
+  );
+  return `Pictures: ${pictures.decided ?? 0} decided${rejected.length > 0 ? ` · not counted: ${rejected.join(', ')}` : ''}`;
+}
+
 export function formatSummary(summary: RunSummary): string {
   const lines = Object.entries(summary.shops).map(([shop, s]) => {
     let line = `${shop}: ${s.listings} listings`;
@@ -83,6 +100,7 @@ export function formatSummary(summary: RunSummary): string {
     return line;
   });
   if (summary.error) lines.push(`Run failed: ${summary.error}`);
+  if (summary.pictures) lines.push(picturesLine(summary.pictures));
   lines.push(`Notified: ${summary.notified} · DM failures: ${summary.dmFailures}`);
   return lines.join('\n').slice(0, DISCORD_MESSAGE_LIMIT);
 }

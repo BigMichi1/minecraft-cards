@@ -212,7 +212,7 @@ describe('listingManager', () => {
     expect(listingManager.getByUrl(ente.url)!.matchStatus).toBe('reference');
     const l = listingManager.getByUrl(blue12.url)!;
     expect(l.matchStatus).toBe('pending');
-    listingManager.setMatch(l.id, 'confirmed', 0.93, 1500);
+    listingManager.setMatch(l.id, { status: 'confirmed', similarity: 0.93, picture: null }, 1500);
     listingManager.upsertFromRun('blue-ocean', [blue12, bundle], 2000);
     expect(listingManager.getById(l.id)).toMatchObject({
       matchStatus: 'confirmed',
@@ -235,13 +235,13 @@ describe('listingManager', () => {
   test('an id conflict that appears or goes away with the same picture resets to pending', () => {
     listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
     const l = listingManager.getByUrl(blue12.url)!;
-    listingManager.setMatch(l.id, 'confirmed', 0.93, 1500);
+    listingManager.setMatch(l.id, { status: 'confirmed', similarity: 0.93, picture: null }, 1500);
     listingManager.upsertFromRun('blue-ocean', [{ ...blue12, idConflict: true }], 2000);
     expect(listingManager.getById(l.id)).toMatchObject({
       matchStatus: 'pending',
       idConflict: true,
     });
-    listingManager.setMatch(l.id, 'unconfirmed', 0.93, 2500);
+    listingManager.setMatch(l.id, { status: 'unconfirmed', similarity: 0.93, picture: null }, 2500);
     listingManager.upsertFromRun('blue-ocean', [blue12], 3000);
     expect(listingManager.getById(l.id)).toMatchObject({
       matchStatus: 'pending',
@@ -368,7 +368,7 @@ describe('listingManager', () => {
   test('overrideCards marks the listing confirmed by the admin', () => {
     listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
     const l = listingManager.getByUrl(blue12.url)!;
-    listingManager.setMatch(l.id, 'unconfirmed', 0.4, 1500);
+    listingManager.setMatch(l.id, { status: 'unconfirmed', similarity: 0.4, picture: null }, 1500);
     expect(listingManager.overrideCards(blue12.url, [cid('12')], 2000)).toMatchObject({
       matchStatus: 'confirmed',
       similarity: null,
@@ -391,7 +391,11 @@ describe('listingManager', () => {
     /** Store the candidate and let the picture decide card 12. */
     function decided(now = 1000): void {
       listingManager.upsertFromRun('ebay', [candidate], now);
-      listingManager.setMatch(stored().id, 'confirmed', 0.91, now + 1, cid('12'));
+      listingManager.setMatch(
+        stored().id,
+        { status: 'confirmed', similarity: 0.91, picture: { cardId: cid('12'), similarity: 0.91 } },
+        now + 1
+      );
     }
 
     beforeEach(() => {
@@ -435,7 +439,11 @@ describe('listingManager', () => {
 
     test('an undecided candidate stays without cards and is never notified', () => {
       listingManager.upsertFromRun('ebay', [candidate], 1000);
-      listingManager.setMatch(stored().id, 'unconfirmed', null, 1001);
+      listingManager.setMatch(
+        stored().id,
+        { status: 'unconfirmed', similarity: null, picture: null },
+        1001
+      );
       expect(stored()).toMatchObject({ cardIds: [], matchStatus: 'unconfirmed' });
       expect(listingManager.pendingNotifications().size).toBe(0);
       listingManager.upsertFromRun('ebay', [candidate], 2000);
@@ -495,7 +503,11 @@ describe('listingManager', () => {
     test('a mismatch holds the picture card and is never notified', () => {
       listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
-      listingManager.setMatch(l.id, 'mismatch', 0.5, 1001, cid('45'));
+      listingManager.setMatch(
+        l.id,
+        { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.5 } },
+        1001
+      );
       expect(listingManager.getByUrl(blue12.url)).toMatchObject({
         cardIds: ['12'],
         matchStatus: 'mismatch',
@@ -510,7 +522,11 @@ describe('listingManager', () => {
     test('a rescrape with a changed picture or title compares a mismatch again', () => {
       listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
-      listingManager.setMatch(l.id, 'mismatch', 0.5, 1001, cid('45'));
+      listingManager.setMatch(
+        l.id,
+        { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.5 } },
+        1001
+      );
       listingManager.upsertFromRun(
         'blue-ocean',
         [{ ...blue12, title: 'Sticker Card 12 neu' }],
@@ -520,7 +536,11 @@ describe('listingManager', () => {
         matchStatus: 'pending',
         pictureCardId: null,
       });
-      listingManager.setMatch(l.id, 'mismatch', 0.5, 2001, cid('45'));
+      listingManager.setMatch(
+        l.id,
+        { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.5 } },
+        2001
+      );
       listingManager.upsertFromRun(
         'blue-ocean',
         [{ ...blue12, title: 'Sticker Card 12 neu', imageUrl: 'https://img/12b.jpg' }],
@@ -532,7 +552,11 @@ describe('listingManager', () => {
     test('a confirmed titled listing is not compared again for a changed title alone', () => {
       listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
-      listingManager.setMatch(l.id, 'confirmed', 0.9, 1001, cid('12'));
+      listingManager.setMatch(
+        l.id,
+        { status: 'confirmed', similarity: 0.9, picture: { cardId: cid('12'), similarity: 0.9 } },
+        1001
+      );
       listingManager.upsertFromRun(
         'blue-ocean',
         [{ ...blue12, title: 'Sticker Card 12 neu' }],
@@ -547,7 +571,11 @@ describe('listingManager', () => {
     test('/admin map on a mismatch or a candidate is final: confirmed, no picture card, kept on rescrape', () => {
       listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
-      listingManager.setMatch(l.id, 'mismatch', 0.5, 1001, cid('45'));
+      listingManager.setMatch(
+        l.id,
+        { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.5 } },
+        1001
+      );
       expect(listingManager.overrideCards(blue12.url, [cid('45')], 2000)).toMatchObject({
         cardIds: ['45'],
         matchStatus: 'confirmed',
@@ -572,8 +600,83 @@ describe('listingManager', () => {
     test('setMatch on a mapped candidate never touches its cards', () => {
       listingManager.upsertFromRun('ebay', [candidate], 1000);
       listingManager.overrideCards(candidate.url, [cid('12')], 2000);
-      listingManager.setMatch(stored().id, 'unconfirmed', null, 2001);
+      listingManager.setMatch(
+        stored().id,
+        { status: 'unconfirmed', similarity: null, picture: null },
+        2001
+      );
       expect(stored().cardIds).toEqual([cid('12')]);
+    });
+  });
+  describe('mismatch notes and reference changes', () => {
+    const mismatch45 = {
+      status: 'mismatch',
+      similarity: 0.5,
+      picture: { cardId: cid('45'), similarity: 0.95 },
+    } as const;
+
+    test('a new mismatch waits for its admin note until marked noted (R5)', () => {
+      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      const l = listingManager.getByUrl(blue12.url)!;
+      listingManager.setMatch(l.id, mismatch45, 1001);
+      expect(listingManager.pendingMismatchNotes().map((x) => x.id)).toEqual([l.id]);
+      listingManager.markMismatchNoted(l.id, 1002);
+      expect(listingManager.pendingMismatchNotes()).toEqual([]);
+      // Compared again with the same outcome: a new note is due (the alert throttle decides).
+      listingManager.setMatch(l.id, mismatch45, 2001);
+      expect(listingManager.pendingMismatchNotes().map((x) => x.id)).toEqual([l.id]);
+    });
+
+    test('an admin-mapped mismatch needs no note', () => {
+      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      const l = listingManager.getByUrl(blue12.url)!;
+      listingManager.setMatch(l.id, mismatch45, 1001);
+      listingManager.overrideCards(blue12.url, [cid('12')], 1500);
+      expect(listingManager.pendingMismatchNotes()).toEqual([]);
+    });
+
+    test('a changed reference of the title or picture card compares a mismatch again (R12)', () => {
+      const blue13: Listing = {
+        ...blue12,
+        url: 'https://www.blue-ocean.de/p/13',
+        cardIds: [cid('13')],
+      };
+      listingManager.upsertFromRun('blue-ocean', [blue12, blue13], 1000);
+      const a = listingManager.getByUrl(blue12.url)!;
+      const b = listingManager.getByUrl(blue13.url)!;
+      listingManager.setMatch(a.id, mismatch45, 1001);
+      listingManager.setMatch(b.id, mismatch45, 1001);
+      listingManager.rematchMismatches([cid('12')]);
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        matchStatus: 'pending',
+        pictureCardId: null,
+      });
+      expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('mismatch');
+      listingManager.rematchMismatches([cid('45')]);
+      expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('pending');
+      listingManager.rematchMismatches([]);
+    });
+
+    test('any changed reference also lets an undecided title naming no card be identified again', () => {
+      const candidate: Listing = {
+        ...blue12,
+        shop: 'ebay',
+        url: 'https://www.ebay.de/itm/88',
+        format: 'fixed_price',
+        idSource: 'picture',
+        cardIds: [],
+      };
+      listingManager.upsertFromRun('ebay', [candidate], 1000);
+      const l = listingManager.getByUrl(candidate.url)!;
+      listingManager.setMatch(
+        l.id,
+        { status: 'unconfirmed', similarity: null, picture: null },
+        1001
+      );
+      listingManager.rematchMismatches([]);
+      expect(listingManager.getByUrl(candidate.url)!.matchStatus).toBe('unconfirmed');
+      listingManager.rematchMismatches([cid('LE10')]);
+      expect(listingManager.getByUrl(candidate.url)!.matchStatus).toBe('pending');
     });
   });
 });

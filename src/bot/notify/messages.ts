@@ -119,7 +119,10 @@ function showsReference(listing: StoredListing): boolean {
   );
 }
 
-function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
+/** Card id -> usable reference picture (no placeholder, none shared), read once per batch. */
+type References = ReadonlyMap<CardId, string>;
+
+function buildEmbed(item: NotificationItem, marker: string, references: References): EmbedBuilder {
   const { listing } = item;
   const priceParts: string[] = [];
   if (listing.price) priceParts.push(formatPrice(listing.price));
@@ -142,9 +145,7 @@ function buildEmbed(item: NotificationItem, marker: string): EmbedBuilder {
   const text = footer(listing);
   if (text) embed.setFooter({ text });
   if (showsReference(listing)) {
-    const thumbnail = validUrl(
-      item.cardIds[0] ? catalogManager.usableReference(item.cardIds[0]) : null
-    );
+    const thumbnail = validUrl(item.cardIds[0] ? references.get(item.cardIds[0]) : null);
     if (thumbnail) embed.setThumbnail(thumbnail);
   }
   return embed;
@@ -208,6 +209,9 @@ export function buildNotificationMessages<T extends NotificationItem>(
   items: T[]
 ): NotificationMessage<T>[] {
   const messages: NotificationMessage<T>[] = [];
+  const references: References = new Map(
+    catalogManager.referenceCatalog().usable.map((c) => [c.cardId, c.referenceImageUrl])
+  );
   const single = items.length <= SINGLE_MESSAGE_LIMIT;
   const perMessage = single ? 1 : ITEMS_PER_MESSAGE;
   const marker = (n: number) => (single ? '' : (POSITION_MARKERS[n] ?? `${n + 1}.`));
@@ -215,7 +219,7 @@ export function buildNotificationMessages<T extends NotificationItem>(
     const chunk = items.slice(i, i + perMessage);
     messages.push({
       message: {
-        embeds: chunk.map((item, n) => buildEmbed(item, marker(n))),
+        embeds: chunk.map((item, n) => buildEmbed(item, marker(n), references)),
         components: chunk.map((item, n) => buildRow(item, marker(n))),
       },
       items: chunk,

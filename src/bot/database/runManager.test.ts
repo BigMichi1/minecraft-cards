@@ -244,6 +244,14 @@ describe('runManager', () => {
     }
   });
 
+  test('pruneAlerts drops throttle rows older than the cutoff and keeps the rest (R7)', () => {
+    runManager.shouldAlert('old', 1000, 500);
+    runManager.shouldAlert('new', 5000, 500);
+    expect(runManager.pruneAlerts(2000)).toBe(1);
+    expect(runManager.lastAlertAt('old')).toBeUndefined();
+    expect(runManager.lastAlertAt('new')).toBe(5000);
+  });
+
   test('shouldAlert is true once per period', () => {
     expect(runManager.shouldAlert('k', 1000, 500)).toBe(true);
     expect(runManager.shouldAlert('k', 1200, 500)).toBe(false);

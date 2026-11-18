@@ -26,10 +26,14 @@ export const listings = sqliteTable('listings', {
   /** `picture`: the eBay title names no card, its card (if any) is the picture's. */
   idSource: text({ enum: ID_SOURCES }).notNull().default('title'),
   /**
-   * The card the picture was taken for: the title card (confirmed), another card (`mismatch`),
-   * or the card of a title naming none. Null when the picture decided nothing or was not compared.
+   * Invariant: set exactly when the picture decided the listing's card against the full
+   * reference set: the title card (rule 1, `confirmed`), another card (`mismatch`, always set),
+   * or the card of a title naming none (`confirmed`). Null for every other status, for an
+   * admin-mapped listing, and after a rescrape that asks for a new comparison.
    */
   pictureCardId: text().$type<CardId>(),
+  /** When the admin note of the current `mismatch` went out; null while it is due. */
+  mismatchNotedAt: integer(),
   firstSeenAt: integer().notNull(),
   lastSeenAt: integer().notNull(),
 });

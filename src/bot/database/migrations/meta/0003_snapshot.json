@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "53b4a0e7-8ff3-486b-8abb-be07c4da3a23",
+  "id": "b72e51dd-32f4-4f64-a9a3-eff47044146f",
   "prevId": "ced30aad-7f78-492a-a7dc-52bd4af9cf41",
   "tables": {
     "admin_alerts": {
@@ -58,14 +58,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "puzzle": {
-          "name": "puzzle",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "updated_at": {
           "name": "updated_at",
@@ -143,22 +135,15 @@
           "name": "listing_cards_listing_id_listings_id_fk",
           "tableFrom": "listing_cards",
           "tableTo": "listings",
-          "columnsFrom": [
-            "listing_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["listing_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "listing_cards_listing_id_card_id_pk": {
-          "columns": [
-            "listing_id",
-            "card_id"
-          ],
+          "columns": ["listing_id", "card_id"],
           "name": "listing_cards_listing_id_card_id_pk"
         }
       },
@@ -305,6 +290,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "mismatch_noted_at": {
+          "name": "mismatch_noted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "first_seen_at": {
           "name": "first_seen_at",
           "type": "integer",
@@ -323,9 +315,7 @@
       "indexes": {
         "listings_url_unique": {
           "name": "listings_url_unique",
-          "columns": [
-            "url"
-          ],
+          "columns": ["url"],
           "isUnique": true
         }
       },
@@ -362,11 +352,7 @@
       "indexes": {
         "notifications_discordId_listingId_availableSince_unique": {
           "name": "notifications_discordId_listingId_availableSince_unique",
-          "columns": [
-            "discord_id",
-            "listing_id",
-            "available_since"
-          ],
+          "columns": ["discord_id", "listing_id", "available_since"],
           "isUnique": true
         }
       },
@@ -534,22 +520,15 @@
           "name": "wanted_cards_discord_id_users_discord_id_fk",
           "tableFrom": "wanted_cards",
           "tableTo": "users",
-          "columnsFrom": [
-            "discord_id"
-          ],
-          "columnsTo": [
-            "discord_id"
-          ],
+          "columnsFrom": ["discord_id"],
+          "columnsTo": ["discord_id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
         "wanted_cards_discord_id_card_id_pk": {
-          "columns": [
-            "discord_id",
-            "card_id"
-          ],
+          "columns": ["discord_id", "card_id"],
           "name": "wanted_cards_discord_id_card_id_pk"
         }
       },

@@ -286,6 +286,18 @@ describe('/admin', () => {
     );
   });
 
+  test('the summary counts the picture decisions and the rejected ones (R9)', () => {
+    expect(
+      formatSummary({
+        ...summary,
+        shops: { ebay: { listings: 1 } },
+        pictures: { decided: 3, undecided: 5, puzzle: 1, incomplete: 2 },
+      })
+    ).toBe(
+      'ebay: 1 listings\nPictures: 3 decided · not counted: 5 undecided, 1 puzzle, 2 incomplete reference set\nNotified: 4 · DM failures: 1'
+    );
+  });
+
   describe('catalog import', () => {
     const header = 'Prüfliste für Nummern diese Sammlung:\n';
     const withLE23 = `${STARTER_CHECKLIST}, LE23`;

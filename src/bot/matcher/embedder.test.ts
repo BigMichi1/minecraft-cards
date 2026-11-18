@@ -9,14 +9,14 @@ import {
   DEFAULT_IMAGE_MATCH_THRESHOLD,
   DEFAULT_IMAGE_MODEL,
   ImageUnavailableError,
-  loadReferenceVectors,
+  loadReferenceSet,
   matchListing,
   ModelError,
   MAX_IMAGE_BYTES,
   pooledOutput,
   type ImageEmbedder,
 } from './embedder';
-import type { ReferenceVector } from './identify';
+import type { ReferenceSet, ReferenceVector } from './identify';
 import { cid } from '../../test/cardIds';
 
 /** Fake inner embedder: returns `vectors[url]` (or `fallback`) and counts calls. */
@@ -221,7 +221,11 @@ describe('matchListing with picture identification', () => {
     { cardId: cid('45'), vector: new Float32Array(at(60)), puzzle: false },
     { cardId: cid('160'), vector: new Float32Array(at(-60)), puzzle: true },
   ];
-  const refs = { references: async () => references };
+  /** A complete reference set (nothing missing) of `vectors`. */
+  const full = (vectors: ReferenceVector[], missing: ReferenceSet['missing'] = []) => ({
+    references: async (): Promise<ReferenceSet> => ({ vectors, missing }),
+  });
+  const refs = full(references);
   /** The listing picture `img` at `deg`, the references at their angles. */
   const picture = (deg: number) =>
     fakeEmbedder({ ref12: at(0), ref45: at(60), ref160: at(-60), img: at(deg) });
@@ -263,12 +267,13 @@ describe('matchListing with picture identification', () => {
       puzzle: false,
     };
     const result = await matchListing(titled12, 'ref12', picture(25), 0.78, {
-      references: async () => [...references, twin],
+      ...full([...references, twin]),
     });
     expect(result).toEqual({
       status: 'confirmed',
       similarity: expect.closeTo(Math.cos((25 * Math.PI) / 180), 5),
       picture: null,
+      rejected: 'title_fits',
     });
   });
 
@@ -283,16 +288,18 @@ describe('matchListing with picture identification', () => {
     expect((await matchListing(titled12, 'ref12', picture(40), 0.78, refs)).status).toBe(
       'mismatch'
     );
-    const withTwin = { references: async () => [...references, twin] };
+    const withTwin = full([...references, twin]);
     expect(await matchListing(titled12, 'ref12', picture(40), 0.78, withTwin)).toEqual({
       status: 'unconfirmed',
       similarity: expect.closeTo(Math.cos((40 * Math.PI) / 180), 5),
       picture: null,
+      rejected: 'twin',
     });
     expect(await matchListing(candidate, null, picture(40), 0.78, withTwin)).toEqual({
       status: 'unconfirmed',
       similarity: null,
       picture: null,
+      rejected: 'twin',
     });
   });
 
@@ -304,7 +311,7 @@ describe('matchListing with picture identification', () => {
       puzzle: false,
     };
     const result = await matchListing(titled12, 'ref12', picture(-3), 0.78, {
-      references: async () => [...references, twin],
+      ...full([...references, twin]),
     });
     expect(result).toMatchObject({ status: 'confirmed', picture: { cardId: '12' } });
   });
@@ -326,12 +333,14 @@ describe('matchListing with picture identification', () => {
       status: 'confirmed',
       similarity: expect.closeTo(Math.cos(Math.PI / 6), 5),
       picture: null,
+      rejected: 'undecided',
     });
     // 70° with a threshold of 0.99: 45 leads but stays below it; 12 is far off.
     expect(await matchListing(titled12, 'ref12', picture(70), 0.99, refs)).toEqual({
       status: 'unconfirmed',
       similarity: expect.closeTo(Math.cos((70 * Math.PI) / 180), 5),
       picture: null,
+      rejected: 'undecided',
     });
   });
 
@@ -341,6 +350,7 @@ describe('matchListing with picture identification', () => {
       status: 'unconfirmed',
       similarity: expect.closeTo(0.5, 5),
       picture: null,
+      rejected: 'puzzle',
     });
   });
 
@@ -364,11 +374,15 @@ describe('matchListing with picture identification', () => {
   });
 
   test('rule 4: an undecided or puzzle picture leaves a candidate without a card', async () => {
-    for (const deg of [30, -60]) {
+    for (const [deg, rejected] of [
+      [30, 'undecided'],
+      [-60, 'puzzle'],
+    ] as const) {
       expect(await matchListing(candidate, null, picture(deg), 0.78, refs)).toEqual({
         status: 'unconfirmed',
         similarity: null,
         picture: null,
+        rejected,
       });
     }
   });
@@ -392,11 +406,82 @@ describe('matchListing with picture identification', () => {
   });
 
   test('a candidate without any reference loaded is not identified', async () => {
-    const none = { references: async () => [] };
+    const none = full([]);
     expect((await matchListing(candidate, null, picture(58), 0.78, none)).status).toBe(
       'unconfirmed'
     );
     expect((await matchListing(candidate, null, picture(58), 0.78)).status).toBe('unconfirmed');
+  });
+
+  describe('an incomplete reference set (R1, R2)', () => {
+    const placeholder99 = { cardId: cid('99'), reason: 'placeholder' as const };
+    const le10 = { cardId: cid('LE10'), reason: 'placeholder' as const };
+    const failed99 = {
+      cardId: cid('99'),
+      reason: 'image_unavailable' as const,
+      detail: 'HTTP 404',
+    };
+
+    test('a base card without a usable reference: no picture-only base card, no mismatch', async () => {
+      const set = full(references, [placeholder99]);
+      expect(await matchListing(candidate, null, picture(58), 0.78, set)).toEqual({
+        status: 'unconfirmed',
+        similarity: null,
+        picture: null,
+        rejected: 'incomplete',
+      });
+      expect(await matchListing(titled12, 'ref12', picture(60), 0.78, set)).toEqual({
+        status: 'unconfirmed',
+        similarity: expect.closeTo(0.5, 5),
+        picture: null,
+        rejected: 'incomplete',
+      });
+    });
+
+    test('a missing card of another kind blocks too: kinds get confused (live data)', async () => {
+      const set = full(references, [le10]);
+      expect(await matchListing(candidate, null, picture(58), 0.78, set)).toMatchObject({
+        status: 'unconfirmed',
+        rejected: 'incomplete',
+      });
+      expect((await matchListing(titled12, 'ref12', picture(60), 0.78, set)).status).toBe(
+        'unconfirmed'
+      );
+    });
+
+    test('a reference that failed to load leaves the listing retryable, never final', async () => {
+      const set = full(references, [failed99]);
+      expect(await matchListing(titled12, 'ref12', picture(60), 0.78, set)).toEqual({
+        status: 'image_unavailable',
+        similarity: null,
+        picture: null,
+        rejected: 'incomplete',
+      });
+      expect((await matchListing(candidate, null, picture(58), 0.78, set)).status).toBe(
+        'image_unavailable'
+      );
+      // Undecided, below the threshold: not a final unconfirmed either.
+      expect((await matchListing(titled12, 'ref12', picture(70), 0.99, set)).status).toBe(
+        'image_unavailable'
+      );
+      const model = full(references, [{ ...failed99, reason: 'model_unavailable' as const }]);
+      expect((await matchListing(candidate, null, picture(58), 0.78, model)).status).toBe(
+        'model_unavailable'
+      );
+      // A load failure of another kind still keeps a would-be mismatch retryable.
+      const otherKind = full(references, [{ ...failed99, cardId: cid('LE3') }]);
+      expect((await matchListing(titled12, 'ref12', picture(60), 0.78, otherKind)).status).toBe(
+        'image_unavailable'
+      );
+    });
+
+    test('a load failure does not hold back a title card the picture confirms', async () => {
+      const set = full(references, [failed99]);
+      expect(await matchListing(titled12, 'ref12', picture(5), 0.78, set)).toMatchObject({
+        status: 'confirmed',
+        picture: { cardId: '12' },
+      });
+    });
   });
 
   test('without references it is the plain comparison with the title card', async () => {
@@ -418,32 +503,91 @@ describe('matchListing with picture identification', () => {
   });
 });
 
-describe('loadReferenceVectors', () => {
-  test('embeds every reference picture and skips the ones that cannot be loaded', async () => {
-    const skipped: string[] = [];
+describe('loadReferenceSet', () => {
+  const card = (id: string, url: string, puzzle = false) => ({
+    cardId: cid(id),
+    referenceImageUrl: url,
+    puzzle,
+  });
+
+  test('embeds every usable reference, keeps the catalog gaps and adds the load failures', async () => {
     const embedder: ImageEmbedder = {
       model: 'm',
       embed: async (url) => {
         if (url === 'bad') throw new ImageUnavailableError('HTTP 404 for bad');
-        if (url === 'model') throw new ModelError('onnx failed');
+        if (url === 'corrupt') throw new ModelError('onnx failed on corrupt');
         return new Float32Array([1, 0]);
       },
     };
-    const vectors = await loadReferenceVectors(
-      [
-        { cardId: cid('12'), referenceImageUrl: 'ok', puzzle: false },
-        { cardId: cid('13'), referenceImageUrl: 'bad', puzzle: false },
-        { cardId: cid('14'), referenceImageUrl: 'model', puzzle: false },
-        { cardId: cid('160'), referenceImageUrl: 'ok2', puzzle: true },
-      ],
-      embedder,
-      (status, reason) => skipped.push(`${status} ${reason}`)
+    const set = await loadReferenceSet(
+      {
+        usable: [
+          card('12', 'ok'),
+          card('13', 'bad'),
+          card('14', 'corrupt'),
+          card('160', 'ok2', true),
+        ],
+        missing: [{ cardId: cid('LE10'), reason: 'placeholder' }],
+      },
+      embedder
     );
-    expect(vectors.map((v) => `${v.cardId} ${v.puzzle}`)).toEqual(['12 false', '160 true']);
-    expect(skipped).toEqual([
-      'image_unavailable HTTP 404 for bad',
-      'model_unavailable onnx failed',
+    expect(set.vectors.map((v) => `${v.cardId} ${v.puzzle}`)).toEqual(['12 false', '160 true']);
+    // One reference the model fails on, while others embed, is that picture's problem (R11).
+    expect(set.missing).toEqual([
+      { cardId: cid('LE10'), reason: 'placeholder' },
+      { cardId: cid('13'), reason: 'image_unavailable', detail: 'HTTP 404 for bad' },
+      { cardId: cid('14'), reason: 'image_unavailable', detail: 'onnx failed on corrupt' },
     ]);
+  });
+
+  test('a model failing on every reference is model_unavailable (R11)', async () => {
+    const set = await loadReferenceSet(
+      { usable: [card('12', 'a'), card('13', 'b')], missing: [] },
+      throwingEmbedder
+    );
+    expect(set.vectors).toEqual([]);
+    expect(set.missing.map((m) => `${m.cardId} ${m.reason}`)).toEqual([
+      '12 model_unavailable',
+      '13 model_unavailable',
+    ]);
+  });
+
+  test('a reference `skip` names is not loaded and counts as unavailable (R13)', async () => {
+    const fake = fakeEmbedder({});
+    const set = await loadReferenceSet(
+      { usable: [card('12', 'a'), card('13', 'b')], missing: [] },
+      fake,
+      { skip: (url) => (url === 'b' ? 'failed in an earlier run, retried daily' : null) }
+    );
+    expect(fake.calls).toBe(1);
+    expect(set.missing).toEqual([
+      {
+        cardId: cid('13'),
+        reason: 'image_unavailable',
+        detail: 'failed in an earlier run, retried daily',
+      },
+    ]);
+  });
+
+  test('loads with bounded parallelism (R13)', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const slow: ImageEmbedder = {
+      model: 'm',
+      embed: async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 2));
+        inFlight--;
+        return new Float32Array([1, 0]);
+      },
+    };
+    const usable = Array.from({ length: 12 }, (_, i) => card(String(i + 1), `u${i}`));
+    const set = await loadReferenceSet({ usable, missing: [] }, slow, { concurrency: 4 });
+    expect(set.vectors).toHaveLength(12);
+    expect(peak).toBe(4);
+    // In card order whatever finishes first.
+    expect(set.vectors.map((v) => v.cardId)).toEqual(usable.map((c) => c.cardId));
   });
 
   test('any other error is rethrown', async () => {
@@ -454,11 +598,7 @@ describe('loadReferenceVectors', () => {
       },
     };
     await expect(
-      loadReferenceVectors(
-        [{ cardId: cid('12'), referenceImageUrl: 'ok', puzzle: false }],
-        broken,
-        () => {}
-      )
+      loadReferenceSet({ usable: [card('12', 'ok')], missing: [] }, broken)
     ).rejects.toThrow(/SQLITE_BUSY/);
   });
 });

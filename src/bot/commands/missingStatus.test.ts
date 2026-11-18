@@ -404,6 +404,31 @@ describe('buildStatusReply', () => {
     ]);
   });
 
+  test('the "held back" edges: an in-stock unconfirmed listing wins, a hold shows paused, no ! (T4)', () => {
+    const mismatch = listing('blue-ocean', ids('12'), {
+      matchStatus: 'mismatch',
+      pictureCardId: cid('45'),
+      ...euro(10),
+    });
+    const unconfirmed = listing('blue-ocean', ids('12'), { matchStatus: 'unconfirmed' });
+    const reply = buildStatusReply(input({ listings: [mismatch, unconfirmed] }));
+    expect(cells(reply)).toEqual(['–', '0,55 € ![1]', 'n/a', 'n/a']);
+    const held = listing('blue-ocean', ids('12'), {
+      matchStatus: 'mismatch',
+      pictureCardId: cid('45'),
+      onHold: true,
+    });
+    expect(cells(buildStatusReply(input({ listings: [held] })))).toEqual([
+      '–',
+      'paused',
+      'n/a',
+      'n/a',
+    ]);
+    const alone = buildStatusReply(input({ listings: [mismatch] }));
+    expect(cells(alone)![1]).not.toContain('!');
+    expect(legend(alone)).toBeUndefined();
+  });
+
   test('a card number from the picture is a usable, picture-backed cell', () => {
     const fromPicture = listing('ebay', ids('12'), {
       matchStatus: 'confirmed',

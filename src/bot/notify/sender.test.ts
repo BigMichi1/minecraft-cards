@@ -118,7 +118,7 @@ function dmFailedAt(discordId: string): number | null | undefined {
     .find((u) => u.discordId === discordId)?.dmFailedAt;
 }
 
-const noAlert = async () => {};
+const noAlert = async () => 'sent' as const;
 
 describe('createDiscordSender', () => {
   beforeAll(() => {

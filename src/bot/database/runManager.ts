@@ -1,4 +1,4 @@
-import { desc, eq, gte } from 'drizzle-orm';
+import { desc, eq, gte, lt } from 'drizzle-orm';
 import type { RunSummary, ShopSummary } from '../check/runner';
 import type { ShopId } from '../shops/types';
 import { errorMessage } from '../utils/async';
@@ -197,6 +197,15 @@ export const runManager = {
 
   lastAlertAt(key: string): number | undefined {
     return db.select().from(adminAlerts).where(eq(adminAlerts.key, key)).get()?.lastSentAt;
+  },
+
+  /**
+   * Drop the throttle rows last sent before `before`; returns how many. Keys such as
+   * `mismatch:<listing>:<card>` would otherwise pile up forever.
+   */
+  pruneAlerts(before: number): number {
+    return db.delete(adminAlerts).where(lt(adminAlerts.lastSentAt, before)).returning().all()
+      .length;
   },
 
   /** Undo a `shouldAlert` whose alert could not be delivered: restore `previous` (undefined removes the key). */

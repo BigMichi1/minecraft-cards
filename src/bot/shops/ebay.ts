@@ -377,29 +377,25 @@ function listingUrl(item: EbayItem): string | null {
   }
 }
 
-function toListing(
-  item: EbayItem,
-  url: string,
-  title: string,
-  cardIds: CardId[],
-  pictureOnly = false
-): Listing {
+/** `ids`: the title's card ids, or `picture` for a title naming none (isPictureCandidate). */
+function toListing(item: EbayItem, url: string, title: string, ids: CardId[] | 'picture'): Listing {
   const isAuction = item.buyingOptions?.includes('AUCTION') ?? false;
   const endsAt = isAuction && item.itemEndDate ? Date.parse(item.itemEndDate) : Number.NaN;
-  return {
-    shop: 'ebay',
+  const fields = {
+    shop: 'ebay' as const,
     url,
     title,
-    cardIds,
     cardName: null,
     imageUrl: item.image?.imageUrl ?? null,
     price: totalPrice(item, isAuction),
     available: true,
-    format: isAuction ? 'auction' : 'fixed_price',
+    format: isAuction ? ('auction' as const) : ('fixed_price' as const),
     auctionEndsAt: Number.isNaN(endsAt) ? null : endsAt,
     idConflict: false,
-    ...(pictureOnly ? { idSource: 'picture' as const } : {}),
   };
+  return ids === 'picture'
+    ? { ...fields, idSource: 'picture', cardIds: [] }
+    : { ...fields, cardIds: ids };
 }
 
 /** Shop-controlled text in a log line, clipped. */
@@ -675,7 +671,7 @@ export function createEbayAdapter(
           const cardIds = extractCardIdsFromTitle(title);
           if (cardIds.length === 0 && isPictureCandidate(title)) {
             // No card id, but one single card: passed on without ids for the picture to decide.
-            byUrl.set(url, toListing(item, url, title, [], true));
+            byUrl.set(url, toListing(item, url, title, 'picture'));
             continue;
           }
           if (cardIds.length === 0) {

@@ -1,6 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { cid } from '../../test/cardIds';
-import { DECISION_GAP, identifyPicture, TWIN_SIMILARITY, type ReferenceVector } from './identify';
+import {
+  DECISION_GAP,
+  identifyPicture,
+  isComplete,
+  SIMILARITY_EPSILON,
+  TWIN_SIMILARITY,
+  type ReferenceSet,
+  type ReferenceVector,
+} from './identify';
 
 /** A unit vector at `deg` degrees in the plane: the cosine of two of them is cos(Δdeg). */
 function at(deg: number): Float32Array {
@@ -82,5 +90,46 @@ describe('identifyPicture', () => {
     expect(identifyPicture(at(-2), twins, 0.78)).toMatchObject({ cardId: '59', twin: true });
     const apart = [ref('59', 0), ref('XXL1', angle(0.85)), ref('45', 90)];
     expect(identifyPicture(at(-2), apart, 0.78)).toMatchObject({ cardId: '59', twin: false });
+  });
+  test('exactly the threshold and exactly the gap decide, despite float32 rounding (T1)', () => {
+    expect(SIMILARITY_EPSILON).toBe(1e-6);
+    // 0.78 exactly, 45 far off on the other side.
+    const atThreshold = identifyPicture(
+      at(0),
+      [ref('12', angle(0.78)), ref('45', -angle(0.2))],
+      0.78
+    );
+    expect(atThreshold).toMatchObject({ cardId: '12', decided: true });
+    // 0.80 vs 0.78: a lead of exactly 0.02.
+    const atGap = identifyPicture(at(0), [ref('12', angle(0.8)), ref('45', -angle(0.78))], 0.78);
+    expect(atGap).toMatchObject({ cardId: '12', decided: true });
+    // Just below either edge stays undecided.
+    expect(
+      identifyPicture(at(0), [ref('12', angle(0.779)), ref('45', -angle(0.2))], 0.78)
+    ).toMatchObject({ decided: false });
+    expect(
+      identifyPicture(at(0), [ref('12', angle(0.8)), ref('45', -angle(0.781))], 0.78)
+    ).toMatchObject({ decided: false });
+  });
+
+  test('a twin at exactly TWIN_SIMILARITY counts, also as the runner-up (T2)', () => {
+    // XXL1 exactly 0.9 alike 59 and the runner-up of a picture at -5°.
+    const exact = [ref('59', 0), ref('XXL1', angle(0.9)), ref('45', 120)];
+    expect(identifyPicture(at(-5), exact, 0.78)).toMatchObject({
+      cardId: '59',
+      runnerUp: expect.closeTo(Math.cos(((angle(0.9) + 5) * Math.PI) / 180), 5),
+      twin: true,
+    });
+    const below = [ref('59', 0), ref('XXL1', angle(0.899)), ref('45', 120)];
+    expect(identifyPicture(at(-5), below, 0.78)).toMatchObject({ cardId: '59', twin: false });
+  });
+});
+
+describe('isComplete', () => {
+  test('only a set without any missing card is complete', () => {
+    expect(isComplete({ vectors: [], missing: [] })).toBe(true);
+    expect(
+      isComplete({ vectors: [], missing: [{ cardId: cid('LE10'), reason: 'placeholder' }] })
+    ).toBe(false);
   });
 });

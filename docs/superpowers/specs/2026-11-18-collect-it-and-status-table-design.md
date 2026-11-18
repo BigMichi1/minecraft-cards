@@ -64,21 +64,31 @@ across) it shows at a glance where a card can be bought.
 
 ### Outcome
 
-Built as designed, plus links ("option A", approved by the user while building):
+Built as designed, plus links ("option A", approved by the user while building), with one
+change from review: the code block holds only ASCII (plus `€`, `–` and `…`). Discord draws `⏱`
+and `⚠` about two columns wide and most superscript digits in a proportional font, which broke
+the column alignment.
 
-- Every in-stock cell whose listing URL passes `validUrl` gets a superscript reference number
-  (`¹ … ⁹ ¹⁰ ¹¹`, plain decimal digits in superscript), numbered row by row and left to right.
-  A cell with an invalid URL gets no number, and the next linked cell takes it.
-- An embed under the message lists each number as a markdown link,
-  `¹ [#140 Wither · blue-ocean · 0,80 €](url)` (`(bundle)` added for a bundle). Brackets in the
-  text are escaped, and brackets and whitespace in the URL percent-encoded. Only rows kept in the
-  message are linked; links over 4096 characters end in "… and N more links". No in-stock cell
-  means no embed.
-- Cells read `value`, a space and the markers (`0,55 € ⏱⚠`), then the number (`0,55 € ⚠¹`).
-- The legend reads `Legend: ⏱ older than the last check · ⚠ picture unconfirmed · + bundle`,
-  limited to the markers in the rows shown, after "… and N more cards" when rows were cut.
+- Markers in the cells are `*` (older than the last check, ⏱), `!` (picture unconfirmed, ⚠) and
+  `+` (bundle). `⏱` and `⚠` appear only in the legend and on the shop lines.
+- Every in-stock cell whose listing URL passes `validUrl` gets a reference `[1]`, `[2]`, …,
+  numbered row by row and left to right. A cell with an invalid URL gets no reference, and the
+  next linked cell takes the number.
+- An embed under the message lists each reference as a markdown link,
+  `[1] [#140 Wither · blue-ocean · 0,80 €](url)` (`(bundle)` added for a bundle). Brackets and
+  backslashes in the text are escaped, and parentheses and whitespace in the URL
+  percent-encoded. Only rows kept in the message are linked; links over 4096 characters end in
+  "… and N more links". No in-stock cell means no embed.
+- Cells read the value, then after one space the markers and the reference: `0,55 € [1]`,
+  `0,55 € *![3]`, `sold out +`.
+- The legend reads ``Legend: `*` ⏱ older than the last check · `!` ⚠ picture unconfirmed · `+`
+bundle`` (the ASCII markers in inline code, so `*` is not italics). It names only the markers
+  in the rows shown and comes after "… and N more cards" when rows were cut.
 - A shop whose check failed or did not run gets ` · data as of <t:…:R>` (its last success) or
-  ` · no successful check in 7 days` on its shop line; its stored cells get `⏱`.
+  ` · no successful check in 7 days` on its shop line; its stored cells get `*`.
+- Per shop the best listing is chosen as before: what the latest check returned first, then in
+  stock before paused before sold out or ended. A sold-out listing the check saw beats an
+  in-stock one it did not return.
 - Without a readable check run, every enabled cell is `?`.
 - Widths: each shop column is as wide as its widest cell or shop name, with two spaces between
   columns. The card column gets what is left of 84 characters, at least 14. Longer

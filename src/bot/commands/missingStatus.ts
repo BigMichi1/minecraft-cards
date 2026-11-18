@@ -48,19 +48,23 @@ const GAP = '  ';
 const FENCE = '```';
 /** The longest card label (`#id name`) a link text carries. */
 const MAX_LINK_LABEL = 60;
-const SUPERSCRIPT_DIGITS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
-
-type Marker = '⏱' | '⚠' | '+';
-/** Markers in the order they are written in a cell and in the legend. */
-const MARKERS: readonly { marker: Marker; meaning: string }[] = [
-  { marker: '⏱', meaning: 'older than the last check' },
-  { marker: '⚠', meaning: 'picture unconfirmed' },
-  { marker: '+', meaning: 'bundle' },
+/**
+ * Cell markers, in the order they are written in a cell and in the legend. Inside the code
+ * block only ASCII (plus €, – and …) keeps the columns aligned: Discord draws ⏱ and ⚠ about
+ * two columns wide and most superscript digits in a proportional font. So cells carry the ASCII
+ * marker and `[n]` references; the legend pairs each ASCII marker (in inline code, so `*` is not
+ * italics) with its symbol.
+ */
+type Marker = '*' | '!' | '+';
+const MARKERS: readonly { marker: Marker; legend: string }[] = [
+  { marker: '*', legend: '`*` ⏱ older than the last check' },
+  { marker: '!', legend: '`!` ⚠ picture unconfirmed' },
+  { marker: '+', legend: '`+` bundle' },
 ];
 
-/** A reference number in superscript digits: 1 → ¹, 10 → ¹⁰. */
-export function superscript(n: number): string {
-  return [...String(n)].map((d) => SUPERSCRIPT_DIGITS[Number(d)]).join('');
+/** The reference of a linked cell, the same in the cell and at the start of its link line. */
+function reference(n: number): string {
+  return `[${n}]`;
 }
 
 function seconds(ms: number): number {
@@ -195,9 +199,9 @@ function cellFor(card: CardId, shop: ShopId, input: StatusInput): Cell {
     return { value: succeeded(last, shop) ? '–' : '?', markers };
   }
   const l = best(here, last, input.now);
-  if (unseen(l, last) || needsLastSuccess(last, shop, input.enabledShops)) markers.add('⏱');
+  if (unseen(l, last) || needsLastSuccess(last, shop, input.enabledShops)) markers.add('*');
   if (l.cardIds.length > 1) markers.add('+');
-  else if (!pictureBacked(l)) markers.add('⚠');
+  else if (!pictureBacked(l)) markers.add('!');
   if (!l.available) return { value: 'sold out', markers };
   if (ended(l, input.now)) return { value: 'ended', markers };
   if (l.onHold) return { value: 'paused', markers };
@@ -206,12 +210,13 @@ function cellFor(card: CardId, shop: ShopId, input: StatusInput): Cell {
   return url ? { value, markers, link: { url, listing: l } } : { value, markers };
 }
 
-/** The value, a space and its markers when it has any, then the reference number if linked. */
+/** The value, then after one space its markers and its reference if linked: `0,55 € *![3]`. */
 function cellText(cell: Cell, ref: number | undefined): string {
   const marks = MARKERS.filter((m) => cell.markers.has(m.marker))
     .map((m) => m.marker)
     .join('');
-  return `${cell.value}${marks ? ` ${marks}` : ''}${ref === undefined ? '' : superscript(ref)}`;
+  const suffix = `${marks}${ref === undefined ? '' : reference(ref)}`;
+  return suffix ? `${cell.value} ${suffix}` : cell.value;
 }
 
 interface Label {
@@ -234,9 +239,9 @@ function escapeLinkText(text: string): string {
   return text.replace(/[[\]\\]/g, '\\$&');
 }
 
-/** A URL safe inside the `(...)` of a markdown link: brackets and whitespace percent-encoded. */
+/** A URL safe inside the `(...)` of a markdown link: parentheses and whitespace percent-encoded. */
 function escapeLinkUrl(url: string): string {
-  // encodeURIComponent leaves brackets as they are.
+  // encodeURIComponent leaves parentheses as they are.
   return url.replace(/[()\s]/g, (c) =>
     c === '(' ? '%28' : c === ')' ? '%29' : encodeURIComponent(c)
   );
@@ -245,7 +250,7 @@ function escapeLinkUrl(url: string): string {
 function linkLine(ref: number, label: Label, value: string, url: string, l: StoredListing) {
   const bundle = l.cardIds.length > 1 ? ' (bundle)' : '';
   const text = `${clipText(label.full, MAX_LINK_LABEL)} · ${SHOP_NAMES[l.shop]} · ${value}${bundle}`;
-  return `${superscript(ref)} [${escapeLinkText(text)}](${escapeLinkUrl(url)})`;
+  return `${reference(ref)} [${escapeLinkText(text)}](${escapeLinkUrl(url)})`;
 }
 
 interface Row {
@@ -303,7 +308,7 @@ function buildTable(input: StatusInput): { header: string; rows: Row[] } {
 function legendLine(rows: Row[]): string | null {
   const present = MARKERS.filter((m) => rows.some((r) => r.markers.has(m.marker)));
   if (present.length === 0) return null;
-  return `Legend: ${present.map((m) => `${m.marker} ${m.meaning}`).join(' · ')}`;
+  return `Legend: ${present.map((m) => m.legend).join(' · ')}`;
 }
 
 /** The message with the first `keep` rows; the legend covers only the rows shown. */
@@ -317,13 +322,19 @@ function render(head: string[], header: string, rows: Row[], keep: number): stri
   return lines.join('\n');
 }
 
-/** Whole link lines while they fit an embed description; the rest counted. */
-function linkList(lines: string[]): string {
+/**
+ * Whole link lines while they fit `limit` (an embed description); the rest counted as "… and N
+ * more links". That cut is reached in practice: a line is up to about 600 characters (a URL of
+ * up to 512 after `validUrl`, a label of up to MAX_LINK_LABEL), and the up to ~100 numbered cells
+ * of a 2000-character table easily exceed 4096. The count alone is returned only when not even
+ * the first line fits, which cannot happen at 4096 for the same reason.
+ */
+export function linkList(lines: string[], limit: number = EMBED_DESCRIPTION_LIMIT): string {
   const full = lines.join('\n');
-  if (full.length <= EMBED_DESCRIPTION_LIMIT) return full;
+  if (full.length <= limit) return full;
   for (let keep = lines.length - 1; keep > 0; keep--) {
     const cut = [...lines.slice(0, keep), `… and ${lines.length - keep} more links`].join('\n');
-    if (cut.length <= EMBED_DESCRIPTION_LIMIT) return cut;
+    if (cut.length <= limit) return cut;
   }
   return `… and ${lines.length} more links`;
 }

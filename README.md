@@ -14,11 +14,12 @@ or did not run), then a table with one row per missing card and one column per s
 - A cell is a price, `in stock` (no price), `sold out`, `ended`, `paused`, `–` (the shop's last
   check succeeded and lists no such card), `?` (that check failed or never ran and nothing is
   stored) or `n/a` (the shop is not enabled).
-- Markers: `⏱` older than the last check, `⚠` picture unconfirmed, `+` bundle. A legend line
-  under the table names only the markers that appear.
-- Every in-stock cell with a valid listing URL carries a superscript number (`¹ … ⁹ ¹⁰ ¹¹`,
-  numbered row by row, left to right). An embed under the message links each number to its
-  listing: `¹ [#140 Wither · blue-ocean · 0,80 €](url)`.
+- Markers (ASCII, so the columns stay aligned): `*` (⏱) older than the last check, `!` (⚠)
+  picture unconfirmed, `+` bundle. A legend line under the table names only the markers that
+  appear.
+- Every in-stock cell with a valid listing URL carries a reference `[1]`, `[2]`, … (numbered row
+  by row, left to right). An embed under the message links each reference to its listing:
+  `[1] [#140 Wither · blue-ocean · 0,80 €](url)`.
 - Whole rows are kept within Discord's 2000 characters, the rest counted as "… and N more
   cards"; links over the 4096 characters of the embed are counted as "… and N more links".
 

@@ -9,8 +9,8 @@ import { cid, ids } from '../../test/cardIds';
 import {
   buildStatusReply,
   EMBED_DESCRIPTION_LIMIT,
+  linkList,
   needsLastSuccess,
-  superscript,
   type StatusInput,
   type StatusReply,
 } from './missingStatus';
@@ -114,6 +114,30 @@ const links = (reply: StatusReply) => description(reply)?.split('\n') ?? [];
 const legend = (reply: StatusReply) =>
   reply.content.split('\n').find((l) => l.startsWith('Legend:'));
 
+/**
+ * Every row's cells start exactly where the header's shop names start, after at least two
+ * spaces, and no row has trailing spaces.
+ */
+function expectAligned(reply: StatusReply): void {
+  const [header, ...rows] = tableLines(reply);
+  expect(header!.split(/ {2,}/)).toEqual([
+    'Card',
+    'sammel-ente',
+    'blue-ocean',
+    'collect-it',
+    'eBay',
+  ]);
+  const starts = ['sammel-ente', 'blue-ocean', 'collect-it', 'eBay'].map((h) => header!.indexOf(h));
+  expect(rows.length).toBeGreaterThan(0);
+  for (const line of rows) {
+    for (const at of starts) {
+      expect(line.slice(at - 2, at)).toBe('  ');
+      expect(line[at]).not.toBe(' ');
+    }
+    expect(line).toBe(line.trimEnd());
+  }
+}
+
 describe('buildStatusReply', () => {
   test('a normal reply has the header, the shop lines, a table and a link per in-stock cell', () => {
     const reply = buildStatusReply(
@@ -134,12 +158,12 @@ describe('buildStatusReply', () => {
       '',
       FENCE,
       'Card       sammel-ente  blue-ocean  collect-it  eBay',
-      '#12 Squid  0,55 €¹      sold out    n/a         n/a',
+      '#12 Squid  0,55 € [1]   sold out    n/a         n/a',
       FENCE,
     ]);
     expect(reply.embeds).toHaveLength(1);
     expect(description(reply)).toBe(
-      '¹ [#12 Squid · sammel-ente · 0,55 €](https://shop.example/squid)'
+      '[1] [#12 Squid · sammel-ente · 0,55 €](https://shop.example/squid)'
     );
   });
 
@@ -169,37 +193,18 @@ describe('buildStatusReply', () => {
         ],
       })
     );
-    const lines = tableLines(reply);
-    expect(lines).toHaveLength(5);
-    const header = lines[0]!;
-    expect(header.split(/ {2,}/)).toEqual([
-      'Card',
-      'sammel-ente',
-      'blue-ocean',
-      'collect-it',
-      'eBay',
-    ]);
-    const starts = ['sammel-ente', 'blue-ocean', 'collect-it', 'eBay'].map((h) =>
-      header.indexOf(h)
-    );
-    for (const line of lines.slice(1)) {
-      for (const at of starts) {
-        expect(line[at - 1]).toBe(' ');
-        expect(line[at - 2]).toBe(' ');
-        expect(line[at]).not.toBe(' ');
-      }
-      expect(line).toBe(line.trimEnd());
-    }
-    expect(cells(reply, '#14')).toEqual(['sold out', '–', '22,99 €¹', '29,29 € ⚠²']);
+    expect(tableLines(reply)).toHaveLength(5);
+    expectAligned(reply);
+    expect(cells(reply, '#14')).toEqual(['sold out', '–', '22,99 € [1]', '29,29 € ![2]']);
     expect(cells(reply, '#104')).toEqual(['sold out', '–', '–', '–']);
-    expect(cells(reply, '#140')).toEqual(['–', '0,80 €³', '–', '–']);
+    expect(cells(reply, '#140')).toEqual(['–', '0,80 € [3]', '–', '–']);
     expect(cells(reply, '#7')).toEqual(['paused', '–', '–', '–']);
     expect(links(reply)).toEqual([
-      '¹ [#14 Alex · collect-it · 22,99 €](https://c.example/14)',
-      '² [#14 Alex · eBay · 29,29 €](https://e.example/14)',
-      '³ [#140 Wither · blue-ocean · 0,80 €](https://b.example/140)',
+      '[1] [#14 Alex · collect-it · 22,99 €](https://c.example/14)',
+      '[2] [#14 Alex · eBay · 29,29 €](https://e.example/14)',
+      '[3] [#140 Wither · blue-ocean · 0,80 €](https://b.example/140)',
     ]);
-    expect(legend(reply)).toBe('Legend: ⚠ picture unconfirmed');
+    expect(legend(reply)).toBe('Legend: `!` ⚠ picture unconfirmed');
   });
 
   test('each cell value: price, in stock without a price, sold out, ended, paused, –, ?, n/a', () => {
@@ -223,11 +228,11 @@ describe('buildStatusReply', () => {
         ],
       })
     );
-    expect(cells(reply, '#12')).toEqual(['1,20 €¹', '?', 'n/a', 'ended']);
-    expect(cells(reply, '#45')).toEqual(['in stock²', '?', 'n/a', 'sold out']);
+    expect(cells(reply, '#12')).toEqual(['1,20 € [1]', '?', 'n/a', 'ended']);
+    expect(cells(reply, '#45')).toEqual(['in stock [2]', '?', 'n/a', 'sold out']);
     expect(cells(reply, '#46')).toEqual(['paused', '?', 'n/a', '–']);
     // Only in-stock cells are linked.
-    expect(links(reply).map((l) => l.split(' ')[0])).toEqual(['¹', '²']);
+    expect(links(reply).map((l) => l.split(' ')[0])).toEqual(['[1]', '[2]']);
     expect(links(reply)[1]).toContain('[#45 · sammel-ente · in stock]');
   });
 
@@ -241,7 +246,7 @@ describe('buildStatusReply', () => {
         listings: [ended, listing('ebay', ids('12'), { format: 'fixed_price', ...euro(400) })],
       })
     );
-    expect(cells(both)).toEqual(['n/a', 'n/a', 'n/a', '4,00 €¹']);
+    expect(cells(both)).toEqual(['n/a', 'n/a', 'n/a', '4,00 € [1]']);
     const running = buildStatusReply(
       input({
         enabledShops: ['ebay'],
@@ -249,14 +254,14 @@ describe('buildStatusReply', () => {
         listings: [listing('ebay', ids('12'), { format: 'auction', auctionEndsAt: T + 120_000 })],
       })
     );
-    expect(cells(running)).toEqual(['n/a', 'n/a', 'n/a', '0,55 €¹']);
+    expect(cells(running)).toEqual(['n/a', 'n/a', 'n/a', '0,55 € [1]']);
   });
 
-  test('a listing the latest successful check did not return gets ⏱ and ranks below seen ones', () => {
+  test('a listing the latest successful check did not return gets * and ranks below seen ones', () => {
     const unseen = { lastSeenAt: T - 1 };
     const alone = buildStatusReply(input({ listings: [listing('blue-ocean', ids('12'), unseen)] }));
-    expect(cells(alone)).toEqual(['–', '0,55 € ⏱¹', 'n/a', 'n/a']);
-    expect(legend(alone)).toBe('Legend: ⏱ older than the last check');
+    expect(cells(alone)).toEqual(['–', '0,55 € *[1]', 'n/a', 'n/a']);
+    expect(legend(alone)).toBe('Legend: `*` ⏱ older than the last check');
     const both = buildStatusReply(
       input({
         listings: [
@@ -265,11 +270,11 @@ describe('buildStatusReply', () => {
         ],
       })
     );
-    expect(cells(both)).toEqual(['–', '0,90 €¹', 'n/a', 'n/a']);
+    expect(cells(both)).toEqual(['–', '0,90 € [1]', 'n/a', 'n/a']);
     expect(legend(both)).toBeUndefined();
   });
 
-  test('a failed shop shows its error and its last success on the shop line, its cells get ⏱', () => {
+  test('a failed shop shows its error and its last success on the shop line, its cells get *', () => {
     const reply = buildStatusReply(
       input({
         latest: run(blueFailed),
@@ -281,7 +286,7 @@ describe('buildStatusReply', () => {
       `❌ blue-ocean: error <t:${S}:R> – ${'x'.repeat(100)} · data as of <t:${S - 3600}:R>`
     );
     expect(reply.content).not.toContain('x'.repeat(101));
-    expect(cells(reply)).toEqual(['–', '0,55 € ⏱¹', 'n/a', 'n/a']);
+    expect(cells(reply)).toEqual(['–', '0,55 € *[1]', 'n/a', 'n/a']);
   });
 
   test('a failed shop without a success in the window says so on its shop line', () => {
@@ -293,7 +298,7 @@ describe('buildStatusReply', () => {
       })
     );
     expect(reply.content).toContain(`– ${'x'.repeat(100)} · no successful check in ${DAYS} days`);
-    expect(cells(reply)).toEqual(['–', '0,55 € ⏱¹', 'n/a', 'n/a']);
+    expect(cells(reply)).toEqual(['–', '0,55 € *[1]', 'n/a', 'n/a']);
   });
 
   test('an enabled shop missing from the last check: its shop line has the last success, empty cells are ?', () => {
@@ -306,7 +311,7 @@ describe('buildStatusReply', () => {
       })
     );
     expect(reply.content).toContain(`⚠️ eBay: not checked · data as of <t:${S - 86_400}:R>`);
-    expect(cells(reply, '#12')).toEqual(['–', '–', 'n/a', '0,55 € ⏱¹']);
+    expect(cells(reply, '#12')).toEqual(['–', '–', 'n/a', '0,55 € *[1]']);
     expect(cells(reply, '#45')).toEqual(['–', '–', 'n/a', '?']);
   });
 
@@ -316,7 +321,7 @@ describe('buildStatusReply', () => {
     );
   });
 
-  test('a single-card listing whose picture is not backed gets ⚠', () => {
+  test('a single-card listing whose picture is not backed gets !', () => {
     for (const matchStatus of [
       'pending',
       'unconfirmed',
@@ -327,26 +332,26 @@ describe('buildStatusReply', () => {
       const reply = buildStatusReply(
         input({ listings: [listing('blue-ocean', ids('12'), { matchStatus })] })
       );
-      expect(cells(reply)).toEqual(['–', '0,55 € ⚠¹', 'n/a', 'n/a']);
-      expect(legend(reply)).toBe('Legend: ⚠ picture unconfirmed');
+      expect(cells(reply)).toEqual(['–', '0,55 € ![1]', 'n/a', 'n/a']);
+      expect(legend(reply)).toBe('Legend: `!` ⚠ picture unconfirmed');
     }
     const confirmed = buildStatusReply(
       input({ listings: [listing('blue-ocean', ids('12'), { matchStatus: 'confirmed' })] })
     );
-    expect(cells(confirmed)).toEqual(['–', '0,55 €¹', 'n/a', 'n/a']);
+    expect(cells(confirmed)).toEqual(['–', '0,55 € [1]', 'n/a', 'n/a']);
   });
 
-  test('a bundle gets + (never ⚠) on every card it carries; its link says bundle', () => {
+  test('a bundle gets + (never !) on every card it carries; its link says bundle', () => {
     const reply = buildStatusReply(
       input({
         cards: ids('12', '45'),
         listings: [listing('blue-ocean', ids('12', '45'), { matchStatus: 'bundle' })],
       })
     );
-    expect(cells(reply, '#12')).toEqual(['–', '0,55 € +¹', 'n/a', 'n/a']);
-    expect(cells(reply, '#45')).toEqual(['–', '0,55 € +²', 'n/a', 'n/a']);
-    expect(links(reply)[0]).toMatch(/^¹ \[#12 Squid · blue-ocean · 0,55 € \(bundle\)\]\(/);
-    expect(legend(reply)).toBe('Legend: + bundle');
+    expect(cells(reply, '#12')).toEqual(['–', '0,55 € +[1]', 'n/a', 'n/a']);
+    expect(cells(reply, '#45')).toEqual(['–', '0,55 € +[2]', 'n/a', 'n/a']);
+    expect(links(reply)[0]).toMatch(/^\[1\] \[#12 Squid · blue-ocean · 0,55 € \(bundle\)\]\(/);
+    expect(legend(reply)).toBe('Legend: `+` bundle');
   });
 
   test('markers combine, and the legend names exactly the markers present, in a fixed order', () => {
@@ -359,10 +364,10 @@ describe('buildStatusReply', () => {
         ],
       })
     );
-    expect(cells(reply, '#12')).toEqual(['0,55 € ⏱⚠¹', '–', 'n/a', 'n/a']);
+    expect(cells(reply, '#12')).toEqual(['0,55 € *![1]', '–', 'n/a', 'n/a']);
     expect(cells(reply, '#45')).toEqual(['–', 'sold out +', 'n/a', 'n/a']);
     expect(legend(reply)).toBe(
-      'Legend: ⏱ older than the last check · ⚠ picture unconfirmed · + bundle'
+      'Legend: `*` ⏱ older than the last check · `!` ⚠ picture unconfirmed · `+` bundle'
     );
     const plain = buildStatusReply(input({ listings: [listing('sammel-ente', ids('12'))] }));
     expect(legend(plain)).toBeUndefined();
@@ -381,7 +386,7 @@ describe('buildStatusReply', () => {
         ],
       })
     );
-    expect(cells(reply)).toEqual(['paused', '0,90 €¹', 'n/a', 'n/a']);
+    expect(cells(reply)).toEqual(['paused', '0,90 € [1]', 'n/a', 'n/a']);
   });
 
   test('a confirmed picture beats a cheaper unconfirmed one; a priced listing beats one without a price', () => {
@@ -393,7 +398,7 @@ describe('buildStatusReply', () => {
         ],
       })
     );
-    expect(cells(picture)).toEqual(['–', '1,20 €¹', 'n/a', 'n/a']);
+    expect(cells(picture)).toEqual(['–', '1,20 € [1]', 'n/a', 'n/a']);
     const price = buildStatusReply(
       input({
         listings: [
@@ -402,7 +407,7 @@ describe('buildStatusReply', () => {
         ],
       })
     );
-    expect(cells(price)).toEqual(['–', '1,20 €¹', 'n/a', 'n/a']);
+    expect(cells(price)).toEqual(['–', '1,20 € [1]', 'n/a', 'n/a']);
   });
 
   test('a disabled shop is an n/a column and its stored listings are not shown', () => {
@@ -418,7 +423,7 @@ describe('buildStatusReply', () => {
     expect(reply.embeds).toEqual([]);
   });
 
-  test('link numbers run across rows and columns and continue past 9 as ¹⁰ ¹¹', () => {
+  test('link numbers run across rows and columns and continue past 9 as [10] [11]', () => {
     const cards = Array.from({ length: 6 }, (_, i) => cid(String(i + 1)));
     const reply = buildStatusReply(
       input({
@@ -427,14 +432,13 @@ describe('buildStatusReply', () => {
         listings: cards.flatMap((c) => [listing('sammel-ente', [c]), listing('blue-ocean', [c])]),
       })
     );
-    expect(cells(reply, '#1')).toEqual(['0,55 €¹', '0,55 €²', 'n/a', 'n/a']);
-    expect(cells(reply, '#5')).toEqual(['0,55 €⁹', '0,55 €¹⁰', 'n/a', 'n/a']);
-    expect(cells(reply, '#6')).toEqual(['0,55 €¹¹', '0,55 €¹²', 'n/a', 'n/a']);
+    expect(cells(reply, '#1')).toEqual(['0,55 € [1]', '0,55 € [2]', 'n/a', 'n/a']);
+    expect(cells(reply, '#5')).toEqual(['0,55 € [9]', '0,55 € [10]', 'n/a', 'n/a']);
+    expect(cells(reply, '#6')).toEqual(['0,55 € [11]', '0,55 € [12]', 'n/a', 'n/a']);
     expect(links(reply)).toHaveLength(12);
     expect(links(reply)[9]).toMatch(
-      /^¹⁰ \[#5 · blue-ocean · 0,55 €\]\(https:\/\/example\.com\/\d+\)$/
+      /^\[10\] \[#5 · blue-ocean · 0,55 €\]\(https:\/\/example\.com\/\d+\)$/
     );
-    expect(superscript(1234567890)).toBe('¹²³⁴⁵⁶⁷⁸⁹⁰');
   });
 
   test('an in-stock cell with an invalid URL gets no number and the next one takes it', () => {
@@ -450,8 +454,8 @@ describe('buildStatusReply', () => {
       })
     );
     expect(cells(reply, '#12')).toEqual(['0,55 €', '0,55 €', 'n/a', 'n/a']);
-    expect(cells(reply, '#45')).toEqual(['0,55 €¹', '–', 'n/a', 'n/a']);
-    expect(links(reply)).toEqual(['¹ [#45 · sammel-ente · 0,55 €](https://ok.example/45)']);
+    expect(cells(reply, '#45')).toEqual(['0,55 € [1]', '–', 'n/a', 'n/a']);
+    expect(links(reply)).toEqual(['[1] [#45 · sammel-ente · 0,55 €](https://ok.example/45)']);
   });
 
   test('a URL with brackets or spaces and a name with brackets cannot break the markdown link', () => {
@@ -462,7 +466,7 @@ describe('buildStatusReply', () => {
       })
     );
     expect(links(reply)).toEqual([
-      '¹ [#12 Squid \\[gold\\] · sammel-ente · 0,55 €](https://e.example/a%20%28b%29)',
+      '[1] [#12 Squid \\[gold\\] · sammel-ente · 0,55 €](https://e.example/a%20%28b%29)',
     ]);
   });
 
@@ -492,7 +496,7 @@ describe('buildStatusReply', () => {
     expect(row(reply, '#XXL1')![0]).toBe('#XXL1 Ender Dragon');
     // The link has room for more of the name, up to 60 characters.
     expect(links(reply)[0]).toStartWith(
-      '¹ [#12 A very long card name that goes on and on and on and on… · eBay'
+      '[1] [#12 A very long card name that goes on and on and on and on… · eBay'
     );
     expect(row(reply, '#12')![0]!.length).toBeLessThan(60);
   });
@@ -578,11 +582,11 @@ describe('buildStatusReply', () => {
     expect(lines.slice(-3)).toEqual([
       FENCE,
       `… and ${228 - shown} more cards`,
-      'Legend: ⚠ picture unconfirmed',
+      'Legend: `!` ⚠ picture unconfirmed',
     ]);
     // Only the shown rows are numbered and linked.
     expect(links(reply)).toHaveLength(shown);
-    expect(cells(reply, `#${shown}`)).toEqual(['–', `0,55 € ⚠${superscript(shown)}`, 'n/a', 'n/a']);
+    expect(cells(reply, `#${shown}`)).toEqual(['–', `0,55 € ![${shown}]`, 'n/a', 'n/a']);
   });
 
   test('a reply of exactly 2000 characters is kept whole; one more cuts a row', () => {
@@ -641,7 +645,7 @@ describe('buildStatusReply', () => {
     expect(description(over)!.length).toBeLessThanOrEqual(EMBED_DESCRIPTION_LIMIT);
     expect(links(over)).toHaveLength(10);
     expect(links(over)[9]).toBe('… and 1 more links');
-    expect(links(over)[8]).toStartWith('⁹ [#9 ');
+    expect(links(over)[8]).toStartWith('[9] [#9 ');
   });
 
   test('many long links: whole links are kept and the rest counted', () => {
@@ -691,6 +695,181 @@ describe('buildStatusReply', () => {
       })
     );
     expect(reply.content.length).toBeLessThanOrEqual(DISCORD_MESSAGE_LIMIT);
+  });
+
+  test('inside the code block every character is ASCII or one of €, – and …', () => {
+    const reply = buildStatusReply(
+      input({
+        cards: ids('12', '45', '46', '47'),
+        names: new Map([
+          [cid('12'), 'A card name far too long to fit into the card column at all'],
+        ]),
+        latest: run({
+          ...allRun,
+          shops: { ...allRun.shops, 'collect-it': { listings: 0, error: 'down' } },
+        }),
+        enabledShops: ['sammel-ente', 'blue-ocean', 'collect-it'],
+        lastSuccess: { 'collect-it': T - 3_600_000 },
+        listings: [
+          listing('sammel-ente', ids('12'), {
+            matchStatus: 'pending',
+            lastSeenAt: T - 1,
+            ...euro(123_456),
+          }),
+          listing('blue-ocean', ids('12', '45'), { matchStatus: 'bundle' }),
+          listing('collect-it', ids('12'), { price: null }),
+          listing('sammel-ente', ids('45'), { available: false }),
+          listing('sammel-ente', ids('46'), { onHold: true }),
+        ],
+      })
+    );
+    const block = tableLines(reply).join('\n');
+    expect(block).toContain('*!');
+    expect(block).toContain('+[');
+    expect(block).toContain('…');
+    expect(block).toContain('n/a');
+    expect(block).toMatch(/^[\n\x20-\x7e€–…]*$/);
+    expect(legend(reply)).toBe(
+      'Legend: `*` ⏱ older than the last check · `!` ⚠ picture unconfirmed · `+` bundle'
+    );
+  });
+
+  test('the legend names only the markers of the rows shown, not of rows the overflow cut', () => {
+    const cards = Array.from({ length: 228 }, (_, i) => cid(String(i + 1)));
+    const listings = cards.map((c, i) =>
+      listing('sammel-ente', [c], i === 227 ? { matchStatus: 'pending' } : {})
+    );
+    const reply = buildStatusReply(input({ cards, listings, names: new Map() }));
+    expect(reply.content).toContain('more cards');
+    expect(reply.content).not.toContain('!');
+    expect(legend(reply)).toBeUndefined();
+  });
+
+  test('a sold-out listing seen in the last check beats an in-stock one that check did not return', () => {
+    // The design keeps today's choice: what the latest check saw comes first, then stock.
+    const reply = buildStatusReply(
+      input({
+        listings: [
+          listing('blue-ocean', ids('12'), { lastSeenAt: T - 1, ...euro(30) }),
+          listing('blue-ocean', ids('12'), { available: false }),
+        ],
+      })
+    );
+    expect(cells(reply)).toEqual(['–', 'sold out', 'n/a', 'n/a']);
+    expect(reply.embeds).toEqual([]);
+  });
+
+  test('newlines and tabs in a catalog name collapse to one space', () => {
+    const reply = buildStatusReply(
+      input({
+        names: new Map([[cid('12'), ' Squid\n\tgold\r\n']]),
+        listings: [listing('sammel-ente', ids('12'), { url: 'https://ok.example/12' })],
+      })
+    );
+    expect(row(reply)![0]).toBe('#12 Squid gold');
+    expect(links(reply)).toEqual([
+      '[1] [#12 Squid gold · sammel-ente · 0,55 €](https://ok.example/12)',
+    ]);
+  });
+
+  test('a backslash in a name is escaped in the link text; a ) stays as it is', () => {
+    const backslash = buildStatusReply(
+      input({
+        names: new Map([[cid('12'), 'Squid\\']]),
+        listings: [listing('sammel-ente', ids('12'), { url: 'https://ok.example/12' })],
+      })
+    );
+    expect(links(backslash)).toEqual([
+      '[1] [#12 Squid\\\\ · sammel-ente · 0,55 €](https://ok.example/12)',
+    ]);
+    // Inside [...] a ) cannot end the link text or start the URL part.
+    const paren = buildStatusReply(
+      input({
+        names: new Map([[cid('12'), 'Squid) (x']]),
+        listings: [listing('sammel-ente', ids('12'), { url: 'https://ok.example/12' })],
+      })
+    );
+    expect(links(paren)).toEqual([
+      '[1] [#12 Squid) (x · sammel-ente · 0,55 €](https://ok.example/12)',
+    ]);
+  });
+
+  test('one card in stock in every shop gets four links, numbered left to right', () => {
+    const reply = buildStatusReply(
+      input({
+        latest: run(allRun),
+        enabledShops: ALL,
+        listings: [...ALL]
+          .reverse()
+          .map((shop) => listing(shop, ids('12'), { url: `https://${shop}.example/12` })),
+      })
+    );
+    expect(cells(reply)).toEqual(['0,55 € [1]', '0,55 € [2]', '0,55 € [3]', '0,55 € [4]']);
+    expect(links(reply)).toEqual([
+      '[1] [#12 Squid · sammel-ente · 0,55 €](https://sammel-ente.example/12)',
+      '[2] [#12 Squid · blue-ocean · 0,55 €](https://blue-ocean.example/12)',
+      '[3] [#12 Squid · collect-it · 0,55 €](https://collect-it.example/12)',
+      '[4] [#12 Squid · eBay · 0,55 €](https://ebay.example/12)',
+    ]);
+    expectAligned(reply);
+  });
+
+  test('three-digit references keep the columns aligned', () => {
+    const cards = Array.from({ length: 40 }, (_, i) => cid(String(i + 1)));
+    const reply = buildStatusReply(
+      input({
+        cards,
+        names: new Map(),
+        latest: run(allRun),
+        enabledShops: ALL,
+        listings: cards.flatMap((c) => ALL.map((shop) => listing(shop, [c]))),
+      })
+    );
+    expect(reply.content.length).toBeLessThanOrEqual(DISCORD_MESSAGE_LIMIT);
+    expect(tableLines(reply).join('\n')).toContain('0,55 € [100]');
+    expect(cells(reply, '#1')).toEqual(['0,55 € [1]', '0,55 € [2]', '0,55 € [3]', '0,55 € [4]']);
+    expectAligned(reply);
+    expect(cells(reply, '#25')).toEqual([
+      '0,55 € [97]',
+      '0,55 € [98]',
+      '0,55 € [99]',
+      '0,55 € [100]',
+    ]);
+  });
+
+  test('wide shop columns leave the card column at its minimum of 14, still aligned', () => {
+    const cards = Array.from({ length: 12 }, (_, i) => cid(String(i + 1)));
+    const reply = buildStatusReply(
+      input({
+        cards,
+        names: new Map(cards.map((c) => [c, `Card number ${c} with a long name`])),
+        latest: run(allRun),
+        enabledShops: ALL,
+        listings: cards.flatMap((c) =>
+          ALL.map((shop) =>
+            listing(shop, [c], { ...euro(123_456), matchStatus: 'pending', lastSeenAt: T - 1 })
+          )
+        ),
+      })
+    );
+    expectAligned(reply);
+    expect(row(reply, '#1')![0]).toBe('#1 Card numbe…');
+    expect(row(reply, '#12')![0]).toBe('#12 Card numb…');
+    expect(cells(reply, '#12')![3]).toBe('1234,56 € *![48]');
+    for (const line of tableLines(reply)) expect(line.length).toBeLessThanOrEqual(90);
+  });
+});
+
+describe('linkList', () => {
+  test('keeps whole lines within the limit and counts the rest', () => {
+    const [a, b, c] = ['a', 'b', 'c'].map((x) => x.repeat(30)) as [string, string, string];
+    expect(linkList([a, b, c], 92)).toBe(`${a}\n${b}\n${c}`);
+    expect(linkList([a, b, c], 91)).toBe(`${a}\n${b}\n… and 1 more links`);
+    expect(linkList([a, b, c], 60)).toBe(`${a}\n… and 2 more links`);
+  });
+
+  test('a first line over the limit leaves only the count', () => {
+    expect(linkList(['a'.repeat(30), 'b'], 20)).toBe('… and 2 more links');
   });
 });
 

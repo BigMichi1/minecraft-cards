@@ -71,6 +71,47 @@ describe('/missing', () => {
     expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
   });
 
+  test('the list subcommands send no embed', async () => {
+    for (const [sub, list] of [
+      ['set', '12, 45'],
+      ['add', '46'],
+      ['remove', '12'],
+      ['list', undefined],
+      ['clear', undefined],
+    ] as const) {
+      await execute(fakeInteraction('u1', sub, list));
+      expect(lastReply().embeds).toEqual([]);
+    }
+  });
+
+  test('a status reply Discord rejects (e.g. the embed) gets the status error reply', async () => {
+    await execute(fakeInteraction('u1', 'set', '12'));
+    runManager.record({
+      startedAt: Date.now(),
+      finishedAt: Date.now(),
+      shops: { 'sammel-ente': { listings: 1 } },
+      notified: 0,
+      dmFailures: 0,
+    });
+    const interaction = fakeInteraction('u1', 'status');
+    let calls = 0;
+    (interaction as unknown as { reply: (p: (typeof replies)[number]) => Promise<void> }).reply =
+      async (payload) => {
+        calls++;
+        if (calls === 1) throw new Error('Invalid Form Body');
+        replies.push(payload);
+      };
+    const log = spyOn(logger, 'log').mockImplementation(() => logger);
+    try {
+      await execute(interaction);
+    } finally {
+      log.mockRestore();
+    }
+    expect(calls).toBe(2);
+    const embed = (lastReply().embeds![0] as { toJSON(): { description?: string } }).toJSON();
+    expect(embed.description).toBe('Could not load your stock status. Please try again later.');
+  });
+
   test('add with an unknown token changes nothing and names it', async () => {
     await execute(fakeInteraction('u1', 'set', '12, 45'));
     await execute(fakeInteraction('u1', 'add', '12, 9999'));
@@ -157,10 +198,10 @@ describe('/missing', () => {
     await execute(fakeInteraction('u1', 'status'));
     expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
     expect(lastReply().content).toContain(`Your missing cards (1) · last check <t:${T / 1000}:R>`);
-    expect(lastReply().content).toMatch(/\n#12 +0,55 €¹ +\? +n\/a +n\/a\n/);
+    expect(lastReply().content).toMatch(/\n#12 +0,55 € \[1\] +\? +n\/a +n\/a\n/);
     const embed = (lastReply().embeds![0] as { toJSON(): { description?: string } }).toJSON();
     expect(embed.description).toBe(
-      '¹ [#12 · sammel-ente · 0,55 €](https://shop-sammel-ente.de/x/MNC-03XX-BAS-0012)'
+      '[1] [#12 · sammel-ente · 0,55 €](https://shop-sammel-ente.de/x/MNC-03XX-BAS-0012)'
     );
   });
 
@@ -209,7 +250,7 @@ describe('/missing', () => {
     });
     await execute(fakeInteraction('u1', 'status'));
     expect(lastReply().content).toContain(`data as of <t:${Math.floor(older / 1000)}:R>`);
-    expect(lastReply().content).toMatch(/\n#12 Squid +– +0,90 € ⏱⚠¹ +n\/a +n\/a\n/);
+    expect(lastReply().content).toMatch(/\n#12 Squid +– +0,90 € \*!\[1\] +n\/a +n\/a\n/);
   });
 
   test('status shows a shop that is not enabled and skips its listings', async () => {

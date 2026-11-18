@@ -13,9 +13,14 @@ import { errorMessage } from '../utils/async';
 import logger, { logError } from '../utils/logger';
 import { throttledAlert, type AlertFn } from './adminAlert';
 
-export interface ShopSummary extends Pick<FetchResult, 'skippedNoId' | 'skippedInvalid'> {
+export interface ShopSummary extends Pick<
+  FetchResult,
+  'skippedNoId' | 'skippedExcluded' | 'skippedInvalid'
+> {
   /** Card listings the shop returned (available or not). */
   listings: number;
+  /** Searches cut at the page cap (FetchResult.truncated). */
+  truncated?: number;
   error?: string;
 }
 
@@ -180,6 +185,12 @@ async function checkShop(
         `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)} — check the pagination and markup.`
       );
     }
+    if (result.truncated && result.truncated.length > 0) {
+      await alert(
+        `shop-truncated:${adapter.id}`,
+        `Shop ${adapter.id}: ${result.truncated.length} search(es) cut at the page cap, later results are not seen: ${result.truncated.join('; ')}`
+      );
+    }
     for (const l of found) fetched.set(l.url, l);
     if (adapter.id === 'sammel-ente') {
       catalogManager.updateNamesAndReferences(
@@ -194,7 +205,9 @@ async function checkShop(
     summary.shops[adapter.id] = {
       listings: found.length,
       ...(result.skippedNoId ? { skippedNoId: result.skippedNoId } : {}),
+      ...(result.skippedExcluded ? { skippedExcluded: result.skippedExcluded } : {}),
       ...(result.skippedInvalid ? { skippedInvalid: result.skippedInvalid } : {}),
+      ...(result.truncated?.length ? { truncated: result.truncated.length } : {}),
     };
   } catch (error) {
     const message = `storing listings failed: ${errorMessage(error)}`;

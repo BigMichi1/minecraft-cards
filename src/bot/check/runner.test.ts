@@ -330,13 +330,33 @@ describe('runCheck', () => {
     const s = await runCheck(
       depsWith([
         ok('blue-ocean', [blue12]),
-        ok('ebay', [], { skippedNoId: 4, skippedInvalid: 2 }),
+        ok('ebay', [], { skippedNoId: 4, skippedExcluded: 3, skippedInvalid: 2 }),
         ok('sammel-ente', [], { skippedNoId: 0 }),
       ])
     );
     expect(s.shops['blue-ocean']).toEqual({ listings: 1 });
-    expect(s.shops.ebay).toEqual({ listings: 0, skippedNoId: 4, skippedInvalid: 2 });
+    expect(s.shops.ebay).toEqual({
+      listings: 0,
+      skippedNoId: 4,
+      skippedExcluded: 3,
+      skippedInvalid: 2,
+    });
     expect(s.shops['sammel-ente']).toEqual({ listings: 0 });
+  });
+
+  test('a shop whose searches were cut at the page cap alerts once per 24 h', async () => {
+    const cut = () =>
+      ok('ebay', [], { truncated: ['search "q": 5000 results, only the first 1000 read'] });
+    const s = await runCheck(depsWith([cut()]));
+    expect(s.shops.ebay).toEqual({ listings: 0, truncated: 1 });
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toContain('ebay');
+    expect(alerts[0]).toContain('5000 results');
+    await runCheck(depsWith([cut()]));
+    expect(alerts).toHaveLength(1);
+    expect(runManager.lastAlertAt('shop-truncated:ebay')).toBeDefined();
+    await runCheck(depsWith([ok('ebay', [], { truncated: [] })]));
+    expect(alerts).toHaveLength(1);
   });
 
   describe('a step failing after the fetch', () => {

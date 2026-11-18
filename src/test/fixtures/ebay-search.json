@@ -1,6 +1,8 @@
 {
-  "href": "https://api.ebay.com/buy/browse/v1/item_summary/search?q=lego+minecraft&limit=200",
-  "total": 5,
+  "href": "https://api.ebay.com/buy/browse/v1/item_summary/search?q=lego+minecraft&limit=200&offset=0",
+  "total": 43,
+  "limit": 200,
+  "offset": 0,
   "itemSummaries": [
     {
       "itemId": "v1|110000000001|0",
@@ -98,6 +100,975 @@
       },
       "buyingOptions": [
         "FIXED_PRICE"
+      ]
+    },
+    {
+      "itemId": "v1|307033154225|0",
+      "legacyItemId": "307033154225",
+      "title": "LEGO Minecraft Karten 1 - Alex - Charakterkarte Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/307033154225?_skw=lego+minecraft+karten+serie+3&hash=item477c9a22b1:g:24wAAeSwBLNqQsuT",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/24wAAeSwBLNqQsuT/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|298464547193|0",
+      "legacyItemId": "298464547193",
+      "title": "LEGO Minecraft Karten 6 - Zombie - Charakterkarte - Ultra Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/298464547193?_skw=lego+minecraft+karten+serie+3&hash=item457ddf9179:g:7lUAAeSwxLxqQsgj",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/7lUAAeSwxLxqQsgj/s-l225.jpg"
+      },
+      "price": {
+        "value": "27.99",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|820220708310|0",
+      "legacyItemId": "820220708310",
+      "title": "LEGO Minecraft Karten 12 - Squid - Charakterkarte Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/820220708310?_skw=lego+minecraft+karten+serie+3&hash=itembef8f6c5d6:g:vPAAAeSwBrhqyPW4",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/vPAAAeSwBrhqyPW4/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.10",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|307033238089|0",
+      "legacyItemId": "307033238089",
+      "title": "LEGO Minecraft Karten 13 - Skeleton - Charakterkarte - Holo Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/307033238089?_skw=lego+minecraft+karten+serie+3&hash=item477c9b6a49:g:NEsAAeSwRslqQtU9",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/NEsAAeSwRslqQtU9/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|307033164852|0",
+      "legacyItemId": "307033164852",
+      "title": "LEGO Minecraft Karten 81 - Sunny vs. Blaze - Charakterkarte Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/307033164852?_skw=lego+minecraft+karten+serie+3&hash=item477c9a4c34:g:1aMAAeSwkvxqQsyQ",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/1aMAAeSwkvxqQsyQ/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|306904746510|0",
+      "legacyItemId": "306904746510",
+      "title": "LEGO Minecraft Karten 154 - Oberwelt - Puzzlekarte Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/306904746510?_skw=lego+minecraft+karten+serie+3&hash=item4774f2ca0e:g:184AAeSwoJhp72-8",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/184AAeSwoJhp72-8/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|298266919445|0",
+      "legacyItemId": "298266919445",
+      "title": "LEGO Minecraft Karten 190 - Das Wächterduell - Setkarte Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/298266919445?_skw=lego+minecraft+karten+serie+3&hash=item4572180215:g:CVcAAeSwGYJp73Ch",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/CVcAAeSwGYJp73Ch/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|298464913981|0",
+      "legacyItemId": "298464913981",
+      "title": "LEGO Minecraft Karten 210 - …und tschüss! - Comickarte Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/298464913981?_skw=lego+minecraft+karten+serie+3&hash=item457de52a3d:g:9MYAAeSwSGtqQu~P",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/9MYAAeSwSGtqQu~P/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|307033129412|0",
+      "legacyItemId": "307033129412",
+      "title": "LEGO Minecraft Karten 226 - Vernetzungstreffen - Comickarte Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/307033129412?_skw=lego+minecraft+karten+serie+3&hash=item477c99c1c4:g:yWQAAeSwCdRqQsZQ",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/yWQAAeSwCdRqQsZQ/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|307033237331|0",
+      "legacyItemId": "307033237331",
+      "title": "LEGO Minecraft  59 - Charged Creeper - Charakterkarte - Ultra Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/307033237331?_skw=lego+minecraft+on+fire+karte&hash=item477c9b6753:g:Nu4AAeSwg9dqQtUv&amdata=enc%3AAQALAAABAOf5zIIojhOf%2BkQK%2Bxzjn7lM%2FfSMsiY4LDHxfrSHIv3vOlOywvYiwgsDrAkAyJZLgjYqfBc%2Ff6b5s5bfQJdRiRjb2JRyX%2B5K8V9WsxiG2MFwipHXYJJKuNEBE78Pa9IbX310bj9ftXf5Ay4PtBwC8hhvOIM83HRGhi7%2F5IZjHI6NJuKxUxveEiTtFoSUyTrtKe%2FxtpxD5P%2FG4Gi1Dz0u0R4rKOsDokBTZF9cLHI54FozTF5ZpQ2U8uHfA4RCptgaK%2B%2Fl5AOjFXd4Z%2BmEkQFVaADVSfk7wkE2Dk0ClHFgKi618cwC%2Fa%2BhJZCeC6bw7PABaEDrZaqCIdZbmxehWPFiXks%3D",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/Nu4AAeSwg9dqQtUv/s-l225.jpg"
+      },
+      "price": {
+        "value": "27.99",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|298266882310|0",
+      "legacyItemId": "298266882310",
+      "title": "LEGO Minecraft  85 - Villager and Steve - Charakterkarte - Holo Serie 3 (2026)",
+      "itemWebUrl": "https://www.ebay.de/itm/298266882310?_skw=lego+minecraft+karten+serie+3&hash=item4572177106:g:E40AAeSwPL5p721c",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/E40AAeSwPL5p721c/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|880079740087|0",
+      "legacyItemId": "880079740087",
+      "title": "LEGO MINECRAFT ON FIRE Serie 3 ULTRA RARE ZOMBIE 68 Karte Trading Card",
+      "itemWebUrl": "https://www.ebay.de/itm/880079740087?_skw=lego+minecraft+on+fire+karte&hash=itemcce8d71cb7:g:QzAAAeSwwmFq6jZr",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/QzAAAeSwwmFq6jZr/s-l225.jpg"
+      },
+      "price": {
+        "value": "17.90",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "3.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|880120413461|0",
+      "legacyItemId": "880120413461",
+      "title": "LEGO MINECRAFT ON FIRE Serie 3 ULTRA RARE VILLAGER 8 Karte Trading Card",
+      "itemWebUrl": "https://www.ebay.de/itm/880120413461?_skw=lego+minecraft+on+fire+karte&hash=itemcceb43bd15:g:nK4AAeSwUipq-gD~",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/nK4AAeSwUipq-gD~/s-l225.jpg"
+      },
+      "price": {
+        "value": "15.90",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "3.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|880127012180|0",
+      "legacyItemId": "880127012180",
+      "title": "LEGO MINECRAFT ON FIRE Serie 3 LIMITED EDITION GOLD GHAST LE21 Karte Card",
+      "itemWebUrl": "https://www.ebay.de/itm/880127012180?_skw=lego+minecraft+on+fire+karte&hash=itemcceba86d54:g:nEAAAeSwQrtq~J2u",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/nEAAAeSwQrtq~J2u/s-l225.jpg"
+      },
+      "price": {
+        "value": "6.90",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "0.95",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|880113389508|0",
+      "legacyItemId": "880113389508",
+      "title": "LEGO MINECRAFT ON FIRE Serie 3 LIMITED EDITION GOLD BURNING ZOMBIE LE22 Card",
+      "itemWebUrl": "https://www.ebay.de/itm/880113389508?_skw=lego+minecraft+trading+card+on+fire&hash=itemccead88fc4:g:CksAAeSwJVlq91vK",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/CksAAeSwJVlq91vK/s-l225.jpg"
+      },
+      "price": {
+        "value": "6.90",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "0.95",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|318738930910|0",
+      "legacyItemId": "318738930910",
+      "title": "LEGO Minecraft Serie 3 On Fire - Limited Edition Karte - LE12 EFE",
+      "itemWebUrl": "https://www.ebay.de/itm/318738930910?_skw=lego+minecraft+on+fire+karte&hash=item4a36521cde:g:uDoAAeSwfn9qgb88",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/uDoAAeSwfn9qgb88/s-l225.jpg"
+      },
+      "price": {
+        "value": "6.89",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.10",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|298542435874|0",
+      "legacyItemId": "298542435874",
+      "title": "LEGO Minecraft Serie 3 LE01 - Ender Dragon - Limitierte Karte",
+      "itemWebUrl": "https://www.ebay.de/itm/298542435874?_skw=lego+minecraft+karten+serie+3&hash=item4582840e22:g:MTgAAeSwzY5qahaO",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/MTgAAeSwzY5qahaO/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.39",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|307151001820|0",
+      "legacyItemId": "307151001820",
+      "title": "LEGO Minecraft Karte LE16 Ender Explorer v Ender Dragon Limitierte Karte Serie 3",
+      "itemWebUrl": "https://www.ebay.de/itm/307151001820?_skw=lego+minecraft+karten+serie+3&hash=item4783a058dc:g:vzwAAeSwT-hqkX~l",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/vzwAAeSwT-hqkX~l/s-l225.jpg"
+      },
+      "price": {
+        "value": "3.29",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|318920506278|0",
+      "legacyItemId": "318920506278",
+      "title": "LEGO Minecraft On Fire (2026) - Blister 4 Booster & Limitierte Karte LE16",
+      "itemWebUrl": "https://www.ebay.de/itm/318920506278?_skw=lego+minecraft+on+fire+karte&hash=item4a4124bba6:g:7uwAAeSwlvRqt6o7",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/7uwAAeSwlvRqt6o7/s-l225.jpg"
+      },
+      "price": {
+        "value": "5.99",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.90",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|336881714628|0",
+      "legacyItemId": "336881714628",
+      "title": "Lego Minecraft Serie 3 Ultra Rare Karte Skeleton Horseman Nr41",
+      "itemWebUrl": "https://www.ebay.de/itm/336881714628?_skw=lego+minecraft+karten+serie+3&hash=item4e6fb705c4:g:yKMAAeSwkWZq7Lgc",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/yKMAAeSwkWZq7Lgc/s-l225.jpg"
+      },
+      "price": {
+        "value": "20.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE",
+        "BEST_OFFER"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.10",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|237167730326|0",
+      "legacyItemId": "237167730326",
+      "title": "Blue Ocean LEGO Minecraft On Fire Trading Cards 21 Packs à 6 Karten Creeper EN",
+      "itemWebUrl": "https://www.ebay.de/itm/237167730326?_skw=lego+minecraft+on+fire+karte&hash=item37384c5e96:g:uecAAeSwfJhq82Cc",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/uecAAeSwfJhq82Cc/s-l225.jpg"
+      },
+      "price": {
+        "value": "15.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE",
+        "BEST_OFFER"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.80",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|318113529715|0",
+      "legacyItemId": "318113529715",
+      "title": "LEGO Minecraft Serie 3 (2026) - On Fire - 193 verschiedene Karten - Blue Ocean",
+      "itemWebUrl": "https://www.ebay.de/itm/318113529715?_skw=lego+minecraft+on+fire+karte&hash=item4a110b3f73:g:DiMAAeSwfc9p0~OF",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/DiMAAeSwfc9p0~OF/s-l225.jpg"
+      },
+      "price": {
+        "value": "77.95",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "0.00",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|257656279927|0",
+      "legacyItemId": "257656279927",
+      "title": "lego© MINECRAFT 6  TradingCards ON FIRE incl. 1 special Card",
+      "itemWebUrl": "https://www.ebay.de/itm/257656279927?_skw=lego+minecraft+trading+card+on+fire&hash=item3bfd82d377:g:RbkAAeSw6Wtq0lW~",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/RbkAAeSw6Wtq0lW~/s-l225.jpg"
+      },
+      "price": {
+        "value": "2.49",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE",
+        "BEST_OFFER"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.50",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|168243696252|0",
+      "legacyItemId": "168243696252",
+      "title": "Blue Ocean LEGO Minecraft Serie 3 On Fire Trading Cards | Display | 36 Booster",
+      "itemWebUrl": "https://www.ebay.de/itm/168243696252?_skw=lego+minecraft+trading+card+on+fire&hash=item272c1b127c:g:a7cAAeSwxf5puqRQ",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/a7cAAeSwxf5puqRQ/s-l225.jpg"
+      },
+      "price": {
+        "value": "56.70",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "3.90",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|318793648300|0",
+      "legacyItemId": "318793648300",
+      "title": "LEGO Minecraft Magma Cube Trading Cards Promo Not for sale 2 Booster 2026 EN 6+",
+      "itemWebUrl": "https://www.ebay.de/itm/318793648300?_skw=lego+minecraft+trading+card+on+fire&hash=item4a399508ac:g:WJwAAeSw-dlqkiSu&amdata=enc%3AAQALAAABAOf5zIIojhOf%2BkQK%2Bxzjn7n5%2BLpzqRQnUxYBWGG1tYWt5ZL7RbFWwJXfXU2%2BHSPub%2F2m7aTJ0c0sdivXsgvp8Ksa1Mvct4ycEQMR1jNha2yPt4Nut%2BtvFmTgE%2B%2FQAFO1ophfXxfQumqJSDvCNP61GWDM6%2FP8F40o7KZGSdIxkokVp%2FdnYathiGGfRg33aVhSjI73TCZQiCFQvUZ60nWTcaT%2F5c2Xltv1AzuldMFASLocyDbh2zWr5q2o53HLckgGKJNlczZlmQL5%2BXidcQqFMS%2FQQuJV4FoROiIrI08cM17KcLIFqb0WH%2Bpugyzc%2Fq4sASh3KMIHP1IOjocRunEvq9o%3D",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/WJwAAeSw-dlqkiSu/s-l225.jpg"
+      },
+      "price": {
+        "value": "2.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE",
+        "BEST_OFFER"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "2.70",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|306898657124|0",
+      "legacyItemId": "306898657124",
+      "title": "LEGO Minecraft Serie 3 Trading Cards  1 Blister (zufällige Auswahl)",
+      "itemWebUrl": "https://www.ebay.de/itm/306898657124?_skw=lego+minecraft+karten+serie+3&hash=item477495df64:g:lL8AAeSw1spq~B23",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/lL8AAeSw1spq~B23/s-l225.jpg"
+      },
+      "price": {
+        "value": "10.19",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "3.99",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|336881691966|0",
+      "legacyItemId": "336881691966",
+      "title": "Lego Minecraft Karte Serie 3 Chast Ultra Rare",
+      "itemWebUrl": "https://www.ebay.de/itm/336881691966?_skw=lego+minecraft+karten+serie+3&hash=item4e6fb6ad3e:g:yF4AAeSwcaxq7LZJ",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/yF4AAeSwcaxq7LZJ/s-l225.jpg"
+      },
+      "price": {
+        "value": "20.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE",
+        "BEST_OFFER"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.10",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|298476153721|595330320371",
+      "legacyItemId": "298476153721",
+      "title": "LEGO Minecraft Serie 3 Trading Cards Einzelkarten 1 - 228 zum aussuchen choose",
+      "itemWebUrl": "https://www.ebay.de/itm/298476153721?_skw=lego+minecraft+karten+serie+3&hash=item457e90ab79:g:Xi8AAeSwxE5qR8AT",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/Xi8AAeSwxE5qR8AT/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ],
+      "itemGroupType": "SELLER_DEFINED_VARIATIONS",
+      "itemGroupHref": "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group?item_group_id=298476153721"
+    },
+    {
+      "itemId": "v1|820220677540|0",
+      "legacyItemId": "820220677540",
+      "title": "LEGO Minecraft Serie 3 Trading Cards Einzelkarten 1 - 228 zum aussuchen choose",
+      "itemWebUrl": "https://www.ebay.de/itm/820220677540?_skw=lego+minecraft+karten+serie+3&hash=itembef8f64da4:g:usMAAeSwhjJqyPMB",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/usMAAeSwhjJqyPMB/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.10",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|960043845055|459472715946",
+      "legacyItemId": "960043845055",
+      "title": "LEGO Minecraft Serie 3 Trading Cards 001 - 228 + Limitierte Karten zum Aussuchen",
+      "itemWebUrl": "https://www.ebay.de/itm/960043845055?_skw=lego+minecraft+karten+serie+3&hash=itemdf871285bf:g:SxMAAeSwCdlqyRp~",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/SxMAAeSwCdlqyRp~/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.20",
+            "currency": "EUR"
+          }
+        }
+      ],
+      "itemGroupType": "SELLER_DEFINED_VARIATIONS",
+      "itemGroupHref": "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group?item_group_id=960043845055"
+    },
+    {
+      "itemId": "v1|277849229105|2560795165769",
+      "legacyItemId": "277849229105",
+      "title": "Blue Ocean - LEGO Minecraft on Fire - Album / Karten / Cards aussuchen wählen",
+      "itemWebUrl": "https://www.ebay.de/itm/277849229105?_skw=lego+minecraft+on+fire+karte&var=2560795165769&hash=item40b11ac731:g:fYAAAeSwPsppylcC",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/fYAAAeSwPsppylcC/s-l225.jpg"
+      },
+      "price": {
+        "value": "29.99",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.29",
+            "currency": "EUR"
+          }
+        }
+      ],
+      "itemGroupType": "SELLER_DEFINED_VARIATIONS",
+      "itemGroupHref": "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group?item_group_id=277849229105"
+    },
+    {
+      "itemId": "v1|336833205199|546151503668",
+      "legacyItemId": "336833205199",
+      "title": "A2155 - 2024 Panini Minecraft Gaming Karte #s 1-221 - Du Wählst",
+      "itemWebUrl": "https://www.ebay.de/itm/336833205199?_skw=minecraft+on+fire+karte&var=546151503668&hash=item4e6cd2d3cf:g:AnsAAeSw6otq8hfa&amdata=enc%3AAQALAAAA8Of5zIIojhOf%2BkQK%2Bxzjn7kSt0jxa1Tgm7v1ZCt5vzLc36%2F2q12UwqaK84%2FizCiSlhTRG2rQYY5rqZFE52QcsdpwXI2Uto%2FVbGHyQUFfV1QazFZiRf%2FD3nqpcZFxl%2FZtpWo7gpHASYVu8xC2guQbazP9DqYT2w4t%2F98L0RYxuPe0g8ABWqVjc32Ac5tRw48%2BY2TD1o1dT%2BAKme3b621kLPmczRtq14FXDzFVUCb2oA3A6K0kPJ85vXidiS44heJWlXkRseBtiE%2F6FT2vBpsOE6K2kdNt2CTfNLvdntlZ%2BfwiGcwehIWJVRebXktvGNBV9w%3D%3D",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/AnsAAeSw6otq8hfa/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.55",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "4.78",
+            "currency": "EUR"
+          }
+        }
+      ],
+      "itemGroupType": "SELLER_DEFINED_VARIATIONS",
+      "itemGroupHref": "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group?item_group_id=336833205199"
+    },
+    {
+      "itemId": "v1|296375051309|594359491096",
+      "legacyItemId": "296375051309",
+      "title": "LEGO Minecraft Serie 1 Trading Cards Sammelkarten 151-254 + Limitierte Karten",
+      "itemWebUrl": "https://www.ebay.de/itm/296375051309?_skw=lego+minecraft+karten+serie+3&hash=item450154642d:g:xCgAAOSwbZln~QRD",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/xCgAAOSwbZln~QRD/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ],
+      "itemGroupType": "SELLER_DEFINED_VARIATIONS",
+      "itemGroupHref": "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group?item_group_id=296375051309"
+    },
+    {
+      "itemId": "v1|296375051455|594359461439",
+      "legacyItemId": "296375051455",
+      "title": "LEGO Minecraft Serie 1 Trading Cards Sammelkarten 1-150",
+      "itemWebUrl": "https://www.ebay.de/itm/296375051455?_skw=lego+minecraft+karten+serie+3&hash=item45015464bf:g:WzUAAOSwcKhmIVxo",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/WzUAAOSwcKhmIVxo/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.49",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ],
+      "itemGroupType": "SELLER_DEFINED_VARIATIONS",
+      "itemGroupHref": "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group?item_group_id=296375051455"
+    },
+    {
+      "itemId": "v1|305536785803|0",
+      "legacyItemId": "305536785803",
+      "title": "LEGO Minecraft Serie 1 Trading Card 3 - Comic Steve - Skin Karte",
+      "itemWebUrl": "https://www.ebay.de/itm/305536785803?_skw=lego+minecraft+karten+serie+3&hash=item4723695d8b:g:zvMAAOSwanlmLlFa",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/zvMAAOSwanlmLlFa/s-l225.jpg"
+      },
+      "price": {
+        "value": "1.39",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|315605969936|617303052637",
+      "legacyItemId": "315605969936",
+      "title": "Lego Minecraft Sammelkarten Serie 1 + Serie 2 + limitierte Karten -zum aussuchen",
+      "itemWebUrl": "https://www.ebay.de/itm/315605969936?_skw=lego+minecraft+on+fire+karte&var=617303052637&hash=item497b94ec10:g:5-cAAeSw14Nq-ZVO",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/5-cAAeSw14Nq-ZVO/s-l225.jpg"
+      },
+      "price": {
+        "value": "4.99",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.99",
+            "currency": "EUR"
+          }
+        }
+      ],
+      "itemGroupType": "SELLER_DEFINED_VARIATIONS",
+      "itemGroupHref": "https://api.ebay.com/buy/browse/v1/item/get_items_by_item_group?item_group_id=315605969936"
+    },
+    {
+      "itemId": "v1|366399742152|0",
+      "legacyItemId": "366399742152",
+      "title": "Lego Minecraft Sammelkarten Serie 2\"LIMITED EDITION\"",
+      "itemWebUrl": "https://www.ebay.de/itm/366399742152?_skw=lego+minecraft+sammelkarten+on+fire&hash=item554f2060c8:g:43YAAeSwPXpqAEAB&amdata=enc%3AAQALAAABAOf5zIIojhOf%2BkQK%2Bxzjn7nXH7Y39kHxnaP5USyyfWHn3HUFjNXUZLJy29pOHnIfsmXtQx6zl0mi%2BzTeS3WGyK6S%2B%2FHlvVkITEN6J0kF%2FmTHpBhaTpfUZUHNIEkg0SOhtzYC1EAHOGGvLaOPwzoaQYQufbeteU7yjFyKfflJfOjX7oFvl5QJmxbAUt13ARtv7z1N9y0mfw1%2Be7qfN0PxTEpV6q5TAUOorNBfKQ65pgyDCA%2B%2BBnDuve24Ui687U%2FX1OCNVP%2BZ4HcsQdgoI7gX9BVwyGC%2BHMF4TQR1HSYQ26D4UI5%2F449YCPeJmHr5grkgKOidMpn1eV2KpvL025hMNCM%3D",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/43YAAeSwPXpqAEAB/s-l225.jpg"
+      },
+      "price": {
+        "value": "20.00",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "0.80",
+            "currency": "EUR"
+          }
+        }
+      ]
+    },
+    {
+      "itemId": "v1|294036373907|0",
+      "legacyItemId": "294036373907",
+      "title": "Minecraft Trading Cards 2021 - Nr. 215 On the Ice Action Foil Karte",
+      "itemWebUrl": "https://www.ebay.de/itm/294036373907?_skw=minecraft+on+fire+karte&hash=item4475ef0193:g:gl8AAOSwG~9gip2B",
+      "image": {
+        "imageUrl": "https://i.ebayimg.com/images/g/gl8AAOSwG~9gip2B/s-l225.jpg"
+      },
+      "price": {
+        "value": "4.39",
+        "currency": "EUR"
+      },
+      "buyingOptions": [
+        "FIXED_PRICE"
+      ],
+      "shippingOptions": [
+        {
+          "shippingCostType": "FIXED",
+          "shippingCost": {
+            "value": "1.30",
+            "currency": "EUR"
+          }
+        }
       ]
     }
   ]

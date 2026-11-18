@@ -45,8 +45,18 @@ export interface FetchResult {
    * are not counted.
    */
   skippedNoId?: number;
+  /**
+   * eBay items whose title cannot offer a series 3 single card: series 1 or 2, no series word,
+   * a pick list, a number range, or a listing with variations. Not "without card number".
+   */
+  skippedExcluded?: number;
   /** Product boxes or items without a usable link or title. */
   skippedInvalid?: number;
+  /**
+   * eBay searches cut at the page cap, one note each (query, total, items read). The runner
+   * sends a throttled admin alert: listings past the cap are not seen.
+   */
+  truncated?: string[];
 }
 
 export interface ShopAdapter {
@@ -57,10 +67,12 @@ export interface ShopAdapter {
 /**
  * A shop answered, but not with what a working shop sends: no card on any page, a page that
  * is not a category page (bot wall, maintenance), a page past the first without products, or
- * eBay searches that all came back empty. On collect-it, which hides sold-out cards, also any
- * walk it cannot finish (a missing, unreadable or wrong canonical or next link, the page cap),
- * a walk that does not add up to the shop's article total or has a short middle page, and any
- * product box it cannot read. The runner treats it like a failed fetch.
+ * eBay searches that all came back empty; on eBay also a walk ending further below the total
+ * than its tolerance, a first page with neither items nor total, and an answer of the wrong
+ * shape. On collect-it, which hides sold-out cards, also any walk it cannot finish (a
+ * missing, unreadable or wrong canonical or next link, the page cap), a walk that does not add
+ * up to the shop's article total or has a short middle page, and any product box it cannot
+ * read. The runner treats it like a failed fetch.
  */
 export class ShopLayoutError extends Error {
   constructor(message: string) {
@@ -69,7 +81,10 @@ export class ShopLayoutError extends Error {
   }
 }
 
-/** Test seam: how to wait (default `sleep`) and how long (default 1500 ms) between two page requests. */
+/**
+ * Test seam: how to wait (default `sleep`) and how long (default 1500 ms) between two page
+ * requests.
+ */
 export interface AdapterOptions {
   sleep?: (ms: number) => Promise<void>;
   delayMs?: number;

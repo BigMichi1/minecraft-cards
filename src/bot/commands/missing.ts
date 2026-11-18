@@ -1,7 +1,13 @@
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { formatCardList } from '../cards/cardId';
+import { catalogManager } from '../database/catalogManager';
+import { listingManager } from '../database/listingManager';
+import { runManager } from '../database/runManager';
 import { userManager, type ListChange } from '../database/userManager';
+import { SHOP_IDS, type ShopId } from '../shops/types';
+import type { CardId } from '../cards/cardId';
+import { buildStatusReply } from './missingStatus';
 import { joinWithinLimit } from '../utils/messageLimit';
 import { replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
@@ -48,7 +54,12 @@ export const data = new SlashCommandBuilder()
       )
   )
   .addSubcommand((sub) => sub.setName('list').setDescription('Show your missing list'))
-  .addSubcommand((sub) => sub.setName('clear').setDescription('Empty your missing list'));
+  .addSubcommand((sub) => sub.setName('clear').setDescription('Empty your missing list'))
+  .addSubcommand((sub) =>
+    sub
+      .setName('status')
+      .setDescription('Your missing cards with what each shop showed at the last check')
+  );
 
 function describeChange(change: ListChange): string {
   if (change.ok) {
@@ -59,6 +70,28 @@ function describeChange(change: ListChange): string {
   }
   if (change.reason === 'empty') return 'No card numbers found. Example: 12, 45, LE8';
   return joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(change.invalid)]);
+}
+
+/** Gather what `/missing status` shows (all reads) and format it. */
+function status(userId: string): string {
+  const cards = userManager.getList(userId);
+  const lastSuccess: Partial<Record<ShopId, number>> = {};
+  for (const shop of SHOP_IDS) {
+    const at = runManager.lastSuccess(shop);
+    if (at !== undefined) lastSuccess[shop] = at;
+  }
+  const names = new Map<CardId, string>();
+  for (const card of cards) {
+    const name = catalogManager.getCard(card)?.name;
+    if (name) names.set(card, name);
+  }
+  return buildStatusReply({
+    cards,
+    last: runManager.last(),
+    lastSuccess,
+    listings: listingManager.listingsForCards(cards),
+    names,
+  });
 }
 
 function run(interaction: ChatInputCommandInteraction): string {
@@ -86,6 +119,8 @@ function run(interaction: ChatInputCommandInteraction): string {
     case 'clear':
       userManager.clearList(userId);
       return 'Your missing list is now empty.';
+    case 'status':
+      return status(userId);
     default:
       throw new Error(`Unknown /missing subcommand: ${sub}`);
   }

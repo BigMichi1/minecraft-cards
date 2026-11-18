@@ -2,7 +2,10 @@ import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { MessageFlags } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
-import { cards, users, wantedCards } from '../database/schema/index';
+import { cards, listingCards, listings, runs, users, wantedCards } from '../database/schema/index';
+import { listingManager } from '../database/listingManager';
+import { runManager } from '../database/runManager';
+import { cid } from '../../test/cardIds';
 import { catalogManager } from '../database/catalogManager';
 import { execute, data } from './missing';
 
@@ -34,15 +37,25 @@ describe('/missing', () => {
 
   beforeEach(() => {
     replies = [];
+    db.delete(listingCards).run();
+    db.delete(listings).run();
+    db.delete(runs).run();
     db.delete(wantedCards).run();
     db.delete(users).run();
     db.delete(cards).run();
     catalogManager.seedIfEmpty();
   });
 
-  test('declares the five subcommands with max_length 6000 on list', () => {
+  test('declares the six subcommands with max_length 6000 on list', () => {
     const json = data.toJSON();
-    expect(json.options?.map((o) => o.name)).toEqual(['set', 'add', 'remove', 'list', 'clear']);
+    expect(json.options?.map((o) => o.name)).toEqual([
+      'set',
+      'add',
+      'remove',
+      'list',
+      'clear',
+      'status',
+    ]);
     const set = json.options![0] as { options: Array<{ max_length?: number }> };
     expect(set.options[0]!.max_length).toBe(6000);
   });
@@ -106,5 +119,44 @@ describe('/missing', () => {
   test('duplicate invalid tokens appear once', async () => {
     await execute(fakeInteraction('u1', 'add', '9999, 9999, abc, 9999'));
     expect(lastReply().content).toBe('Nothing changed. Unknown or invalid: abc, 9999');
+  });
+  test('status shows the last check and each card with its shop state, ephemeral', async () => {
+    const T = 1_800_000_000_000;
+    await execute(fakeInteraction('u1', 'set', '12'));
+    listingManager.upsertFromRun(
+      'sammel-ente',
+      [
+        {
+          shop: 'sammel-ente',
+          url: 'https://shop-sammel-ente.de/x/MNC-03XX-BAS-0012',
+          title: 'LEGO Minecraft Serie 3 | #012 Squid',
+          cardIds: [cid('12')],
+          cardName: 'Squid',
+          imageUrl: null,
+          price: { cents: 55, currency: 'EUR' },
+          available: true,
+          format: 'shop',
+          auctionEndsAt: null,
+          idConflict: false,
+        },
+      ],
+      T
+    );
+    runManager.record({
+      startedAt: T,
+      finishedAt: T + 1,
+      shops: { 'sammel-ente': { listings: 1 } },
+      notified: 0,
+      dmFailures: 0,
+    });
+    await execute(fakeInteraction('u1', 'status'));
+    expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
+    expect(lastReply().content).toContain(`Your missing cards (1) · last check <t:${T / 1000}:R>`);
+    expect(lastReply().content).toContain('#12: sammel-ente 0,55 € in stock');
+  });
+
+  test('status on an empty list', async () => {
+    await execute(fakeInteraction('u1', 'status'));
+    expect(lastReply().content).toBe('You have no missing cards on your list.');
   });
 });

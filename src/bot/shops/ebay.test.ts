@@ -5,6 +5,7 @@ import {
   COUNT_WORDS,
   createEbayAdapter,
   extractCardIdsFromTitle,
+  isPictureCandidate,
   titleExclusion,
   EBAY_QUERIES,
 } from './ebay';
@@ -85,6 +86,12 @@ const FIXTURE_IDS: Record<string, string[]> = {
   // No series word.
   '294036373907': [],
 };
+
+/**
+ * The fixture items without ids whose title passes every single-card check, so the picture
+ * decides their card (rule 4, docs/image-matching.md). Reviewed by hand.
+ */
+const FIXTURE_CANDIDATES = new Set(['336881691966']);
 
 const fixtureKey = (item: FixtureItem) =>
   item.legacyItemId ?? /^v1\|(\d+)\|/.exec(item.itemId)?.[1] ?? item.itemId;
@@ -548,6 +555,51 @@ describe('extractCardIdsFromTitle', () => {
   });
 });
 
+describe('isPictureCandidate', () => {
+  test('a series 3 title naming no card, product, count or number is a candidate', () => {
+    expect(isPictureCandidate('LEGO Minecraft On Fire Serie 3 Ender Dragon')).toBe(true);
+    expect(isPictureCandidate('Lego Minecraft Karte Serie 3 Chast Ultra Rare')).toBe(true);
+    expect(isPictureCandidate('LEGO Minecraft Serie 3 (2026) Steve Ultra Rare')).toBe(true);
+    expect(isPictureCandidate('LEGO MINECRAFT ON FIRE LIMITED EDITION GOLD GHAST')).toBe(true);
+  });
+
+  test('a title failing the series 3 check or excluded is no candidate', () => {
+    expect(isPictureCandidate('LEGO Minecraft Serie 1 Steve')).toBe(false);
+    expect(isPictureCandidate('LEGO Minecraft Steve')).toBe(false);
+    expect(isPictureCandidate('On Fire Karte Steve zum aussuchen')).toBe(false);
+  });
+
+  test('a product or count word makes it no candidate', () => {
+    expect(isPictureCandidate('LEGO Minecraft Serie 3 Booster')).toBe(false);
+    expect(isPictureCandidate('LEGO Minecraft On Fire Blister Ender Dragon')).toBe(false);
+    expect(isPictureCandidate('LEGO Minecraft On Fire Steve Holo')).toBe(false);
+    expect(isPictureCandidate('LEGO Minecraft On Fire Karten Steve Alex')).toBe(false);
+    expect(isPictureCandidate('LEGO Minecraft On Fire Lot Creeper')).toBe(false);
+  });
+
+  test('any number besides the series and a year makes it no candidate', () => {
+    // A count the patterns do not know: "6 TradingCards ... 1 special Card".
+    expect(isPictureCandidate('lego© MINECRAFT 6  TradingCards ON FIRE incl. 1 special Card')).toBe(
+      false
+    );
+    expect(isPictureCandidate('On Fire Steve 45')).toBe(false);
+    expect(isPictureCandidate('On Fire Karte 12')).toBe(false);
+    expect(isPictureCandidate('Serie 3 Steve 6+')).toBe(false);
+  });
+
+  test('every fixture title without ids is reviewed as a candidate or not', () => {
+    for (const item of fixtureItems) {
+      const key = fixtureKey(item);
+      if ((FIXTURE_IDS[key] ?? []).length > 0) continue;
+      expect({ key, title: item.title, candidate: isPictureCandidate(item.title) }).toEqual({
+        key,
+        title: item.title,
+        candidate: FIXTURE_CANDIDATES.has(key),
+      });
+    }
+  });
+});
+
 function makeFetch(
   options: {
     tokenStatus?: number;
@@ -599,12 +651,12 @@ describe('createEbayAdapter', () => {
     });
     const { listings, skippedNoId, skippedExcluded, skippedInvalid } =
       await adapter.fetchListings();
-    // 4 made-up and 20 real items with ids. Without: 13 real titles excluded (6 pick lists, one
-    // of them "zufällige Auswahl", 5 series 1/2, 2 without a series word), 1 made-up and 5 real
-    // series 3 titles naming no card.
-    expect(listings).toHaveLength(24);
+    // 4 made-up and 20 real items with ids, and 1 real picture candidate. Without: 13 real
+    // titles excluded (6 pick lists, one of them "zufällige Auswahl", 5 series 1/2, 2 without a
+    // series word), 1 made-up and 4 real series 3 titles naming no card.
+    expect(listings).toHaveLength(25);
     expect(skippedExcluded).toBe(13);
-    expect(skippedNoId).toBe(6);
+    expect(skippedNoId).toBe(5);
     expect(skippedInvalid).toBe(0);
     expect(fake.tokenCalls).toBe(1);
     expect(fake.searchUrls).toHaveLength(EBAY_QUERIES.length);
@@ -642,6 +694,15 @@ describe('createEbayAdapter', () => {
       format: 'fixed_price',
     });
     expect(listings.some((l) => l.url.endsWith('298476153721'))).toBe(false);
+
+    // The candidate carries no card ids; the picture decides (rule 4).
+    expect(listings.find((l) => l.url.endsWith('336881691966'))).toMatchObject({
+      title: 'Lego Minecraft Karte Serie 3 Chast Ultra Rare',
+      cardIds: [],
+      idSource: 'picture',
+    });
+    expect(listings.filter((l) => l.idSource === 'picture')).toHaveLength(1);
+    expect(listings.filter((l) => l.cardIds.length === 0)).toHaveLength(1);
   });
 
   test('searches every query once, in order, the broad series 3 query included', async () => {
@@ -1105,6 +1166,54 @@ describe('createEbayAdapter', () => {
       sleep: noSleep,
     });
     await expect(adapter.fetchListings()).rejects.toBeInstanceOf(ShopLayoutError);
+  });
+
+  test('a picture candidate is passed on without ids; a variation listing never is', async () => {
+    const fake = makeFetch({
+      searchBody: () =>
+        body(
+          item({ title: 'LEGO Minecraft On Fire Serie 3 Ender Dragon' }),
+          item({
+            itemId: 'v1|220000000002|0',
+            legacyItemId: '220000000002',
+            title: 'LEGO Minecraft On Fire Serie 3 Steve',
+            itemGroupType: 'SELLER_DEFINED_VARIATIONS',
+          }),
+          item({
+            itemId: 'v1|220000000003|0',
+            legacyItemId: '220000000003',
+            title: 'LEGO Minecraft Serie 3 Booster',
+          })
+        ),
+    });
+    const adapter = createEbayAdapter({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    });
+    const result = await adapter.fetchListings();
+    expect(result.listings).toEqual([
+      expect.objectContaining({
+        url: 'https://www.ebay.de/itm/220000000001',
+        cardIds: [],
+        idSource: 'picture',
+      }),
+    ]);
+    expect(result).toMatchObject({ skippedExcluded: 1, skippedNoId: 1 });
+  });
+
+  test('a titled listing carries no picture id source', async () => {
+    const fake = makeFetch({ searchBody: () => body(item({})) });
+    const adapter = createEbayAdapter({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    });
+    const [listing] = (await adapter.fetchListings()).listings;
+    expect(listing!.cardIds).toEqual([cid('12')]);
+    expect(listing!.idSource).toBeUndefined();
   });
 
   test('one search with items is enough, even when none of them names a card', async () => {

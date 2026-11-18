@@ -293,6 +293,25 @@ export function extractCardIdsFromTitle(title: string): CardId[] {
   return [...ids].sort(compareCardIds);
 }
 
+// Any COUNT_WORDS word as a whole word: a pack, lot, count or price is never one single card.
+const ANY_COUNT_WORD = new RegExp(`(?<![${LETTER}])${wordsPattern(COUNT_WORDS)}`, 'i');
+// The numbers a single-card title may carry without naming a card: the series ("Serie 3",
+// "Series3") and a year ("2026").
+const SERIES_OR_YEAR = /\b(?:Series?|Staffel)\s*\d+\b|\b(?:19|20)\d{2}\b/gi;
+
+/**
+ * Whether a title naming no card id may still offer one series 3 single card, so its picture
+ * decides the card (docs/image-matching.md, rule 4): titleExclusion lets it through, and it has
+ * no COUNT_WORDS word ("Booster", "Lot", "Karten", "Holo", "5 Stück") and no number but the
+ * series and a year. A number the id patterns do not read is a count as often as a card
+ * ("6 TradingCards ... 1 special Card"), so such a title is not left to the picture.
+ */
+export function isPictureCandidate(title: string): boolean {
+  if (titleExclusion(title) !== null) return false;
+  if (ANY_COUNT_WORD.test(title)) return false;
+  return !/\d/.test(title.replace(SERIES_OR_YEAR, ' '));
+}
+
 interface EbayMoney {
   value?: string;
   currency?: string;
@@ -358,7 +377,13 @@ function listingUrl(item: EbayItem): string | null {
   }
 }
 
-function toListing(item: EbayItem, url: string, title: string, cardIds: CardId[]): Listing {
+function toListing(
+  item: EbayItem,
+  url: string,
+  title: string,
+  cardIds: CardId[],
+  pictureOnly = false
+): Listing {
   const isAuction = item.buyingOptions?.includes('AUCTION') ?? false;
   const endsAt = isAuction && item.itemEndDate ? Date.parse(item.itemEndDate) : Number.NaN;
   return {
@@ -373,6 +398,7 @@ function toListing(item: EbayItem, url: string, title: string, cardIds: CardId[]
     format: isAuction ? 'auction' : 'fixed_price',
     auctionEndsAt: Number.isNaN(endsAt) ? null : endsAt,
     idConflict: false,
+    ...(pictureOnly ? { idSource: 'picture' as const } : {}),
   };
 }
 
@@ -647,6 +673,11 @@ export function createEbayAdapter(
             continue;
           }
           const cardIds = extractCardIdsFromTitle(title);
+          if (cardIds.length === 0 && isPictureCandidate(title)) {
+            // No card id, but one single card: passed on without ids for the picture to decide.
+            byUrl.set(url, toListing(item, url, title, [], true));
+            continue;
+          }
           if (cardIds.length === 0) {
             noId.add(url);
             logger.debug(`eBay: skipped "${clip(title)}" (no card id)`);

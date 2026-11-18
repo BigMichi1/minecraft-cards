@@ -3,8 +3,13 @@
  * - `reference`: sammel-ente, whose pictures are the references.
  * - `pending`: not compared yet: a new single-card listing of a shop other than sammel-ente, or
  *   one whose picture, cards or id conflict changed (several cards make it a `bundle`).
- * - `confirmed`: picture matches the reference, or the admin mapped it (`similarity` null).
- * - `unconfirmed`: compared and below the threshold, an id conflict, or no picture to compare.
+ * - `confirmed`: picture matches the reference, or the admin mapped it (`similarity` null); for
+ *   an eBay listing whose title names no card, the picture decided its card (`idSource`
+ *   `picture`).
+ * - `unconfirmed`: compared and below the threshold, an id conflict, or no picture to compare;
+ *   for a title naming no card, a picture that decided nothing (the listing keeps no cards).
+ * - `mismatch`: the picture decides another card than the title names (`pictureCardId`); never
+ *   sent to users, the admin gets a note.
  * - `no_reference`: the card has no reference picture yet.
  * - `model_unavailable`: no image model loaded, or the model failed on the picture.
  * - `image_unavailable`: a picture could not be loaded (host, redirect, HTTP, network, size,
@@ -20,6 +25,7 @@ export const MATCH_STATUSES = [
   'model_unavailable',
   'image_unavailable',
   'bundle',
+  'mismatch',
 ] as const;
 export type MatchStatus = (typeof MATCH_STATUSES)[number];
 

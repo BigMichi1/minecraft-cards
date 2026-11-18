@@ -42,6 +42,8 @@ function listing(shop: ShopId, cards: CardId[], over: Partial<StoredListing> = {
     onHold: false,
     manualOverride: false,
     lastSeenAt: T,
+    idSource: 'title',
+    pictureCardId: null,
     ...over,
   };
 }

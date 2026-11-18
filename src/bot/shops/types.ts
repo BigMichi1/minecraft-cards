@@ -7,6 +7,13 @@ export type ShopId = (typeof SHOP_IDS)[number];
 export const LISTING_FORMATS = ['shop', 'auction', 'fixed_price'] as const;
 export type ListingFormat = (typeof LISTING_FORMATS)[number];
 
+/**
+ * Where a listing's card ids come from: its `title` (every shop), or, for an eBay title that
+ * names no card but passes every single-card check, its `picture` (matcher/identify.ts).
+ */
+export const ID_SOURCES = ['title', 'picture'] as const;
+export type IdSource = (typeof ID_SOURCES)[number];
+
 export interface Money {
   cents: number;
   currency: string;
@@ -29,6 +36,12 @@ export interface Listing {
   auctionEndsAt: number | null;
   /** blue-ocean only: the card number in the URL and in the image file name disagree. */
   idConflict: boolean;
+  /**
+   * Absent or `title` for every listing whose title names its cards. `picture` (eBay only): the
+   * title names no card but could be a single card, `cardIds` is empty, and the picture decides
+   * the card (docs/image-matching.md, rule 4).
+   */
+  idSource?: IdSource;
 }
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
@@ -41,8 +54,9 @@ export interface FetchResult {
   listings: Listing[];
   /**
    * Items whose card number could not be read: sammel-ente titles with a "| #" number that does
-   * not parse, eBay titles naming no card. Other sammel-ente products (boosters, puzzle packs)
-   * are not counted.
+   * not parse, eBay titles naming no card (but not the picture candidates, which are listings
+   * with `idSource` `picture`). Other sammel-ente products (boosters, puzzle packs) are not
+   * counted.
    */
   skippedNoId?: number;
   /**

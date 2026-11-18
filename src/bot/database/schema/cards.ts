@@ -6,6 +6,8 @@ export const cards = sqliteTable('cards', {
   type: text({ enum: CARD_TYPES }).notNull(),
   name: text(),
   referenceImageUrl: text(),
+  /** A puzzle card ("Puzzlekarte" in the sammel-ente name); never identified by picture alone. */
+  puzzle: integer({ mode: 'boolean' }).notNull().default(false),
   updatedAt: integer().notNull(),
 });
 

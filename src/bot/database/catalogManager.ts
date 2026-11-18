@@ -1,4 +1,4 @@
-import { count, eq, inArray } from 'drizzle-orm';
+import { count, eq, inArray, isNotNull } from 'drizzle-orm';
 import {
   cardType,
   compareCardIds,
@@ -15,6 +15,23 @@ export interface CatalogCard {
   type: CardType;
   name: string | null;
   referenceImageUrl: string | null;
+  /** A puzzle card: never identified by its picture alone (docs/image-matching.md, rule 5). */
+  puzzle: boolean;
+}
+
+/** A card with a reference picture, for the picture identification. */
+export interface ReferenceCard {
+  cardId: CardId;
+  referenceImageUrl: string;
+  puzzle: boolean;
+}
+
+/**
+ * sammel-ente names its puzzle cards "Puzzlekarte <picture> <piece>" ("#154 Puzzlekarte
+ * Oberwelt 1", 2026-11-18); that is where the catalog learns which cards are puzzle cards.
+ */
+function isPuzzleCardName(name: string): boolean {
+  return /\bPuzzlekarte\b/i.test(name);
 }
 
 export interface ImportPreview {
@@ -83,15 +100,35 @@ export const catalogManager = {
         type: cards.type,
         name: cards.name,
         referenceImageUrl: cards.referenceImageUrl,
+        puzzle: cards.puzzle,
       })
       .from(cards)
       .where(eq(cards.cardId, id))
       .get();
   },
 
+  /** Every card with a reference picture, in card order. */
+  referenceCards(): ReferenceCard[] {
+    return db
+      .select({
+        cardId: cards.cardId,
+        referenceImageUrl: cards.referenceImageUrl,
+        puzzle: cards.puzzle,
+      })
+      .from(cards)
+      .where(isNotNull(cards.referenceImageUrl))
+      .all()
+      .flatMap((c) =>
+        c.referenceImageUrl === null ? [] : [{ ...c, referenceImageUrl: c.referenceImageUrl }]
+      )
+      .sort((a, b) => compareCardIds(a.cardId, b.cardId));
+  },
+
   /**
    * Update name and reference image for catalog ids; unknown ids are ignored. An entry without
-   * a picture keeps the stored reference: a listing that lost its picture must not erase it.
+   * a picture keeps the stored reference: a listing that lost its picture must not erase it. A
+   * puzzle card name (isPuzzleCardName) marks the card as a puzzle card; the mark is never
+   * lifted, so a renamed listing cannot make a puzzle card count as decided by its picture.
    */
   updateNamesAndReferences(
     entries: { cardId: CardId; name: string; imageUrl: string | null }[]
@@ -103,6 +140,7 @@ export const catalogManager = {
           .set({
             name: e.name,
             ...(e.imageUrl === null ? {} : { referenceImageUrl: e.imageUrl }),
+            ...(isPuzzleCardName(e.name) ? { puzzle: true } : {}),
             updatedAt: now,
           })
           .where(eq(cards.cardId, e.cardId))

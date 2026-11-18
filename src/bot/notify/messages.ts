@@ -98,6 +98,9 @@ function footer(listing: StoredListing): string | null {
       return 'ℹ️ picture check unavailable';
     case 'image_unavailable':
       return 'ℹ️ picture could not be loaded';
+    case 'mismatch':
+      // Never sent to users (pendingNotifications); kept for an exhaustive switch.
+      return `⚠️ the picture shows #${listing.pictureCardId ?? '?'}, not #${listing.cardIds[0] ?? '?'}`;
     case 'reference':
       return null;
   }

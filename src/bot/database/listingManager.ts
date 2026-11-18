@@ -1,7 +1,13 @@
-import { and, eq, gte, inArray, isNull, lt, notInArray, or } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
 import type { MatchStatus, ResolvedMatchStatus } from '../matcher/matchStatus';
-import type { ListingFormat, Listing as ShopListing, Money, ShopId } from '../shops/types';
+import type {
+  IdSource,
+  ListingFormat,
+  Listing as ShopListing,
+  Money,
+  ShopId,
+} from '../shops/types';
 import { db } from './db';
 import { listingCards, listings, notifications, reports } from './schema/index';
 import type { Listing as ListingRow } from './schema/index';
@@ -28,6 +34,10 @@ export type StoredListing = {
   manualOverride: boolean;
   /** When a check last returned this listing. */
   lastSeenAt: number;
+  /** `picture`: the title names no card; `cardIds` is the picture's card, or empty. */
+  idSource: IdSource;
+  /** The card the picture was taken for (see the `pictureCardId` column), or null. */
+  pictureCardId: CardId | null;
 };
 
 /** One listing to tell a user about: the cards of it they want, for this availability period. */
@@ -83,6 +93,8 @@ function toStored(row: ListingRow, cardIds: CardId[]): StoredListing {
     onHold: row.onHold,
     manualOverride: row.manualOverride,
     lastSeenAt: row.lastSeenAt,
+    idSource: row.idSource,
+    pictureCardId: row.pictureCardId,
   };
 }
 
@@ -158,6 +170,7 @@ export const listingManager = {
           auctionEndsAt: item.auctionEndsAt,
           available: item.available,
           idConflict: item.idConflict,
+          idSource: item.idSource ?? 'title',
           lastSeenAt: now,
         };
         if (!existing) {
@@ -178,15 +191,27 @@ export const listingManager = {
           continue;
         }
         const storedCards = cardIdsOf(tx, [existing.id]).get(existing.id) ?? [];
-        const newCards = existing.manualOverride
-          ? storedCards
-          : [...new Set(item.cardIds)].sort(compareCardIds);
+        // A title naming no card, rescraped unchanged, keeps the card its picture gave it.
+        const samePictureOnly =
+          fields.idSource === 'picture' &&
+          existing.idSource === 'picture' &&
+          existing.title === item.title &&
+          existing.imageUrl === item.imageUrl;
+        const newCards =
+          existing.manualOverride || samePictureOnly
+            ? storedCards
+            : [...new Set(item.cardIds)].sort(compareCardIds);
         const cardsChanged = newCards.join(',') !== storedCards.join(',');
-        // An admin-mapped listing stays confirmed: its cards and status are the admin's.
+        // An admin-mapped listing stays confirmed: its cards and status are the admin's. A
+        // changed title compares again where the picture's card is at stake: a title naming
+        // no card, and a mismatch.
+        const titleMatters = fields.idSource === 'picture' || existing.matchStatus === 'mismatch';
         const rematch =
           !existing.manualOverride &&
           (existing.imageUrl !== item.imageUrl ||
             cardsChanged ||
+            existing.idSource !== fields.idSource ||
+            (titleMatters && existing.title !== item.title) ||
             existing.idConflict !== item.idConflict);
         tx.update(listings)
           .set({
@@ -201,6 +226,7 @@ export const listingManager = {
                   matchStatus: defaultMatchStatus(existing.shop, newCards),
                   similarity: null,
                   matchCheckedAt: null,
+                  pictureCardId: null,
                 }
               : {}),
           })
@@ -233,21 +259,35 @@ export const listingManager = {
     });
   },
 
+  /**
+   * Store a comparison. `pictureCardId` is the card the picture was taken for (matchListing's
+   * `picture`). A listing whose title names no card (`idSource` `picture`) gets exactly that
+   * card when confirmed and no card otherwise; an admin-mapped listing keeps the admin's cards.
+   */
   setMatch(
     listingId: number,
     status: ResolvedMatchStatus,
     similarity: number | null,
-    now: number
+    now: number,
+    pictureCardId: CardId | null = null
   ): void {
-    db.update(listings)
-      .set({ matchStatus: status, similarity, matchCheckedAt: now })
-      .where(eq(listings.id, listingId))
-      .run();
+    db.transaction((tx) => {
+      const row = tx.select().from(listings).where(eq(listings.id, listingId)).get();
+      if (!row) return;
+      tx.update(listings)
+        .set({ matchStatus: status, similarity, matchCheckedAt: now, pictureCardId })
+        .where(eq(listings.id, listingId))
+        .run();
+      if (row.idSource === 'picture' && !row.manualOverride) {
+        writeCards(tx, listingId, status === 'confirmed' && pictureCardId ? [pictureCardId] : []);
+      }
+    });
   },
 
   /**
-   * Available, not on hold, not an ended auction, seen since `seenSince`, sharing a card with
-   * the user's list, and not yet notified for this availability period.
+   * Available, not on hold, not a `mismatch` (the picture shows another card), not an ended
+   * auction, seen since `seenSince`, sharing a card with the user's list, and not yet notified
+   * for this availability period.
    */
   pendingNotifications(options: PendingOptions = {}): PendingNotifications {
     const now = options.now ?? Date.now();
@@ -259,6 +299,7 @@ export const listingManager = {
           and(
             eq(listings.available, true),
             eq(listings.onHold, false),
+            ne(listings.matchStatus, 'mismatch'),
             options.seenSince === undefined
               ? undefined
               : gte(listings.lastSeenAt, options.seenSince)
@@ -324,6 +365,7 @@ export const listingManager = {
           manualOverride: true,
           matchStatus: 'confirmed',
           similarity: null,
+          pictureCardId: null,
           onHold: false,
           availableSince: row.available ? now : null,
         })

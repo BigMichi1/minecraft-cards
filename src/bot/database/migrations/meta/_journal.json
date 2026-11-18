@@ -22,6 +22,13 @@
       "when": 1794920971482,
       "tag": "0002_warm_bloodstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1795006815237,
+      "tag": "0003_overjoyed_lizard",
+      "breakpoints": true
     }
   ]
 }

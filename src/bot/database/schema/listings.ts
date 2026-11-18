@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, real, primaryKey } from 'drizzle-orm/sqlite-core';
 import type { CardId } from '../../cards/cardId';
 import { MATCH_STATUSES } from '../../matcher/matchStatus';
-import { LISTING_FORMATS, SHOP_IDS } from '../../shops/types';
+import { ID_SOURCES, LISTING_FORMATS, SHOP_IDS } from '../../shops/types';
 
 export const listings = sqliteTable('listings', {
   id: integer().primaryKey({ autoIncrement: true }),
@@ -23,6 +23,13 @@ export const listings = sqliteTable('listings', {
   idConflict: integer({ mode: 'boolean' }).notNull().default(false),
   onHold: integer({ mode: 'boolean' }).notNull().default(false),
   manualOverride: integer({ mode: 'boolean' }).notNull().default(false),
+  /** `picture`: the eBay title names no card, its card (if any) is the picture's. */
+  idSource: text({ enum: ID_SOURCES }).notNull().default('title'),
+  /**
+   * The card the picture was taken for: the title card (confirmed), another card (`mismatch`),
+   * or the card of a title naming none. Null when the picture decided nothing or was not compared.
+   */
+  pictureCardId: text().$type<CardId>(),
   firstSeenAt: integer().notNull(),
   lastSeenAt: integer().notNull(),
 });

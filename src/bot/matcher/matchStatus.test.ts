@@ -6,5 +6,6 @@ describe('MATCH_STATUSES', () => {
     expect(new Set(MATCH_STATUSES).size).toBe(MATCH_STATUSES.length);
     expect(MATCH_STATUSES).toContain('pending');
     expect(MATCH_STATUSES).toContain('image_unavailable');
+    expect(MATCH_STATUSES).toContain('mismatch');
   });
 });

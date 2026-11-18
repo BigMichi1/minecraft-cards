@@ -34,6 +34,8 @@ function listing(i: number, over: Partial<StoredListing> = {}): StoredListing {
     onHold: false,
     manualOverride: false,
     lastSeenAt: 1,
+    idSource: 'title',
+    pictureCardId: null,
     ...over,
   };
 }
@@ -248,6 +250,18 @@ describe('notification messages', () => {
     expect(labels(1)).toContain('#12 · blue-ocean');
     expect(labels(2)).toEqual(['Kleinanzeigen #12', '❌ Wrong #12']);
     expect(msgs.map((m) => m.items.map((x) => x.listing.id))).toEqual([[1], [2], [3]]);
+  });
+
+  test('a mismatch (never sent to users) names the card the picture shows', () => {
+    const e = embedJson(
+      atMsg(
+        buildNotificationMessages([
+          item(1, { matchStatus: 'mismatch', pictureCardId: cid('45'), similarity: 0.5 }),
+        ]),
+        0
+      )
+    );
+    expect(e.footer.text).toBe('⚠️ the picture shows #45, not #12');
   });
 
   test('an admin-mapped listing reads as checked by the admin', () => {

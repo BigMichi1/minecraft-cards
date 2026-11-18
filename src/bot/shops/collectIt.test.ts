@@ -137,17 +137,44 @@ describe('parseCollectItPage', () => {
     expect(parseCollectItPage(readFixture('collect-it-product-12.html')).productCount).toBe(0);
   });
 
-  test('reads OutOfStock as unavailable and LimitedAvailability as available', () => {
-    const page = (href: string) =>
-      firstBoxOnly(($, box) => box.find('link[itemprop="availability"]').attr('href', href));
-    expect(parseCollectItPage(page('https://schema.org/OutOfStock')).listings[0]?.available).toBe(
-      false
-    );
-    expect(
-      parseCollectItPage(page('https://schema.org/LimitedAvailability')).listings[0]?.available
-    ).toBe(true);
-    const none = firstBoxOnly(($, box) => box.find('link[itemprop="availability"]').remove());
-    expect(parseCollectItPage(none).listings[0]?.available).toBe(false);
+  describe('availability', () => {
+    const withAvailability = (href: string) =>
+      parseCollectItPage(
+        firstBoxOnly(($, box) => box.find('link[itemprop="availability"]').attr('href', href))
+      );
+    for (const [href, available] of [
+      ['https://schema.org/InStock', true],
+      ['http://schema.org/InStock', true],
+      ['InStock', true],
+      ['https://schema.org/instock', true],
+      ['https://schema.org/LimitedAvailability', true],
+      ['https://schema.org/OnlineOnly', true],
+      ['https://schema.org/OutOfStock', false],
+      ['https://schema.org/SoldOut', false],
+      ['https://schema.org/Discontinued', false],
+      ['https://schema.org/PreOrder', false],
+    ] as const) {
+      test(`${href} reads as ${available ? 'in stock' : 'not available'}`, () => {
+        const parsed = withAvailability(href);
+        expect(parsed.skippedInvalid).toBe(0);
+        expect(parsed.listings[0]?.available).toBe(available);
+      });
+    }
+
+    test('a value outside the schema.org set is an unreadable box, naming the value', () => {
+      const parsed = withAvailability('https://schema.org/Banana');
+      expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
+      expect(parsed.firstSkipped).toContain('https://schema.org/Banana');
+      expect(parsed.firstSkipped).toContain('1 - Alex');
+    });
+
+    test('a box without availability is an unreadable box', () => {
+      const parsed = parseCollectItPage(
+        firstBoxOnly(($, box) => box.find('link[itemprop="availability"]').remove())
+      );
+      expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
+      expect(parsed.firstSkipped).toContain('no availability');
+    });
   });
 
   test('skips and counts a title whose card id cannot be read', () => {
@@ -156,12 +183,15 @@ describe('parseCollectItPage', () => {
     );
     const parsed = parseCollectItPage(html);
     expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedNoId: 1 });
+    expect(parsed.firstSkipped).toContain('"Sammelmappe - Serie 3"');
   });
 
   test('skips and counts a product box without a link', () => {
     const html = firstBoxOnly(($, box) => box.find('a').removeAttr('href'));
     const parsed = parseCollectItPage(html);
     expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
+    expect(parsed.firstSkipped).toContain('without a link');
+    expect(parsed.firstSkipped).toContain('1 - Alex');
   });
 
   test('a missing price is null, not a parse error', () => {
@@ -177,6 +207,7 @@ describe('parseCollectItPage', () => {
       next: null,
       skippedNoId: 0,
       skippedInvalid: 0,
+      firstSkipped: null,
     });
   });
 });
@@ -199,23 +230,38 @@ describe('createCollectItAdapter', () => {
     const result = await adapter.fetchListings();
     expect(calls).toEqual([BASE, `${BASE}_s2`]);
     expect(sleeps).toEqual([1500]);
-    expect(result).toMatchObject({ skippedNoId: 0, skippedInvalid: 0 });
+    // Any skipped box rejects, so a result carries no skipped counts.
+    expect(Object.keys(result)).toEqual(['listings']);
     expect(result.listings).toHaveLength(55);
     expect(result.listings.some((l) => l.cardIds[0] === '12')).toBe(true);
     expect(result.listings.some((l) => l.cardIds[0] === 'LE20')).toBe(true);
   });
 
-  test('sums the skipped counts over the pages', async () => {
+  test('a title whose card id cannot be read rejects, naming the title', async () => {
     const bad = firstBoxOnly(($, box) =>
       box.find('.c-product-box-content-title').text('Sammelmappe - Serie 3')
     );
-    const { fetchFn } = fakeFetch({
+    const error = await rejection({
       Einzelkarten: asPage(P1, 1, true),
       _s2: asPage(bad, 2, false),
     });
-    const result = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
-    expect(result.skippedNoId).toBe(1);
-    expect(result.listings).toHaveLength(30);
+    expect(error.message).toContain('page 2');
+    expect(error.message).toContain('"Sammelmappe - Serie 3"');
+  });
+
+  test('a product box without a link rejects, naming the box', async () => {
+    const bad = firstBoxOnly(($, box) => box.find('a').removeAttr('href'));
+    const error = await rejection({ Einzelkarten: asPage(bad, 1, false) });
+    expect(error.message).toContain('page 1');
+    expect(error.message).toContain('without a link');
+  });
+
+  test('a box with an unknown availability rejects, naming the value', async () => {
+    const bad = firstBoxOnly(($, box) =>
+      box.find('link[itemprop="availability"]').attr('href', 'https://schema.org/Banana')
+    );
+    const error = await rejection({ Einzelkarten: asPage(bad, 1, false) });
+    expect(error.message).toContain('https://schema.org/Banana');
   });
 
   test('throws ShopLayoutError when page 1 is a bot wall', async () => {

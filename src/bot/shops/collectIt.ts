@@ -14,8 +14,29 @@ const BOX = '#product-list .c-product-box';
 // "12 - Squid - Charakterkarte - Serie 3" -> id "12", name "Squid";
 // "LE01 - Ender Dragon - Limitierte Karte - Serie 3" -> id "LE1" (canonical, normalizeCardId).
 const TITLE_PATTERN = /^((?:LE|XXL)?\d+) - (.+?)(?: - |$)/i;
-// schema.org availability values that mean "can be ordered now".
-const AVAILABLE = new Set(['https://schema.org/InStock', 'https://schema.org/LimitedAvailability']);
+// schema.org ItemAvailability values, lowercased, and whether each means "can be ordered now".
+const AVAILABILITY = new Map<string, boolean>([
+  ['instock', true],
+  ['limitedavailability', true],
+  ['onlineonly', true],
+  ['outofstock', false],
+  ['soldout', false],
+  ['discontinued', false],
+  ['backorder', false],
+  ['preorder', false],
+  ['presale', false],
+  ['madetoorder', false],
+  ['instoreonly', false],
+  ['reserved', false],
+]);
+// `https://schema.org/InStock`, `http://schema.org/InStock` or a bare `InStock`.
+const AVAILABILITY_VALUE = /^(?:(?:https?:)?\/\/(?:www\.)?schema\.org\/)?([a-z]+)$/i;
+
+/** Whether an availability href means in stock; null when it is not a known schema.org value. */
+function readAvailability(href: string): boolean | null {
+  const tail = AVAILABILITY_VALUE.exec(href.trim())?.[1]?.toLowerCase();
+  return tail === undefined ? null : (AVAILABILITY.get(tail) ?? null);
+}
 
 const BASE = new URL(BASE_URL);
 const PAGE_SUFFIX = /^_s([1-9]\d*)$/;
@@ -44,8 +65,9 @@ function parsePrice(amount: string | undefined, currency: string | undefined): L
 /**
  * Parse one category page. `productCount` counts every product box of the listing grid;
  * `skippedNoId` counts boxes whose title does not start with a card number (the category holds
- * only singles, so any such title is parser drift), `skippedInvalid` boxes without a link or
- * title. `canonical` and `next` are the raw hrefs of `<link rel="canonical">` and
+ * only singles, so any such title is parser drift), `skippedInvalid` boxes without a link, a
+ * title or a known schema.org availability; `firstSkipped` describes the first skipped box
+ * (null when none was). The adapter rejects a page with any skipped box. `canonical` and `next` are the raw hrefs of `<link rel="canonical">` and
  * `<link rel="next">` (null when absent); the adapter checks them with `categoryPageNumber`.
  */
 export function parseCollectItPage(html: string): {
@@ -55,14 +77,20 @@ export function parseCollectItPage(html: string): {
   next: string | null;
   skippedNoId: number;
   skippedInvalid: number;
+  firstSkipped: string | null;
 } {
   const $ = cheerio.load(html);
   const listings: Listing[] = [];
   let skippedNoId = 0;
   let skippedInvalid = 0;
+  let firstSkipped: string | null = null;
+  const skip = (what: string): void => {
+    logger.warn(`collect-it: skipping ${what}`);
+    firstSkipped ??= what;
+  };
 
   const boxes = $(BOX);
-  boxes.each((_, el) => {
+  boxes.each((index, el) => {
     const box = $(el);
     const title = box
       .find('.c-product-box-content-title')
@@ -72,17 +100,30 @@ export function parseCollectItPage(html: string): {
       .trim();
     const href = box.find('.c-product-box-content a[href]').first().attr('href');
     if (!href || !title) {
+      skip(
+        href
+          ? `a product box without a title (${href})`
+          : `a product box without a link (${title ? `"${title}"` : `box ${index + 1}`})`
+      );
       skippedInvalid++;
       return;
     }
     const match = TITLE_PATTERN.exec(title);
     const cardId = match ? normalizeCardId(match[1] ?? '') : null;
     if (!match || !cardId) {
-      logger.warn(`collect-it: cannot read a card id for "${title}" (${href}), skipping`);
+      skip(`"${title}" (${href}): no card id`);
       skippedNoId++;
       return;
     }
-    const availability = box.find('link[itemprop="availability"]').first().attr('href') ?? '';
+    const availabilityHref = box.find('link[itemprop="availability"]').first().attr('href');
+    const available = availabilityHref === undefined ? null : readAvailability(availabilityHref);
+    if (available === null) {
+      skip(
+        `"${title}" (${href}): ${availabilityHref === undefined ? 'no availability' : `unknown availability "${availabilityHref}"`}`
+      );
+      skippedInvalid++;
+      return;
+    }
     listings.push({
       shop: 'collect-it',
       url: new URL(href, BASE_URL).toString(),
@@ -98,7 +139,7 @@ export function parseCollectItPage(html: string): {
         box.find('meta[itemprop="price"]').first().attr('content'),
         box.find('meta[itemprop="priceCurrency"]').first().attr('content')
       ),
-      available: AVAILABLE.has(availability),
+      available,
       format: 'shop',
       auctionEndsAt: null,
       idConflict: false,
@@ -112,12 +153,13 @@ export function parseCollectItPage(html: string): {
     next: $('link[rel="next"]').first().attr('href') ?? null,
     skippedNoId,
     skippedInvalid,
+    firstSkipped,
   };
 }
 
 /**
- * The page number a fetched page's canonical link names; throws `ShopLayoutError` when it is
- * missing, unreadable, or names another page than `asked`.
+ * Checks that a fetched page's canonical link names page `asked`; throws `ShopLayoutError`
+ * when it is missing, unreadable, or names another page.
  */
 function checkCanonical(canonical: string | null, asked: number): void {
   if (canonical === null)
@@ -168,8 +210,6 @@ export function createCollectItAdapter(
     id: 'collect-it',
     async fetchListings(): Promise<FetchResult> {
       const byUrl = new Map<string, Listing>();
-      let skippedNoId = 0;
-      let skippedInvalid = 0;
       let url: string | null = BASE_URL;
       for (let page = 1; url !== null; page++) {
         if (page > MAX_PAGES) {
@@ -188,15 +228,18 @@ export function createCollectItAdapter(
           throw error;
         }
         checkCanonical(parsed.canonical, page);
+        const skipped = parsed.skippedNoId + parsed.skippedInvalid;
+        if (skipped > 0) {
+          // A sold-out card is hidden, so a box the parser cannot read would read as sold out.
+          throw new ShopLayoutError(
+            `collect-it: page ${page} has ${skipped} unreadable product box(es), first: ${parsed.firstSkipped}`
+          );
+        }
         for (const listing of parsed.listings) byUrl.set(listing.url, listing);
-        skippedNoId += parsed.skippedNoId;
-        skippedInvalid += parsed.skippedInvalid;
         url = nextPageUrl(parsed.next, page);
       }
-      if (byUrl.size === 0) {
-        throw new ShopLayoutError('collect-it: no card listings found on any page');
-      }
-      return { listings: [...byUrl.values()], skippedNoId, skippedInvalid };
+      // Every page had products and none was skipped, so there is at least one listing.
+      return { listings: [...byUrl.values()] };
     },
   };
 }

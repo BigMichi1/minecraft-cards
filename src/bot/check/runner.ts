@@ -238,7 +238,7 @@ async function matchPending(
   stored: StoredListing[],
   fetched: Map<string, Listing>,
   wanted: Set<CardId>
-): Promise<void> {
+): Promise<number[]> {
   // One warning per status and run: a missing model would otherwise log a line per listing.
   const unavailable = new Map<string, string[]>();
   const onUnavailable = (status: string, reason: string) => {
@@ -259,6 +259,7 @@ async function matchPending(
     : undefined;
   const counts: PictureCounts = {};
   const failed: string[] = [];
+  const failedIds: number[] = [];
   for (const l of stored) {
     if (!l.available || !needsMatch(l, deps.now()) || !wantedOrPictureOnly(l, wanted)) {
       continue;
@@ -282,6 +283,7 @@ async function matchPending(
       // the listing stays as it was (pending or retryable) and is tried again next run.
       logError(`matching ${l.url} failed`, error);
       failed.push(`${l.url}: ${errorMessage(error)}`);
+      failedIds.push(l.id);
     }
   }
   if (failed.length > 0) {
@@ -296,6 +298,7 @@ async function matchPending(
       `image match unavailable (${status}) for ${reasons.length} listings this run: ${reasons[0]}`
     );
   }
+  return failedIds;
 }
 
 /** The scraped listing with the stored cards, picture and id source matchListing compares. */
@@ -421,11 +424,25 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
       for (const adapter of deps.adapters) {
         await checkShop(deps, alert, adapter, summary, stored, fetched);
       }
-      await matchPending(deps, alert, summary, stored, fetched, wanted);
-      await sendMismatchNotes(deps, alert);
+      // A listing whose match failed was never checked: not notified before a later run matches it.
+      const unmatched = await matchPending(deps, alert, summary, stored, fetched, wanted);
+      try {
+        await sendMismatchNotes(deps, alert);
+      } catch (error) {
+        // The notes stay due; the users' DMs must still go out.
+        logError('sending the mismatch notes failed', error);
+        await alert(
+          'mismatch-note-error',
+          `Sending the mismatch notes failed: ${errorMessage(error)}`
+        );
+      }
       const now = deps.now();
       const sent = await deps.sender.send(
-        listingManager.pendingNotifications({ now, seenSince: now - 2 * deps.intervalMs })
+        listingManager.pendingNotifications({
+          now,
+          seenSince: now - 2 * deps.intervalMs,
+          excludeIds: unmatched,
+        })
       );
       summary.notified = sent.notified;
       summary.dmFailures = sent.dmFailures;

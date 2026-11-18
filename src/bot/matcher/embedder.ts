@@ -495,8 +495,8 @@ export async function matchListing(
   if (picture && picture.cardId !== titleCard) {
     // A picture that also reaches the title card's reference does not contradict the title:
     // some cards share their art (#59 and XXL1 Charged Creeper, 2026-11-18).
+    // An accepted other card implies a complete set, so no reference failed: no retry here.
     if (titleFits) rejected = 'title_fits';
-    else if (retry) return retryable();
     else return { status: 'mismatch', similarity, picture };
   }
   if (picture?.cardId === titleCard && !listing.idConflict) {

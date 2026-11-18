@@ -950,6 +950,64 @@ describe('runCheck', () => {
       }
     });
 
+    test('the reference-unavailable alert: text, count, ids, and once a day (I1)', async () => {
+      const broken: ImageEmbedder = {
+        model: 'angled',
+        embed: async (url) => {
+          if (url === 'https://ente/45.jpg') throw new ImageUnavailableError('HTTP 404');
+          if (url === 'https://ente/77.jpg') throw new ImageUnavailableError('HTTP 410');
+          return angled.embed(url);
+        },
+      };
+      const shops = (deg: number) => [
+        ok('sammel-ente', references),
+        ok('blue-ocean', [blueAt(deg)]),
+      ];
+      await run(shops(5), { embedder: broken });
+      const sent = () => notes().filter((a) => a.includes('could not be loaded'));
+      expect(sent()).toHaveLength(1);
+      expect(sent()[0]).toStartWith('2 reference picture(s) could not be loaded this run');
+      expect(sent()[0]).toContain('#45 (image_unavailable: HTTP 404, https://ente/45.jpg)');
+      expect(sent()[0]).toContain('#77 (image_unavailable: HTTP 410, https://ente/77.jpg)');
+      // A new listing needs the set again the same day: throttled.
+      await run(shops(6), { embedder: broken });
+      expect(sent()).toHaveLength(1);
+      clock += 25 * 60 * 60 * 1000;
+      await run(shops(7), { embedder: broken });
+      expect(sent()).toHaveLength(2);
+    });
+
+    test('a failing mismatch-note step still sends the users their DMs (I2)', async () => {
+      const notesStep = spyOn(listingManager, 'pendingMismatchNotes').mockImplementation(() => {
+        throw new Error('SQLITE_BUSY: notes');
+      });
+      try {
+        const r = await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(5)])]);
+        expect(r.error).toBeUndefined();
+        expect(r.notified).toBe(1);
+        expect(notes().filter((a) => a.includes('SQLITE_BUSY: notes'))).toHaveLength(1);
+      } finally {
+        notesStep.mockRestore();
+      }
+    });
+
+    test('a listing whose match failed is not notified in that run, but once matched (M1)', async () => {
+      let broken = true;
+      const flaky: ImageEmbedder = {
+        model: 'angled',
+        embed: async (url) => {
+          if (broken && url === 'https://img/12-5.jpg') throw new Error('SQLITE_BUSY');
+          return angled.embed(url);
+        },
+      };
+      const shops = () => [ok('sammel-ente', references), ok('blue-ocean', [blueAt(5)])];
+      expect((await run(shops(), { embedder: flaky })).notified).toBe(0);
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('pending');
+      broken = false;
+      expect((await run(shops(), { embedder: flaky })).notified).toBe(1);
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
+    });
+
     describe('the reference set must be complete (R1, R2, R13)', () => {
       const flaky45 = (failing: { on: boolean }): ImageEmbedder => ({
         model: 'angled',

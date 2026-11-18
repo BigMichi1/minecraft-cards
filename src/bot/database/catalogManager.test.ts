@@ -120,6 +120,20 @@ describe('catalogManager', () => {
     expect(catalogManager.getCard(cid('12'))?.puzzle).toBe(false);
   });
 
+  test('a puzzle card stays one when sammel-ente renames it (sticky mark)', () => {
+    catalogManager.seedIfEmpty();
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('154'), name: 'Puzzlekarte Oberwelt 1', imageUrl: 'https://se/154.jpg' },
+    ]);
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('154'), name: 'Oberwelt 1', imageUrl: null },
+    ]);
+    expect(catalogManager.getCard(cid('154'))).toMatchObject({ name: 'Oberwelt 1', puzzle: true });
+    expect(catalogManager.referenceCatalog().usable).toEqual([
+      { cardId: cid('154'), referenceImageUrl: 'https://se/154.jpg', puzzle: true },
+    ]);
+  });
+
   test('a row stored before this release counts as puzzle without a sammel-ente run (R4)', () => {
     db.insert(cards)
       .values({ cardId: cid('160'), type: 'base', name: 'Puzzlekarte Oberwelt 7', updatedAt: 1 })

@@ -64,6 +64,8 @@ export interface PendingOptions {
   now?: number;
   /** Listings last seen before this (a shop that keeps failing) are not notified. */
   seenSince?: number;
+  /** Listings left out (their match failed this run, so they were not checked yet). */
+  excludeIds?: readonly number[];
 }
 
 function auctionEnded(auctionEndsAt: number | null, now: number): boolean {
@@ -380,6 +382,9 @@ export const listingManager = {
             eq(listings.available, true),
             eq(listings.onHold, false),
             ne(listings.matchStatus, 'mismatch'),
+            options.excludeIds?.length
+              ? notInArray(listings.id, [...options.excludeIds])
+              : undefined,
             options.seenSince === undefined
               ? undefined
               : gte(listings.lastSeenAt, options.seenSince)

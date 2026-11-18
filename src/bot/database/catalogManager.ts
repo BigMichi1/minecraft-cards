@@ -35,8 +35,9 @@ export interface ReferenceCard {
 
 /**
  * sammel-ente names its puzzle cards "Puzzlekarte <picture> <piece>" ("#154 Puzzlekarte
- * Oberwelt 1", 2026-11-18). Derived from the name on every read: name and reference picture
- * arrive together, so a card with a reference always has the name that says what it is.
+ * Oberwelt 1", 2026-11-18). A card is a puzzle card when its current name says so or it ever
+ * did (`puzzleSeen`): a rename cannot drop the mark, and rows stored before `puzzleSeen` count
+ * by their name without a backfill.
  */
 function isPuzzleCardName(name: string | null): boolean {
   return name !== null && /\bPuzzlekarte\b/i.test(name);
@@ -117,11 +118,14 @@ export const catalogManager = {
         type: cards.type,
         name: cards.name,
         referenceImageUrl: cards.referenceImageUrl,
+        puzzleSeen: cards.puzzleSeen,
       })
       .from(cards)
       .where(eq(cards.cardId, id))
       .get();
-    return row ? { ...row, puzzle: isPuzzleCardName(row.name) } : undefined;
+    if (!row) return undefined;
+    const { puzzleSeen, ...card } = row;
+    return { ...card, puzzle: puzzleSeen || isPuzzleCardName(row.name) };
   },
 
   /**
@@ -132,7 +136,12 @@ export const catalogManager = {
    */
   referenceCatalog(): ReferenceCatalog {
     const rows = db
-      .select({ cardId: cards.cardId, name: cards.name, url: cards.referenceImageUrl })
+      .select({
+        cardId: cards.cardId,
+        name: cards.name,
+        url: cards.referenceImageUrl,
+        puzzleSeen: cards.puzzleSeen,
+      })
       .from(cards)
       .all()
       .sort((a, b) => compareCardIds(a.cardId, b.cardId));
@@ -144,7 +153,7 @@ export const catalogManager = {
     }
     const usable: ReferenceCard[] = [];
     const missing: MissingReference[] = [];
-    for (const { cardId, name, url } of rows) {
+    for (const { cardId, name, url, puzzleSeen } of rows) {
       if (url === null) {
         missing.push({ cardId, reason: 'no_picture' });
       } else if (PLACEHOLDER_FILE.test(pictureKey(url))) {
@@ -152,7 +161,11 @@ export const catalogManager = {
       } else if ((uses.get(pictureKey(url)) ?? 0) > 1) {
         missing.push({ cardId, reason: 'shared' });
       } else {
-        usable.push({ cardId, referenceImageUrl: url, puzzle: isPuzzleCardName(name) });
+        usable.push({
+          cardId,
+          referenceImageUrl: url,
+          puzzle: puzzleSeen || isPuzzleCardName(name),
+        });
       }
     }
     return { usable, missing };
@@ -182,6 +195,7 @@ export const catalogManager = {
           .set({
             name: e.name,
             ...(e.imageUrl === null ? {} : { referenceImageUrl: e.imageUrl }),
+            ...(isPuzzleCardName(e.name) ? { puzzleSeen: true } : {}),
             updatedAt: now,
           })
           .where(eq(cards.cardId, e.cardId))

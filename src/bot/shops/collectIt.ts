@@ -17,9 +17,23 @@ const TITLE_PATTERN = /^((?:LE|XXL)?\d+) - (.+?)(?: - |$)/i;
 // schema.org availability values that mean "can be ordered now".
 const AVAILABLE = new Set(['https://schema.org/InStock', 'https://schema.org/LimitedAvailability']);
 
-/** Page N lives at `…/Einzelkarten_sN`; page 1 has no suffix. */
-function pageUrl(page: number): string {
-  return page === 1 ? BASE_URL : `${BASE_URL}_s${page}`;
+const BASE = new URL(BASE_URL);
+const PAGE_SUFFIX = /^_s([1-9]\d*)$/;
+
+/**
+ * The page number a category URL names: exactly `BASE_URL` is page 1, `BASE_URL` plus `_sN`
+ * page N. Anything else (another host or path, a trailing slash, a query or fragment, a
+ * relative href when no base is given, `_s0`) is null: the walk cannot trust it.
+ */
+export function categoryPageNumber(href: string, base?: string): number | null {
+  const url = URL.parse(href, base);
+  if (!url || url.origin !== BASE.origin || url.search !== '' || url.hash !== '') return null;
+  // `URL` drops an empty `?` or `#`; the raw href must not carry one either.
+  if (/[?#]/.test(href)) return null;
+  if (url.pathname === BASE.pathname) return 1;
+  if (!url.pathname.startsWith(BASE.pathname)) return null;
+  const suffix = PAGE_SUFFIX.exec(url.pathname.slice(BASE.pathname.length));
+  return suffix ? Number.parseInt(suffix[1] ?? '', 10) : null;
 }
 
 function parsePrice(amount: string | undefined, currency: string | undefined): Listing['price'] {
@@ -31,14 +45,14 @@ function parsePrice(amount: string | undefined, currency: string | undefined): L
  * Parse one category page. `productCount` counts every product box of the listing grid;
  * `skippedNoId` counts boxes whose title does not start with a card number (the category holds
  * only singles, so any such title is parser drift), `skippedInvalid` boxes without a link or
- * title. `page` is the page number the canonical link names (null when there is none), and
- * `hasNext` whether the page links a next page.
+ * title. `canonical` and `next` are the raw hrefs of `<link rel="canonical">` and
+ * `<link rel="next">` (null when absent); the adapter checks them with `categoryPageNumber`.
  */
 export function parseCollectItPage(html: string): {
   listings: Listing[];
   productCount: number;
-  page: number | null;
-  hasNext: boolean;
+  canonical: string | null;
+  next: string | null;
   skippedNoId: number;
   skippedInvalid: number;
 } {
@@ -91,24 +105,58 @@ export function parseCollectItPage(html: string): {
     });
   });
 
-  const canonical = $('link[rel="canonical"]').first().attr('href');
-  const page =
-    canonical === undefined ? null : Number.parseInt(/_s(\d+)$/.exec(canonical)?.[1] ?? '1', 10);
   return {
     listings,
     productCount: boxes.length,
-    page,
-    hasNext: $('link[rel="next"]').length > 0,
+    canonical: $('link[rel="canonical"]').first().attr('href') ?? null,
+    next: $('link[rel="next"]').first().attr('href') ?? null,
     skippedNoId,
     skippedInvalid,
   };
 }
 
 /**
+ * The page number a fetched page's canonical link names; throws `ShopLayoutError` when it is
+ * missing, unreadable, or names another page than `asked`.
+ */
+function checkCanonical(canonical: string | null, asked: number): void {
+  if (canonical === null)
+    throw new ShopLayoutError(`collect-it: page ${asked} has no canonical link`);
+  const page = categoryPageNumber(canonical);
+  if (page === null) {
+    throw new ShopLayoutError(
+      `collect-it: page ${asked} has an unreadable canonical link "${canonical}"`
+    );
+  }
+  if (page !== asked) {
+    // The shop shrank during the run and redirected the request to another page.
+    throw new ShopLayoutError(`collect-it: asked for page ${asked}, got page ${page}`);
+  }
+}
+
+/** The URL of the next page that `page` links, or null on the last page. */
+function nextPageUrl(next: string | null, page: number): string | null {
+  if (next === null) return null;
+  const nextPage = categoryPageNumber(next, BASE_URL);
+  if (nextPage === null) {
+    throw new ShopLayoutError(
+      `collect-it: page ${page} has an unreadable next-page link "${next}"`
+    );
+  }
+  if (nextPage !== page + 1) {
+    throw new ShopLayoutError(`collect-it: page ${page} links page ${nextPage} as the next page`);
+  }
+  return new URL(next, BASE_URL).toString();
+}
+
+/**
  * collect-it.de lists every single card in one category, 30 per page. It hides sold-out products
  * instead of marking them, so a card that sells out simply vanishes (and the run marks the stored
- * listing unavailable). A page past the end redirects to page 1, so the pages are walked by the
- * `<link rel="next">` of each page, never by guessing a page count.
+ * listing unavailable). That makes a partial read dangerous: every card on an unread page would
+ * read as sold out and re-notify on the next healthy run. So the walk follows each page's
+ * `<link rel="next">`, and a page whose canonical link is missing, unreadable or names another
+ * page than the one linked is a `ShopLayoutError` (a page past the end redirects to page 1), as is
+ * reaching MAX_PAGES. The runner then leaves the stored listings untouched and retries next hour.
  */
 export function createCollectItAdapter(
   fetchFn?: FetchFn,
@@ -122,11 +170,15 @@ export function createCollectItAdapter(
       const byUrl = new Map<string, Listing>();
       let skippedNoId = 0;
       let skippedInvalid = 0;
-      for (let page = 1; ; page++) {
+      let url: string | null = BASE_URL;
+      for (let page = 1; url !== null; page++) {
+        if (page > MAX_PAGES) {
+          throw new ShopLayoutError(`collect-it: still a next page after ${MAX_PAGES} pages`);
+        }
         if (page > 1) await sleep(delayMs);
         let parsed: ReturnType<typeof parseCollectItPage>;
         try {
-          parsed = parseCollectItPage(await fetchText(pageUrl(page), fetchFn));
+          parsed = parseCollectItPage(await fetchText(url, fetchFn));
           if (parsed.productCount === 0) {
             // A bot wall, maintenance page or empty category; a linked page always has products.
             throw new ShopLayoutError(`collect-it: page ${page} has no products`);
@@ -135,19 +187,11 @@ export function createCollectItAdapter(
           logError(`collect-it page ${page} failed`, error);
           throw error;
         }
-        if (parsed.page !== page) {
-          // The shop shrank since the previous page and redirected to another page.
-          logger.warn(`collect-it: asked for page ${page}, got page ${parsed.page}; stopping`);
-          break;
-        }
+        checkCanonical(parsed.canonical, page);
         for (const listing of parsed.listings) byUrl.set(listing.url, listing);
         skippedNoId += parsed.skippedNoId;
         skippedInvalid += parsed.skippedInvalid;
-        if (!parsed.hasNext) break;
-        if (page === MAX_PAGES) {
-          logger.warn(`collect-it: stopped after ${MAX_PAGES} pages, later pages are not read`);
-          break;
-        }
+        url = nextPageUrl(parsed.next, page);
       }
       if (byUrl.size === 0) {
         throw new ShopLayoutError('collect-it: no card listings found on any page');

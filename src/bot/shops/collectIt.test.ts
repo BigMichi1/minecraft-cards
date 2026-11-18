@@ -23,6 +23,35 @@ function asPage(html: string, n: number, hasNext: boolean): string {
   return $.html();
 }
 
+/** `html` with its canonical link set to `href`, or removed when `href` is null. */
+function withCanonical(html: string, href: string | null): string {
+  const $ = cheerio.load(html);
+  if (href === null) $('link[rel="canonical"]').remove();
+  else $('link[rel="canonical"]').attr('href', href);
+  return $.html();
+}
+
+/** `html` with its next-page link set to `href`. */
+function withNext(html: string, href: string): string {
+  const $ = cheerio.load(html);
+  $('link[rel="next"]').remove();
+  $('head').append(`<link rel="next" href="${href}">`);
+  return $.html();
+}
+
+/** The adapter's rejection for these pages (fails the test when it resolves). */
+async function rejection(pages: Record<string, string>): Promise<Error> {
+  const { fetchFn } = fakeFetch(pages);
+  const error = await createCollectItAdapter(fetchFn, { delayMs: 0 })
+    .fetchListings()
+    .then(
+      () => new Error('resolved'),
+      (e: unknown) => e as Error
+    );
+  expect(error).toBeInstanceOf(ShopLayoutError);
+  return error;
+}
+
 /** Page 1 with its first product box rewritten by `edit`, and only that box kept. */
 function firstBoxOnly(edit: ($: cheerio.CheerioAPI, box: ReturnType<cheerio.CheerioAPI>) => void) {
   const $ = cheerio.load(P1);
@@ -58,11 +87,21 @@ describe('parseCollectItPage', () => {
     expect(p1.productCount).toBe(30);
     expect(p1.listings).toHaveLength(30);
     expect(p1.listings.every((l) => l.available && l.price !== null)).toBe(true);
-    expect(p1).toMatchObject({ page: 1, hasNext: true, skippedNoId: 0, skippedInvalid: 0 });
+    expect(p1).toMatchObject({
+      canonical: BASE,
+      next: `${BASE}_s2`,
+      skippedNoId: 0,
+      skippedInvalid: 0,
+    });
   });
 
   test('the last page has no next page and reads LE cards ("LE01 - ...") as LE ids', () => {
-    expect(p8).toMatchObject({ page: 8, hasNext: false, productCount: 25, skippedNoId: 0 });
+    expect(p8).toMatchObject({
+      canonical: `${BASE}_s8`,
+      next: null,
+      productCount: 25,
+      skippedNoId: 0,
+    });
     expect(p8.listings).toHaveLength(25);
     const le1 = p8.listings.find((l) => l.cardIds[0] === 'LE1')!;
     expect(le1.title).toBe('LE01 - Ender Dragon - Limitierte Karte - Serie 3');
@@ -134,8 +173,8 @@ describe('parseCollectItPage', () => {
     expect(parseCollectItPage('<html>Just a moment...</html>')).toEqual({
       listings: [],
       productCount: 0,
-      page: null,
-      hasNext: false,
+      canonical: null,
+      next: null,
       skippedNoId: 0,
       skippedInvalid: 0,
     });
@@ -217,35 +256,95 @@ describe('createCollectItAdapter', () => {
     );
   });
 
-  test('stops when a linked page answers with another page (collect-it redirects past the end)', async () => {
-    const warn = spyOn(logger, 'warn');
-    try {
-      // The shop shrank between two requests: page 2 redirects to page 1, which links page 2.
-      const { fetchFn, calls } = fakeFetch({ Einzelkarten: asPage(P1, 1, true), _s2: P1 });
-      const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
-      expect(calls).toEqual([BASE, `${BASE}_s2`]);
-      expect(listings).toHaveLength(30);
-      expect(warn.mock.calls.some((c) => String(c[0]).includes('asked for page 2'))).toBe(true);
-    } finally {
-      warn.mockRestore();
-    }
+  test('a linked page that answers as another page rejects instead of ending the walk', async () => {
+    // The shop shrank between two requests: page 2 redirects to page 1, which links page 2.
+    const error = await rejection({ Einzelkarten: asPage(P1, 1, true), _s2: P1 });
+    expect(error.message).toContain('asked for page 2');
+    expect(error.message).toContain('page 1');
   });
 
-  test('stops at the page cap when every page links a next one', async () => {
-    const warn = spyOn(logger, 'warn');
+  test('rejects at the page cap after exactly 60 requests', async () => {
     // Every page answers as the page that was asked for, and always links one more.
+    const calls: string[] = [];
     const fetchFn = async (url: string) => {
+      calls.push(url);
       const n = Number(/_s(\d+)$/.exec(url)?.[1] ?? '1');
       return new Response(asPage(P8, n, true));
     };
-    try {
-      const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
-      expect(listings).toHaveLength(25);
-      expect(warn.mock.calls.some((c) => String(c[0]).includes('stopped after 60 pages'))).toBe(
-        true
-      );
-    } finally {
-      warn.mockRestore();
-    }
+    const error = await createCollectItAdapter(fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toContain('60 pages');
+    expect(calls).toHaveLength(60);
+    expect(calls[59]).toBe(`${BASE}_s60`);
   }, 30_000);
+
+  test('a later page without a canonical link rejects', async () => {
+    const error = await rejection({
+      Einzelkarten: asPage(P1, 1, true),
+      _s2: withCanonical(asPage(P8, 2, false), null),
+    });
+    expect(error.message).toContain('page 2 has no canonical link');
+  });
+
+  test('page 1 without a canonical link rejects with that reason', async () => {
+    const error = await rejection({ Einzelkarten: withCanonical(asPage(P1, 1, false), null) });
+    expect(error.message).toContain('page 1 has no canonical link');
+  });
+
+  test('page 1 whose canonical link names another page rejects with that reason', async () => {
+    const error = await rejection({
+      Einzelkarten: withCanonical(asPage(P1, 1, false), `${BASE}_s3`),
+    });
+    expect(error.message).toContain('asked for page 1, got page 3');
+  });
+
+  for (const [format, href] of [
+    ['a trailing slash', `${BASE}/`],
+    ['a query', `${BASE}?sort=price`],
+    ['a fragment', `${BASE}#top`],
+    ['a relative path', '/sammelkarten/lego/minecraft/serie-3/Einzelkarten'],
+    [
+      'another category',
+      'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-2/Einzelkarten',
+    ],
+    ['another host', 'https://collect-it.example/sammelkarten/lego/minecraft/serie-3/Einzelkarten'],
+    ['a page suffix with a trailing slash', `${BASE}_s2/`],
+    ['page 0', `${BASE}_s0`],
+  ] as const) {
+    test(`a canonical link with ${format} is unreadable and rejects`, async () => {
+      const error = await rejection({ Einzelkarten: withCanonical(asPage(P1, 1, false), href) });
+      expect(error.message).toContain('unreadable canonical link');
+      expect(error.message).toContain(href);
+    });
+  }
+
+  test('follows the next-page href, resolved against the category URL', async () => {
+    const { fetchFn, calls } = fakeFetch({
+      Einzelkarten: withNext(
+        asPage(P1, 1, true),
+        '/sammelkarten/lego/minecraft/serie-3/Einzelkarten_s2'
+      ),
+      _s2: asPage(P8, 2, false),
+    });
+    const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
+    expect(calls).toEqual([BASE, `${BASE}_s2`]);
+    expect(listings).toHaveLength(55);
+  });
+
+  test('an unreadable next-page href rejects', async () => {
+    const error = await rejection({
+      Einzelkarten: withNext(asPage(P1, 1, true), `${BASE}_s2?a=1`),
+    });
+    expect(error.message).toContain('unreadable next-page link');
+  });
+
+  test('a next-page href that skips a page rejects', async () => {
+    const error = await rejection({
+      Einzelkarten: withNext(asPage(P1, 1, true), `${BASE}_s3`),
+      _s3: asPage(P8, 3, false),
+    });
+    expect(error.message).toContain('page 1 links page 3 as the next page');
+  });
 });

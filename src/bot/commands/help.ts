@@ -30,8 +30,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         },
         {
           name: '/missing status',
-          value:
-            'Your missing cards with what each shop showed at the last check, and when that was.',
+          value: 'Your missing cards with what each shop last showed, and how fresh that is.',
         },
         {
           name: 'Wrong card?',

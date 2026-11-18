@@ -5,7 +5,7 @@ import type { StoredListing } from '../database/listingManager';
 import type { ShopId } from '../shops/types';
 import { DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
 import { cid, ids } from '../../test/cardIds';
-import { buildStatusReply, type StatusInput } from './missingStatus';
+import { buildStatusReply, needsLastSuccess, type StatusInput } from './missingStatus';
 
 const S = 1_800_000_000; // seconds
 const T = S * 1000;
@@ -43,10 +43,17 @@ const okRun: RunSummary = {
   dmFailures: 0,
 };
 
+/** okRun with blue-ocean failed. */
+const blueFailed: RunSummary = {
+  ...okRun,
+  shops: { ...okRun.shops, 'blue-ocean': { listings: 0, error: 'x'.repeat(150) } },
+};
+
 function input(over: Partial<StatusInput> = {}): StatusInput {
   return {
     cards: ids('12'),
-    last: okRun,
+    latest: { summary: okRun, newerUnreadable: false },
+    enabledShops: ['sammel-ente', 'blue-ocean'],
     lastSuccess: {},
     listings: [],
     names: new Map([[cid('12'), 'Squid']]),
@@ -54,6 +61,9 @@ function input(over: Partial<StatusInput> = {}): StatusInput {
     ...over,
   };
 }
+
+const run = (summary: RunSummary) => ({ summary, newerUnreadable: false });
+const cardLine = (reply: string) => reply.split('\n').find((l) => l.startsWith('#12'));
 
 describe('buildStatusReply', () => {
   test('a normal reply has the header, the shop lines and one line per card', () => {
@@ -70,7 +80,7 @@ describe('buildStatusReply', () => {
       '',
       '✅ sammel-ente: 251 listings',
       '✅ blue-ocean: 206 listings',
-      '⚠️ eBay: not checked',
+      '⚪ eBay: not enabled',
       '',
       '#12 Squid: sammel-ente 0,55 € in stock · blue-ocean sold out',
     ]);
@@ -79,43 +89,119 @@ describe('buildStatusReply', () => {
   test('a shop whose last check failed shows the error and marks its entries as of the last success', () => {
     const reply = buildStatusReply(
       input({
-        last: {
-          ...okRun,
-          shops: { ...okRun.shops, 'blue-ocean': { listings: 0, error: 'x'.repeat(150) } },
-        },
+        latest: run(blueFailed),
         lastSuccess: { 'blue-ocean': T - 3_600_000 },
         listings: [listing('blue-ocean', ids('12'))],
       })
     );
     expect(reply).toContain(`❌ blue-ocean: error <t:${S}:R> – ${'x'.repeat(100)}`);
     expect(reply).not.toContain('x'.repeat(101));
-    expect(reply).toContain(`#12 Squid: blue-ocean 0,55 € in stock (as of <t:${S - 3600}:R>)`);
+    expect(cardLine(reply)).toBe(`#12 Squid: blue-ocean 0,55 € in stock (as of <t:${S - 3600}:R>)`);
   });
 
-  test('a failed shop that never succeeded says so on its entries', () => {
+  test('a failed shop without a success in the window says so on its entries', () => {
     const reply = buildStatusReply(
       input({
-        last: { ...okRun, shops: { 'blue-ocean': { listings: 0, error: 'down' } } },
+        latest: run(blueFailed),
+        lastSuccess: { 'blue-ocean': null },
         listings: [listing('blue-ocean', ids('12'))],
       })
     );
-    expect(reply).toContain('blue-ocean 0,55 € in stock (never checked successfully)');
+    expect(cardLine(reply)).toBe(
+      '#12 Squid: blue-ocean 0,55 € in stock (no successful check in 7 days)'
+    );
+  });
+
+  test('a shop whose last success was not looked up is a wiring error, not a guess', () => {
+    expect(() => buildStatusReply(input({ latest: run(blueFailed) }))).toThrow(
+      /blue-ocean.*not looked up/
+    );
+  });
+
+  test('a failed shop without a listing of the card is unknown, never "not listed"', () => {
+    const reply = buildStatusReply(
+      input({
+        latest: run(blueFailed),
+        lastSuccess: { 'blue-ocean': null },
+        listings: [listing('sammel-ente', ids('12'))],
+      })
+    );
+    expect(cardLine(reply)).toBe(
+      '#12 Squid: sammel-ente 0,55 € in stock · blue-ocean unknown (check failed)'
+    );
+    const alone = buildStatusReply(
+      input({ latest: run(blueFailed), lastSuccess: { 'blue-ocean': null } })
+    );
+    expect(cardLine(alone)).toBe('#12 Squid: blue-ocean unknown (check failed)');
+  });
+
+  test('an enabled shop missing from the last check is unknown for cards it has no listing of', () => {
+    const reply = buildStatusReply(
+      input({ enabledShops: ['sammel-ente', 'blue-ocean', 'ebay'], lastSuccess: { ebay: null } })
+    );
+    expect(reply).toContain('⚠️ eBay: not checked');
+    expect(cardLine(reply)).toBe('#12 Squid: eBay unknown (not checked)');
+  });
+
+  test('a shop missing from the last check marks its stored entries as of its last success', () => {
+    const reply = buildStatusReply(
+      input({
+        enabledShops: ['sammel-ente', 'blue-ocean', 'ebay'],
+        lastSuccess: { ebay: T - 86_400_000 },
+        listings: [listing('ebay', ids('12'))],
+      })
+    );
+    expect(cardLine(reply)).toBe(`#12 Squid: eBay 0,55 € in stock (as of <t:${S - 86_400}:R>)`);
+  });
+
+  test('a disabled shop says so and its stored listings are not shown', () => {
+    const reply = buildStatusReply(
+      input({
+        latest: run({ ...okRun, shops: { ...okRun.shops, ebay: { listings: 4 } } }),
+        listings: [listing('ebay', ids('12'))],
+      })
+    );
+    expect(reply).toContain('⚪ eBay: not enabled');
+    expect(cardLine(reply)).toBe('#12 Squid: not listed in any shop');
   });
 
   test('a held listing reads as paused, never as in stock', () => {
     const reply = buildStatusReply(
       input({ listings: [listing('sammel-ente', ids('12'), { onHold: true })] })
     );
-    expect(reply).toContain('#12 Squid: sammel-ente paused (reported)');
+    expect(cardLine(reply)).toBe('#12 Squid: sammel-ente paused (reported)');
     expect(reply).not.toContain('in stock');
   });
 
   test('a bundle is marked', () => {
     const reply = buildStatusReply(
-      input({ cards: ids('12', '45'), listings: [listing('blue-ocean', ids('12', '45'))] })
+      input({
+        cards: ids('12', '45'),
+        listings: [listing('blue-ocean', ids('12', '45'), { matchStatus: 'bundle' })],
+      })
     );
     expect(reply).toContain('#12 Squid: blue-ocean 0,55 € in stock (bundle)');
     expect(reply).toContain('#45: blue-ocean 0,55 € in stock (bundle)');
+    expect(reply).not.toContain('picture unconfirmed');
+  });
+
+  test('a single-card listing whose picture is not backed is marked unconfirmed', () => {
+    for (const matchStatus of [
+      'pending',
+      'unconfirmed',
+      'no_reference',
+      'model_unavailable',
+      'image_unavailable',
+    ] as const) {
+      const reply = buildStatusReply(
+        input({ listings: [listing('blue-ocean', ids('12'), { matchStatus })] })
+      );
+      expect(cardLine(reply)).toBe('#12 Squid: blue-ocean 0,55 € in stock (picture unconfirmed)');
+    }
+    const confirmed = buildStatusReply(
+      input({ listings: [listing('blue-ocean', ids('12'), { matchStatus: 'confirmed' })] })
+    );
+    expect(cardLine(confirmed)).toBe('#12 Squid: blue-ocean 0,55 € in stock');
   });
 
   test('per shop the best listing wins: in stock beats paused beats sold out, then the lowest price', () => {
@@ -131,23 +217,140 @@ describe('buildStatusReply', () => {
         ],
       })
     );
-    expect(reply).toContain(
+    expect(cardLine(reply)).toBe(
       '#12 Squid: sammel-ente paused (reported) · blue-ocean 0,90 € in stock'
     );
   });
 
+  test('a confirmed picture beats a cheaper unconfirmed one in the same tier', () => {
+    const reply = buildStatusReply(
+      input({
+        listings: [
+          listing('blue-ocean', ids('12'), {
+            matchStatus: 'unconfirmed',
+            price: { cents: 90, currency: 'EUR' },
+          }),
+          listing('blue-ocean', ids('12'), {
+            matchStatus: 'confirmed',
+            price: { cents: 120, currency: 'EUR' },
+          }),
+        ],
+      })
+    );
+    expect(cardLine(reply)).toBe('#12 Squid: blue-ocean 1,20 € in stock');
+  });
+
+  test('a listing the latest successful check did not return is marked and ranks below seen ones', () => {
+    const unseen = { lastSeenAt: T - 1 };
+    const alone = buildStatusReply(input({ listings: [listing('blue-ocean', ids('12'), unseen)] }));
+    expect(cardLine(alone)).toBe('#12 Squid: blue-ocean 0,55 € in stock (not seen in last check)');
+    const both = buildStatusReply(
+      input({
+        listings: [
+          listing('blue-ocean', ids('12'), { ...unseen, price: { cents: 30, currency: 'EUR' } }),
+          listing('blue-ocean', ids('12'), { price: { cents: 90, currency: 'EUR' } }),
+        ],
+      })
+    );
+    expect(cardLine(both)).toBe('#12 Squid: blue-ocean 0,90 € in stock');
+  });
+
   test('a card with no listing anywhere is not listed in any shop', () => {
-    expect(buildStatusReply(input())).toContain('#12 Squid: not listed in any shop');
+    expect(cardLine(buildStatusReply(input()))).toBe('#12 Squid: not listed in any shop');
   });
 
   test('before the first check the reply says so', () => {
-    const reply = buildStatusReply(input({ last: undefined }));
+    const reply = buildStatusReply(
+      input({ latest: { summary: undefined, newerUnreadable: false } })
+    );
     expect(reply.split('\n')).toEqual([
       'Your missing cards (1)',
       'No check has run yet.',
       '',
       '#12 Squid: not checked yet',
     ]);
+  });
+
+  test('with only unreadable check records every card is unknown', () => {
+    const reply = buildStatusReply(
+      input({ latest: { summary: undefined, newerUnreadable: true } })
+    );
+    expect(reply.split('\n')).toEqual([
+      'Your missing cards (1)',
+      '⚠️ No readable check record.',
+      '',
+      '#12 Squid: unknown',
+    ]);
+  });
+
+  test('an unreadable latest record is announced and the one before is shown', () => {
+    const reply = buildStatusReply(input({ latest: { summary: okRun, newerUnreadable: true } }));
+    expect(reply.split('\n').slice(0, 3)).toEqual([
+      `Your missing cards (1) · last check <t:${S}:R>`,
+      '⚠️ The latest check record could not be read; showing the one before.',
+      '',
+    ]);
+  });
+
+  test('a failed check run is shown after the header, its error cut to 100', () => {
+    const reply = buildStatusReply(input({ latest: run({ ...okRun, error: 'y'.repeat(150) }) }));
+    expect(reply.split('\n')[1]).toBe(`❌ Last check failed: ${'y'.repeat(100)}`);
+    expect(reply).not.toContain('y'.repeat(101));
+  });
+
+  test('an auction that has ended since the last check is not in stock', () => {
+    const reply = buildStatusReply(
+      input({
+        enabledShops: ['ebay'],
+        listings: [listing('ebay', ids('12'), { format: 'auction', auctionEndsAt: T + 30_000 })],
+        latest: run({ ...okRun, shops: { ...okRun.shops, ebay: { listings: 1 } } }),
+      })
+    );
+    expect(cardLine(reply)).toBe('#12 Squid: eBay auction ended');
+    expect(reply).not.toContain('in stock');
+  });
+
+  test('an in-stock listing beats an ended auction of the same shop; a running auction is in stock', () => {
+    const latest = run({ ...okRun, shops: { ebay: { listings: 2 } } });
+    const ended = listing('ebay', ids('12'), { format: 'auction', auctionEndsAt: T + 30_000 });
+    const reply = buildStatusReply(
+      input({
+        enabledShops: ['ebay'],
+        latest,
+        listings: [
+          ended,
+          listing('ebay', ids('12'), {
+            format: 'fixed_price',
+            price: { cents: 400, currency: 'EUR' },
+          }),
+        ],
+      })
+    );
+    expect(cardLine(reply)).toBe('#12 Squid: eBay 4,00 € in stock');
+    const running = buildStatusReply(
+      input({
+        enabledShops: ['ebay'],
+        latest,
+        listings: [listing('ebay', ids('12'), { format: 'auction', auctionEndsAt: T + 120_000 })],
+      })
+    );
+    expect(cardLine(running)).toBe('#12 Squid: eBay 0,55 € in stock');
+  });
+
+  test('an in-stock listing without a price shows no price and ranks after priced ones', () => {
+    const alone = buildStatusReply(
+      input({ listings: [listing('blue-ocean', ids('12'), { price: null })] })
+    );
+    expect(cardLine(alone)).toBe('#12 Squid: blue-ocean in stock');
+    const both = buildStatusReply(
+      input({
+        listings: [
+          listing('blue-ocean', ids('12'), { price: null }),
+          listing('blue-ocean', ids('12'), { price: { cents: 120, currency: 'EUR' } }),
+        ],
+      })
+    );
+    expect(cardLine(both)).toBe('#12 Squid: blue-ocean 1,20 € in stock');
   });
 
   test('an empty list has its own text', () => {
@@ -173,31 +376,44 @@ describe('buildStatusReply', () => {
     expect(reply.endsWith(`… and ${228 - shown} more cards`)).toBe(true);
     expect(shown).toBeGreaterThan(10);
   });
-  test('a shop missing from the last check marks its stored entries as of its last success', () => {
+
+  test('the longest possible head with cards too long to show still fits', () => {
+    const error = 'e'.repeat(500);
     const reply = buildStatusReply(
       input({
-        lastSuccess: { ebay: T - 86_400_000 },
-        listings: [listing('ebay', ids('12'))],
+        cards: ids('12', '45'),
+        enabledShops: ['sammel-ente', 'blue-ocean', 'ebay'],
+        latest: {
+          summary: {
+            ...okRun,
+            error,
+            shops: {
+              'sammel-ente': { listings: 0, error },
+              'blue-ocean': { listings: 0, error },
+              ebay: { listings: 0, error },
+            },
+          },
+          newerUnreadable: true,
+        },
+        lastSuccess: { 'sammel-ente': null, 'blue-ocean': null, ebay: null },
+        names: new Map([
+          [cid('12'), 'n'.repeat(3000)],
+          [cid('45'), 'n'.repeat(3000)],
+        ]),
       })
     );
-    expect(reply).toContain('⚠️ eBay: not checked');
-    expect(reply).toContain(`#12 Squid: eBay 0,55 € in stock (as of <t:${S - 86_400}:R>)`);
+    expect(reply.length).toBeLessThanOrEqual(DISCORD_MESSAGE_LIMIT);
+    expect(reply.endsWith('… and 2 more cards')).toBe(true);
   });
+});
 
-  test('a shop missing from the last check that never succeeded says so', () => {
-    const reply = buildStatusReply(input({ listings: [listing('ebay', ids('12'))] }));
-    expect(reply).toContain('eBay 0,55 € in stock (never checked successfully)');
-  });
-
-  test('an auction that has ended since the last check is not in stock', () => {
-    const reply = buildStatusReply(
-      input({
-        listings: [listing('ebay', ids('12'), { format: 'auction', auctionEndsAt: T + 30_000 })],
-        lastSuccess: { ebay: T },
-        last: { ...okRun, shops: { ...okRun.shops, ebay: { listings: 1 } } },
-      })
-    );
-    expect(reply).toContain('#12 Squid: eBay auction ended');
-    expect(reply).not.toContain('in stock');
+describe('needsLastSuccess', () => {
+  test('only an enabled shop whose latest check failed or did not run needs it', () => {
+    const enabled = ['sammel-ente', 'blue-ocean', 'ebay'] as const;
+    expect(needsLastSuccess(blueFailed, 'blue-ocean', enabled)).toBe(true);
+    expect(needsLastSuccess(blueFailed, 'ebay', enabled)).toBe(true);
+    expect(needsLastSuccess(blueFailed, 'sammel-ente', enabled)).toBe(false);
+    expect(needsLastSuccess(blueFailed, 'ebay', ['sammel-ente'])).toBe(false);
+    expect(needsLastSuccess(undefined, 'ebay', enabled)).toBe(false);
   });
 });

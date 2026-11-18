@@ -1,6 +1,7 @@
 import type { CardId } from '../cards/cardId';
 import type { RunSummary } from '../check/runner';
 import type { StoredListing } from '../database/listingManager';
+import type { LatestRun } from '../database/runManager';
 import { formatPrice, SHOP_NAMES } from '../notify/messages';
 import { SHOP_IDS, type ShopId } from '../shops/types';
 import { DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
@@ -9,15 +10,20 @@ import { DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
 export interface StatusInput {
   /** The user's missing cards, in display order. */
   cards: CardId[];
-  /** The latest check run; undefined before the first one. */
-  last: RunSummary | undefined;
-  /** Per shop, the start of its newest successful check. */
-  lastSuccess: Partial<Record<ShopId, number>>;
+  /** The newest readable check run, and whether a newer record could not be read. */
+  latest: LatestRun;
+  /** The shops this process checks; any other shop shows as not enabled and has no entries. */
+  enabledShops: readonly ShopId[];
+  /**
+   * Per shop, the start of its newest successful check within the last 7 days; null when there
+   * is none. Only filled for shops that failed or did not run (`needsLastSuccess`).
+   */
+  lastSuccess: Partial<Record<ShopId, number | null>>;
   /** Stored listings carrying any of `cards`. */
   listings: StoredListing[];
   /** Catalog names of the cards that have one. */
   names: Map<CardId, string>;
-  /** Decides whether an auction has ended since the last check. */
+  /** Current time; an auction whose end is before it counts as ended. */
   now: number;
 }
 
@@ -28,27 +34,69 @@ function seconds(ms: number): number {
   return Math.floor(ms / 1000);
 }
 
+function succeeded(last: RunSummary, shop: ShopId): boolean {
+  const entry = last.shops[shop];
+  return entry !== undefined && entry.error === undefined;
+}
+
+/**
+ * Whether `/missing status` needs `shop`'s last success: it is enabled and its latest check
+ * failed or did not run. Without a readable run nothing is shown per shop, so nothing is needed.
+ */
+export function needsLastSuccess(
+  last: RunSummary | undefined,
+  shop: ShopId,
+  enabledShops: readonly ShopId[]
+): boolean {
+  return last !== undefined && enabledShops.includes(shop) && !succeeded(last, shop);
+}
+
 /** An auction whose end has passed is gone, even if the last check still saw it running. */
 function ended(l: StoredListing, now: number): boolean {
   return l.auctionEndsAt !== null && l.auctionEndsAt < now;
 }
 
-/** In stock (0) beats paused after a report (1) beats sold out or ended (2). */
-function rank(l: StoredListing, now: number): number {
-  if (!l.available || ended(l, now)) return 2;
-  return l.onHold ? 1 : 0;
+/** Whether the listing's card number is backed by its picture (or the admin). */
+function pictureBacked(l: StoredListing): boolean {
+  return l.matchStatus === 'reference' || l.matchStatus === 'confirmed';
 }
 
-/** The listing that best answers "can I buy this card here": in stock first, then the cheapest. */
-function best(candidates: StoredListing[], now: number): StoredListing {
-  return candidates.reduce((a, b) => {
-    if (rank(a, now) !== rank(b, now)) return rank(a, now) < rank(b, now) ? a : b;
-    return (b.price?.cents ?? Infinity) < (a.price?.cents ?? Infinity) ? b : a;
-  });
+/** A listing of a shop whose latest check succeeded, but which that check did not return. */
+function unseen(l: StoredListing, last: RunSummary): boolean {
+  return succeeded(last, l.shop) && l.lastSeenAt < last.startedAt;
 }
 
-function shopLine(shop: ShopId, last: RunSummary): string {
+/**
+ * Sort key, lower is better: seen in the latest check, then in stock beats paused after a
+ * report beats sold out or ended, then a backed picture, then the lowest price (none last).
+ */
+function sortKey(l: StoredListing, last: RunSummary, now: number): number[] {
+  const tier = !l.available || ended(l, now) ? 2 : l.onHold ? 1 : 0;
+  return [
+    unseen(l, last) ? 1 : 0,
+    tier,
+    pictureBacked(l) ? 0 : 1,
+    l.price?.cents ?? Number.POSITIVE_INFINITY,
+  ];
+}
+
+function compareKeys(a: number[], b: number[]): number {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return a[i]! < b[i]! ? -1 : 1;
+  }
+  return 0;
+}
+
+/** The listing that best answers "can I buy this card here". */
+function best(candidates: StoredListing[], last: RunSummary, now: number): StoredListing {
+  return candidates.reduce((a, b) =>
+    compareKeys(sortKey(b, last, now), sortKey(a, last, now)) < 0 ? b : a
+  );
+}
+
+function shopLine(shop: ShopId, input: StatusInput, last: RunSummary): string {
   const name = SHOP_NAMES[shop];
+  if (!input.enabledShops.includes(shop)) return `⚪ ${name}: not enabled`;
   const entry = last.shops[shop];
   if (entry === undefined) return `⚠️ ${name}: not checked`;
   if (entry.error !== undefined) {
@@ -57,7 +105,7 @@ function shopLine(shop: ShopId, last: RunSummary): string {
   return `✅ ${name}: ${entry.listings} listings`;
 }
 
-function entryText(l: StoredListing, now: number): string {
+function entryText(l: StoredListing, last: RunSummary, now: number): string {
   const state = !l.available
     ? 'sold out'
     : ended(l, now)
@@ -65,59 +113,92 @@ function entryText(l: StoredListing, now: number): string {
       : l.onHold
         ? 'paused (reported)'
         : `${l.price ? `${formatPrice(l.price)} ` : ''}in stock`;
-  return `${SHOP_NAMES[l.shop]} ${state}${l.cardIds.length > 1 ? ' (bundle)' : ''}`;
+  const picture =
+    l.cardIds.length > 1 ? ' (bundle)' : pictureBacked(l) ? '' : ' (picture unconfirmed)';
+  const seen = unseen(l, last) ? ' (not seen in last check)' : '';
+  return `${SHOP_NAMES[l.shop]} ${state}${picture}${seen}`;
 }
 
 /**
  * For a shop whose latest check failed or did not run at all: how old its stored listings are.
  * Relative (`:R`), so data from days ago never reads as today's.
  */
-function staleness(shop: ShopId, input: StatusInput): string {
-  const entry = input.last?.shops[shop];
-  if (entry !== undefined && entry.error === undefined) return '';
+function staleness(shop: ShopId, input: StatusInput, last: RunSummary): string {
+  if (!needsLastSuccess(last, shop, input.enabledShops)) return '';
+  // buildStatusReply checked that every shop needing it was looked up.
   const success = input.lastSuccess[shop];
-  return success === undefined
-    ? ' (never checked successfully)'
+  return success === null || success === undefined
+    ? ' (no successful check in 7 days)'
     : ` (as of <t:${seconds(success)}:R>)`;
 }
 
 function cardLine(card: CardId, input: StatusInput): string {
   const name = input.names.get(card);
   const label = `#${card}${name ? ` ${name}` : ''}`;
-  if (!input.last) return `${label}: not checked yet`;
+  const last = input.latest.summary;
+  if (!last) return `${label}: ${input.latest.newerUnreadable ? 'unknown' : 'not checked yet'}`;
   const parts: string[] = [];
   for (const shop of SHOP_IDS) {
+    if (!input.enabledShops.includes(shop)) continue;
     const here = input.listings.filter((l) => l.shop === shop && l.cardIds.includes(card));
     if (here.length > 0) {
-      parts.push(entryText(best(here, input.now), input.now) + staleness(shop, input));
+      parts.push(
+        entryText(best(here, last, input.now), last, input.now) + staleness(shop, input, last)
+      );
+    } else if (!succeeded(last, shop)) {
+      // Without a successful check there is no telling whether the shop lists the card.
+      const why = last.shops[shop] === undefined ? 'not checked' : 'check failed';
+      parts.push(`${SHOP_NAMES[shop]} unknown (${why})`);
     }
   }
   return `${label}: ${parts.length > 0 ? parts.join(' · ') : 'not listed in any shop'}`;
 }
 
+function headLines(input: StatusInput): string[] {
+  const count = `Your missing cards (${input.cards.length})`;
+  const last = input.latest.summary;
+  if (!last) {
+    return [
+      count,
+      input.latest.newerUnreadable ? '⚠️ No readable check record.' : 'No check has run yet.',
+    ];
+  }
+  const head = [`${count} · last check <t:${seconds(last.startedAt)}:R>`];
+  if (input.latest.newerUnreadable) {
+    head.push('⚠️ The latest check record could not be read; showing the one before.');
+  }
+  if (last.error !== undefined) {
+    head.push(`❌ Last check failed: ${last.error.slice(0, MAX_ERROR)}`);
+  }
+  return [...head, '', ...SHOP_IDS.map((shop) => shopLine(shop, input, last))];
+}
+
 /**
  * The `/missing status` reply: the latest check per shop, then each missing card with what every
  * shop showed for it. Whole card lines are kept while the reply fits Discord's message limit; the
- * rest is counted as "… and K more cards".
+ * rest is counted as "… and K more cards". There is no hard cut: the head is a few lines with
+ * every error cut to MAX_ERROR (well under the limit), so at worst every card line is counted.
  */
 export function buildStatusReply(input: StatusInput): string {
   if (input.cards.length === 0) return EMPTY_LIST;
-  const head = input.last
-    ? [
-        `Your missing cards (${input.cards.length}) · last check <t:${seconds(input.last.startedAt)}:R>`,
-        '',
-        ...SHOP_IDS.map((shop) => shopLine(shop, input.last!)),
-      ]
-    : [`Your missing cards (${input.cards.length})`, 'No check has run yet.'];
+  for (const shop of SHOP_IDS) {
+    if (
+      needsLastSuccess(input.latest.summary, shop, input.enabledShops) &&
+      input.lastSuccess[shop] === undefined
+    ) {
+      // A missing lookup must not read as "no success": that is a wiring error.
+      throw new Error(`/missing status: last success of ${shop} was not looked up`);
+    }
+  }
+  const head = headLines(input);
   const lines = input.cards.map((card) => cardLine(card, input));
 
-  let text = [...head, '', ...lines].join('\n');
+  const text = [...head, '', ...lines].join('\n');
   if (text.length <= DISCORD_MESSAGE_LIMIT) return text;
-  for (let keep = lines.length - 1; keep >= 0; keep--) {
-    text = [...head, '', ...lines.slice(0, keep), `… and ${lines.length - keep} more cards`].join(
-      '\n'
-    );
-    if (text.length <= DISCORD_MESSAGE_LIMIT) return text;
+  for (let keep = lines.length - 1; keep > 0; keep--) {
+    const cut = [...head, '', ...lines.slice(0, keep), `… and ${lines.length - keep} more cards`];
+    const candidate = cut.join('\n');
+    if (candidate.length <= DISCORD_MESSAGE_LIMIT) return candidate;
   }
-  return text.slice(0, DISCORD_MESSAGE_LIMIT);
+  return [...head, '', `… and ${lines.length} more cards`].join('\n');
 }

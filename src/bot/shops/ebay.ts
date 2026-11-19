@@ -562,7 +562,7 @@ export function createEbayAdapter(
 
   /**
    * A walk that ended with `read` items, below the announced total; `offset` is the last offset
-   * requested (the empty page, or the last page by the total). eBay's `total` is an estimate and
+   * requested (the empty page, the last page by the total, or the last page under the cap). eBay's `total` is an estimate and
    * its pages may hold fewer items than the limit, so a gap of at most max(5, 2 % of the total)
    * is accepted with a warning and no alert; a larger one is a ShopLayoutError, as a partial walk
    * would mark the unread listings unavailable.
@@ -588,8 +588,9 @@ export function createEbayAdapter(
    * empty page, or once the next offset reaches the answer's total (a later page without a total
    * keeps the earlier one); the items read are then checked against the total (endShort).
    * ShopLayoutErrors, as a partial walk would mark the unread listings unavailable: a walk ending
-   * more than the tolerance below the total (endShort), the same at the cap for the offsets read
-   * (below 1000), an empty first page with a total above 0, and a first page with neither
+   * more than the tolerance below the total (endShort), a walk at the cap reading more than
+   * tolerance(1000) = 20 fewer than 1000 items (the offsets it read hold that many, whatever
+   * eBay's estimate of the total), an empty first page with a total above 0, and a first page with neither
    * `itemSummaries` nor `total`. A search cut at the cap (more announced than 1000 offsets
    * reach, or no total at all) is logged and added to `truncated`.
    */
@@ -629,11 +630,12 @@ export function createEbayAdapter(
     const lastOffset = (MAX_PAGES_PER_QUERY - 1) * SEARCH_LIMIT;
     if (total !== null) {
       // Only totals above the cap get here: every offset below it was read, so items missing
-      // there beyond the tolerance are a partial walk, not a cut one.
+      // there are short pages, not the estimate. Their tolerance is that of the offsets read,
+      // not of the total, or a large total would pass a partial walk as a cut one.
       const reach = MAX_PAGES_PER_QUERY * SEARCH_LIMIT;
-      if (reach - all.length > tolerance(total)) {
+      if (reach - all.length > tolerance(reach)) {
         throw new ShopLayoutError(
-          `eBay search "${query}": the walk ended at offset ${lastOffset} with ${all.length} items read of the first ${reach}, total ${total} (tolerance ${tolerance(total)})`
+          `eBay search "${query}": the walk ended at offset ${lastOffset} with ${all.length} items read of the first ${reach}, total ${total} (tolerance ${tolerance(reach)})`
         );
       }
       // Within the tolerance of the total: complete as far as eBay's estimate goes.

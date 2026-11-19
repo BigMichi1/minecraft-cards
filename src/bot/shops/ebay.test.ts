@@ -1080,14 +1080,22 @@ describe('createEbayAdapter', () => {
           return JSON.stringify(answer);
         });
         expect(short).toBeInstanceOf(ShopLayoutError);
-        // 979 of 1001 at the cap: 21 missing below 1000 is within tolerance(1001) = 21, and
-        // offsets past 1000 are unread, so a cut search.
+        // 980 of 1002 at the cap: 20 missing below 1000 is within tolerance(1000) = 20, 22 of
+        // the total beyond tolerance(1002) = 21, so a cut search.
         const cut = await run((url) => {
+          const answer = JSON.parse(paged(980)(url)) as Record<string, unknown>;
+          answer.total = 1002;
+          return JSON.stringify(answer);
+        });
+        expect(cut.result.truncated).toHaveLength(EBAY_QUERIES.length);
+        // 979 of 1001: 21 missing below 1000 is beyond tolerance(1000) = 20, though within
+        // tolerance(1001) = 21: a layout error.
+        const partial = await runError((url) => {
           const answer = JSON.parse(paged(979)(url)) as Record<string, unknown>;
           answer.total = 1001;
           return JSON.stringify(answer);
         });
-        expect(cut.result.truncated).toHaveLength(EBAY_QUERIES.length);
+        expect(partial).toBeInstanceOf(ShopLayoutError);
       } finally {
         warn.mockRestore();
       }
@@ -1116,6 +1124,11 @@ describe('createEbayAdapter', () => {
       expect(error).toBeInstanceOf(ShopLayoutError);
       expect(error.message).toContain('500 items read of the first 1000');
       expect(error.message).toContain('1500');
+      // 160 per page of 10000: 800 read; tolerance(10000) = 200 would let it pass.
+      const large = await runError(paged(10000, 160));
+      expect(large).toBeInstanceOf(ShopLayoutError);
+      expect(large.message).toContain('800 items read of the first 1000');
+      expect(large.message).toContain('tolerance 20');
     });
 
     test('at the cap, a total within the tolerance of 1000 counts as complete (P3)', async () => {
@@ -1505,8 +1518,9 @@ describe('createEbayAdapter', () => {
 
   test('one item per page against a large total is a layout error, not a cut search', async () => {
     // Every offset is read, but each page holds a single item: a partial walk, whether the total
-    // fits the 1000 offsets (450) or not (5000). The cap warning itself is tested under paging.
-    for (const total of [450, 5000]) {
+    // fits the 1000 offsets (450) or not (5000, and 60000, whose own tolerance of 1200 would
+    // cover every missing item). The cap warning itself is tested under paging.
+    for (const total of [450, 5000, 60000]) {
       const fake = makeFetch({
         searchBody: () => JSON.stringify({ total, itemSummaries: [item({})] }),
       });

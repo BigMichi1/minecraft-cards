@@ -22,9 +22,8 @@ The maintainer manages the collections on laststicker.com and handed the how to 
   test and fixtures); no change elsewhere.
 - Existing series 3 data, wanted lists, overrides and notification history carry over unchanged
   (they become `lego-minecraft-3`).
-- The card list of every collection comes from laststicker.com, with kinds and variants; names
-  and reference pictures come from laststicker wherever the collection has no proven shop source
-  (see "Names and reference pictures").
+- laststicker.com is the reference of every collection: card list, names, kinds, variants and
+  reference pictures (the maintainer's decision; see "Names and reference pictures").
 
 ## Non-goals
 
@@ -136,8 +135,8 @@ kinds and variants, sets names and laststicker reference URLs where the collecti
 so (next section), and never deletes a card silently. A card that
 vanished from laststicker is kept and reported in the admin DM (`/admin catalog sync` reply and a
 throttled alert), as removing it would drop it from wanted lists. Puzzle cards are cards whose
-kind is `Puzzlekarte` (sticky `puzzle_seen` as today). The existing name-based puzzle rule and the
-placeholder-picture rule stay for the shop fallback pictures.
+kind is `Puzzlekarte` (sticky `puzzle_seen` as today). The placeholder-picture rule stays for
+the shop fallback pictures.
 
 When: once at start for any collection with an empty catalog, then once a day per collection (the
 scheduler's daily slot), and on `/admin catalog sync [collection]`. A sync reads one page per
@@ -150,31 +149,45 @@ which the synced list includes).
 
 ### Names and reference pictures
 
-Each definition names its **reference sources** in order of preference:
+laststicker is the reference of every collection (the maintainer's decision), Minecraft included:
 
-- Minecraft 1, 2 and 3: `['sammel-ente', 'laststicker']`. sammel-ente stays the primary source
-  of names and reference pictures, exactly as today for series 3: its scrape keeps writing them
-  (`updateNamesAndReferences`), its listings keep the `reference` match status, and the eBay name
-  check (PR #22) keeps reading sammel-ente's names. laststicker only fills gaps: a card sammel-ente
-  does not list, or whose sammel-ente picture is missing or a placeholder (`_leer.`, shared),
-  gets laststicker's name and scan. `cards.reference_source` records which one is in use.
-- Turbo Attax 2026: `['laststicker']` (no shop with a reference picture exists).
+- Names, kinds, variants and the reference picture of every card come from the laststicker sync.
+  sammel-ente's scrape no longer writes names or references (`updateNamesAndReferences` goes;
+  its listings stay ordinary listings with their own picture and price).
+- Fallback picture: a card laststicker has no scan for (404 on its picture) uses the newest shop
+  picture of the same collection and card from sammel-ente, when the definition names it
+  (`referenceFallbackShop: 'sammel-ente'` for Minecraft), with today's placeholder rules
+  (`_leer.`, one picture for several cards). Else `no_reference`. `cards.reference_source`
+  (`laststicker` | `shop`) records which one is in use.
+- sammel-ente listings lose the `reference` match status: they start `pending` and are compared
+  like every other shop's listings. The `reference` status value is dropped from new rows (the
+  migration resets existing ones, below).
+- Puzzle cards come from laststicker's kind `Puzzlekarte` (sticky `puzzle_seen` as today); the
+  "Puzzlekarte" name rule goes, since laststicker names puzzle cards by picture and piece
+  ("Entdecke die Oberwelt 1").
+- The series 3 eBay name check (PR #22) reads laststicker's names. Its tests use fixture names;
+  step 2 re-runs the eBay fixture with laststicker's series 3 names and records the listings
+  that change (expected: few, as the names are the same characters in German).
 
-So series 3 references do not change wholesale: no mass re-match is needed. A gap card that gains
-a laststicker reference is today a `no_reference` listing, which is retried every check and so
-gets compared naturally; a reference URL that changes keeps today's rule (its `mismatch`
-listings are compared again).
+**Threshold measurement (step 2, before the switch).** Compare laststicker scans with shop
+pictures (sammel-ente, collect-it, eBay) of the same and of neighbouring cards on series 3, and
+record the scores in `docs/image-matching.md` as for the current threshold. If same-card and
+different-card scores no longer separate at `IMAGE_MATCH_THRESHOLD`, or the twin or
+`DECISION_GAP` rules stop holding, set new values from that measurement (never guessed) before
+the switch ships. If no value separates them, the PR stops and reports the numbers to the
+maintainer rather than shipping a worse matcher.
 
-**Threshold check before laststicker decides anything (go/no-go, part of step 2).** Compare
-laststicker scans with shop pictures of the same and of neighbouring cards on series 3, where
-both exist, and record the scores in `docs/image-matching.md` as for the current threshold.
+**The switch re-matches once.** When step 2 deploys, every listing that is not admin-mapped and
+not a bundle goes back to `pending` (a migration, as `0003` did): its status and
+`picture_card_id` were decided against the old references. The next run compares all of them
+before it sends anything; notifications stay recorded per listing and availability period, so
+nobody is notified twice. Mismatch notes that result are throttled as today (per listing and
+picture card, once a day); the admin gets one summary line of how many changed instead of one
+note per listing for that first run (`/admin run` reply and a single DM).
 
-- Go: same-card and different-card scores separate at `IMAGE_MATCH_THRESHOLD` with the twin and
-  `DECISION_GAP` rules holding. laststicker references are used like sammel-ente's.
-- No-go: laststicker references are still stored and shown as thumbnails, but never decide: a
-  listing compared only against a laststicker reference gets at most `unconfirmed`, never
-  `confirmed` or `mismatch` (picture never identifies). The alert still goes out, marked
-  unconfirmed. The threshold is not changed for sammel-ente references.
+Later reference URL changes (a new scan on laststicker) keep today's rule: the cards whose
+reference changed have their `mismatch` listings compared again, and `no_reference` listings are
+retried every check.
 
 ### Shops per collection
 
@@ -285,15 +298,17 @@ Each step is its own PR, reviewed with the pr-review-toolkit, and leaves the bot
 1. Collection key everywhere, registry with `lego-minecraft-3` only; migration backfill; no
    behaviour change (commands accept and default nothing yet: the option is added with one
    choice).
-2. laststicker catalog source and daily sync for `lego-minecraft-3`; matcher threshold check
-   against laststicker scans; sammel-ente as fallback reference.
+2. laststicker as the reference for `lego-minecraft-3`: catalog sync, threshold measurement,
+   sammel-ente listings compared like any shop, the one-time re-match.
 3. `lego-minecraft-1` and `lego-minecraft-2`: definitions, shop settings, eBay classification.
 4. `turbo-attax-2026`: id rule, collect-it Turbo Attax titles, eBay title forms.
 5. `docs/collections.md` (how to add one) and doc updates (`shops.md`, `image-matching.md`,
-   `configuration.md`, `CLAUDE.md` decisions).
+   `configuration.md`, `CLAUDE.md` decisions: "the sammel-ente listing picture is the image
+   reference" becomes "laststicker is the reference", and the puzzle rule changes).
 
 ## Decided by the maintainer
 
+- laststicker is the reference for names and pictures in every collection, Minecraft included.
 - Collections: LEGO Minecraft series 1, 2, 3 and Topps F1 Turbo Attax 2026; each with its own
   shops, ids and missing lists; easy to add more.
 - No parallels.
@@ -307,10 +322,11 @@ Each step is its own PR, reviewed with the pr-review-toolkit, and leaves the bot
 - `collection` option required on every command.
 - Reference thumbnail in DMs is the laststicker scan.
 - laststicker sync daily, never deleting cards silently.
-- Minecraft keeps sammel-ente as the primary source of names and pictures (series 3 unchanged);
-  laststicker fills gaps. Turbo Attax uses laststicker.
-- laststicker scans decide pictures only after a recorded go/no-go measurement; on no-go they are
-  shown but never decide.
+- sammel-ente's picture is the fallback for Minecraft cards laststicker has not scanned.
+- The threshold is measured on laststicker scans before the switch; new values only from that
+  measurement; no value that separates them means the PR stops and reports.
+- The switch re-matches every unmapped, non-bundle listing once, with one summary line for the
+  admin instead of a wave of mismatch notes.
 - A wrong-collection listing is fixed with `/admin map … collection:`; unmapped listings follow
   their title.
 - A failing eBay query leaves all collections' eBay listings untouched (as today).

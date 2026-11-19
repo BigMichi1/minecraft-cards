@@ -111,6 +111,15 @@ export const catalogManager = {
     );
   },
 
+  /** Every named catalog card's name (sammel-ente's), for the eBay title check by name. */
+  cardNames(): Map<CardId, string> {
+    const names = new Map<CardId, string>();
+    for (const row of db.select({ cardId: cards.cardId, name: cards.name }).from(cards).all()) {
+      if (row.name) names.set(row.cardId, row.name);
+    }
+    return names;
+  },
+
   getCard(id: CardId): CatalogCard | undefined {
     const row = db
       .select({

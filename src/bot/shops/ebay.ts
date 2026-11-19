@@ -252,7 +252,10 @@ function hasRange(title: string): boolean {
   return false;
 }
 
-/** Why a title gives no card ids whatever it names; see titleExclusion. */
+/**
+ * Why a title gives no card ids by the title forms, whatever it names; see titleExclusion. Only
+ * `no series 3` may still give ids, by catalog name (nameMatchedCardIds).
+ */
 export type TitleExclusion = 'other series' | 'no series 3' | 'pick list' | 'range';
 
 /**
@@ -278,6 +281,11 @@ export function titleExclusion(title: string): TitleExclusion | null {
  */
 export function extractCardIdsFromTitle(title: string): CardId[] {
   if (titleExclusion(title) !== null) return [];
+  return readCardIds(title);
+}
+
+/** The card ids of the title forms extractCardIdsFromTitle reads, whatever the series. */
+function readCardIds(title: string): CardId[] {
   const ids = new Set<CardId>();
   const add = (raw: string) => {
     const id = normalizeCardId(raw);
@@ -295,6 +303,136 @@ export function extractCardIdsFromTitle(title: string): CardId[] {
 
 // Any COUNT_WORDS word as a whole word: a pack, lot, count or price is never one single card.
 const ANY_COUNT_WORD = new RegExp(`(?<![${LETTER}])${wordsPattern(COUNT_WORDS)}`, 'i');
+
+// "LEGO Minecraft 131 - Ghast": a number before a spaced dash, not after the series, a count
+// word or the LE/XXL prefix ("LE 19 - Creeper" is LE19) and not followed by a count. Read only
+// for nameMatchedCardIds, where the catalog name beside it must confirm it.
+const NUMBER_DASH_PATTERN = new RegExp(
+  `${NOT_AFTER_SERIES}${NOT_AFTER_COUNT}(?<!\\b(?:LE|XXL)\\s*)(?:^|\\s)#?(\\d{1,3})\\s+[-–—]\\s+(?!${COUNT_SYMBOLS}|${wordsPattern(COUNT_WORDS)})`,
+  'gi'
+);
+
+const SPACED_LE_XXL_PATTERN = new RegExp(
+  `(?<![${LETTER}])(LE|XXL)\\s*(\\d+)(?!\\d)${NOT_A_COUNT}`,
+  'gi'
+);
+
+/**
+ * Title text for the name comparison: lowercase, umlauts and ß spelled out ("Wächterduell" and
+ * "Waechterduell" alike), so the name check needs no Unicode case rules.
+ */
+function nameText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/ß/g, 'ss');
+}
+
+/** A name's or title's letter and digit runs, in nameText form. */
+const nameWords = (text: string): string[] => nameText(text).match(/[a-z\d]+/g) ?? [];
+
+/** A card id as a (nameText) title writes it: `131`, `#131`, `0131`; `le8`, `le 08`, `le  8`. */
+function cardIdPattern(id: CardId): string {
+  const m = /^([A-Z]*)(\d+)$/.exec(id);
+  if (!m) return escapeRegExp(nameText(id));
+  const [, prefix = '', digits = ''] = m;
+  const start = prefix ? `${nameText(prefix)}\\s*` : '';
+  return `(?<![a-z\\d])${start}0*${digits}(?!\\d)`;
+}
+
+/**
+ * A catalog name in a (nameText) title: its letter and digit runs in order, with any spaces or
+ * punctuation between them ("Sunny vs. Blaze" also as "Sunny vs Blaze", "Ender-Knight" as
+ * "ender knight"), but not glued together ("Sunny vsX Blaze"), and not part of a longer word.
+ * Null for a name with no letter or digit.
+ */
+function cardNamePattern(name: string): string | null {
+  const words = nameWords(name);
+  return words.length > 0 ? `(?<![a-z\\d])${words.join('[^a-z\\d]+')}(?![a-z\\d])` : null;
+}
+
+// Between a number and its name: spaces, and at most one dash, colon or bar.
+const BESIDE = '\\s*(?:[-–—:|]\\s*)?';
+// Before a number its name may stand with a prefix: "Wither Skeleton Karte 4", "Karte #4".
+const NUMBER_PREFIX = '(?:(?:nr\\.?|no\\.?|karte|card)\\s*)?(?:#\\s*)?';
+
+/**
+ * The only words a title read by name may hold besides its cards' numbers and names: the brand,
+ * the card words, "Charakterkarte", rarity, condition, number prefixes and the series 3 year. An allow-list:
+ * any other word may be another series ("Comic Steve", "Staffel 2", "S1"), another card's
+ * longer name ("Gold Ghast", "Skeleton Horseman"), a second card ("Steve / Alex"), another
+ * product ("Sticker", "Movie") or a year, and makes the title give nothing.
+ */
+export const NAME_TITLE_WORDS: readonly string[] = [
+  '2026',
+  'card',
+  'common',
+  'einzelkarte',
+  'karte',
+  'lego',
+  'minecraft',
+  'neu',
+  'no',
+  'nr',
+  'ovp',
+  'rare',
+  'tcc',
+  'tcg',
+  'trading',
+  'ultra',
+  // The one card type that names no other line: "Comickarte" and "Puzzlekarte" beside a
+  // character card may be another series' card ("Comic Steve" is series 1 card 3), and a puzzle
+  // card's own name carries "Puzzlekarte" already.
+  'charakterkarte',
+];
+const NAME_TITLE_WORD_SET = new Set(NAME_TITLE_WORDS);
+
+/**
+ * Card ids of a title naming no series ("LEGO Minecraft Karte 131 - Ghast"), each confirmed by
+ * its catalog name (`names`, the sammel-ente names) standing right beside its number: series 1
+ * and 2 used the same title forms and numbers, so a number alone may be another series' card.
+ * Only a title excluded for lacking a series word qualifies, and only without a pick list, range
+ * or COUNT_WORDS word (so "Karten N - Name - Charakterkarte" never qualifies). Every number the
+ * title forms (and `N - Name`, `LE  19`) read must carry its own name, and once those numbers
+ * and names are taken out, nothing but NAME_TITLE_WORDS words and punctuation may be left:
+ * "Comic Karte 3 - Steve", "Gold Ghast Karte 131" and "Karte 131 - Ghast 2025" give nothing.
+ * "Karte 104 - Ghast" gives nothing too: series 3 #104 is not Ghast (#15 and #131 are). A
+ * series 1 or 2 card sharing number and name still passes; its picture is compared as for every
+ * title (docs/image-matching.md).
+ */
+export function nameMatchedCardIds(title: string, names: ReadonlyMap<CardId, string>): CardId[] {
+  if (titleExclusion(title) !== 'no series 3') return [];
+  if (MULTI_PICK_PATTERN.test(title) || hasRange(title) || ANY_COUNT_WORD.test(title)) return [];
+  const candidates = new Set(readCardIds(title));
+  for (const pattern of [NUMBER_DASH_PATTERN, SPACED_LE_XXL_PATTERN]) {
+    for (const m of title.matchAll(pattern)) {
+      const id = normalizeCardId(m[2] === undefined ? (m[1] ?? '') : `${m[1]}${m[2]}`);
+      if (id) candidates.add(id);
+    }
+  }
+  if (candidates.size === 0) return [];
+  // Every card is looked for in the whole title, so their order does not matter; then all of
+  // them are taken out at once, and only allowed words may be left.
+  let rest = nameText(title);
+  const spans: RegExp[] = [];
+  for (const id of candidates) {
+    const namePattern = cardNamePattern(names.get(id) ?? '');
+    if (!namePattern) return [];
+    const num = cardIdPattern(id);
+    const beside = new RegExp(
+      `${num}${BESIDE}${namePattern}|${namePattern}${BESIDE}${NUMBER_PREFIX}${num}`,
+      'g'
+    );
+    if (!beside.test(rest)) return [];
+    spans.push(beside);
+  }
+  for (const beside of spans) rest = rest.replace(beside, ' ');
+  if (nameWords(rest).some((w) => !NAME_TITLE_WORD_SET.has(w))) return [];
+  return [...candidates].sort(compareCardIds);
+}
+
 // The numbers a single-card title may carry without naming a card: the series ("Serie 3",
 // "Series3") and a year ("2026").
 const SERIES_OR_YEAR = /\b(?:Series?|Staffel)\s*\d+\b|\b(?:19|20)\d{2}\b/gi;
@@ -406,6 +544,12 @@ export function createEbayAdapter(
     clientId: string;
     clientSecret: string;
     fetchFn?: FetchFn;
+    /**
+     * The catalog's card names (sammel-ente's), read once per fetch: a title without a series
+     * word counts only by a name beside its number (nameMatchedCardIds). Without it, such
+     * titles stay excluded.
+     */
+    cardNames?: () => ReadonlyMap<CardId, string>;
   } & AdapterOptions
 ): ShopAdapter {
   const fetchFn = opts.fetchFn ?? fetch;
@@ -653,6 +797,7 @@ export function createEbayAdapter(
   return {
     id: 'ebay',
     async fetchListings(): Promise<FetchResult> {
+      const names = opts.cardNames?.() ?? new Map<CardId, string>();
       const byUrl = new Map<string, Listing>();
       const noId = new Set<string>();
       const excluded = new Set<string>();
@@ -682,6 +827,14 @@ export function createEbayAdapter(
           // A listing with variations (`SELLER_DEFINED_VARIATIONS`) sells a choice of cards
           // under one title; which of them is in stock is not in the search answer.
           const reason = item.itemGroupType ? 'variations' : titleExclusion(title);
+          const byName = reason === 'no series 3' ? nameMatchedCardIds(title, names) : [];
+          if (byName.length > 0) {
+            logger.debug(
+              `eBay: "${clip(title)}" names no series, read by catalog name as ${byName.join(', ')}`
+            );
+            byUrl.set(url, toListing(item, url, title, byName));
+            continue;
+          }
           if (reason) {
             excluded.add(url);
             logger.debug(`eBay: skipped "${clip(title)}" (${reason})`);

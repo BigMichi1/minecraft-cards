@@ -360,7 +360,7 @@ const NUMBER_PREFIX = '(?:(?:nr\\.?|no\\.?|karte|card)\\s*)?(?:#\\s*)?';
 
 /**
  * The only words a title read by name may hold besides its cards' numbers and names: the brand,
- * card words and types, rarity, condition, number prefixes and the series 3 year. An allow-list:
+ * the card words, "Charakterkarte", rarity, condition, number prefixes and the series 3 year. An allow-list:
  * any other word may be another series ("Comic Steve", "Staffel 2", "S1"), another card's
  * longer name ("Gold Ghast", "Skeleton Horseman"), a second card ("Steve / Alex"), another
  * product ("Sticker", "Movie") or a year, and makes the title give nothing.
@@ -382,7 +382,10 @@ export const NAME_TITLE_WORDS: readonly string[] = [
   'tcg',
   'trading',
   'ultra',
-  ...CARD_TYPES.map(nameText),
+  // The one card type that names no other line: "Comickarte" and "Puzzlekarte" beside a
+  // character card may be another series' card ("Comic Steve" is series 1 card 3), and a puzzle
+  // card's own name carries "Puzzlekarte" already.
+  'charakterkarte',
 ];
 const NAME_TITLE_WORD_SET = new Set(NAME_TITLE_WORDS);
 

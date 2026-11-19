@@ -700,7 +700,6 @@ describe('nameMatchedCardIds', () => {
         '2026',
         'card',
         'charakterkarte',
-        'comickarte',
         'common',
         'einzelkarte',
         'karte',
@@ -710,9 +709,7 @@ describe('nameMatchedCardIds', () => {
         'no',
         'nr',
         'ovp',
-        'puzzlekarte',
         'rare',
-        'setkarte',
         'tcc',
         'tcg',
         'trading',
@@ -732,6 +729,11 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft Trading Card 3 - Steve - Skin Karte', []],
       ['LEGO Minecraft Karte 3 - Steve - Pokemon', []],
       ['LEGO Minecraft Karte 3 - Steve - Proxy', []],
+      // The qualifier as one card type word.
+      ['LEGO Minecraft Comickarte 3 - Steve', []],
+      ['LEGO Minecraft Karte 3 - Steve - Comickarte', []],
+      ['LEGO Minecraft Karte 3 - Steve Comickarte', []],
+      ['Minecraft Puzzlekarte 3 - Steve', []],
       // Only NAME_TITLE_WORDS words and punctuation remain: accepted.
       ['LEGO Minecraft Trading Card 3 - Steve - Charakterkarte Ultra Rare NEU OVP 2026', ids('3')],
     ]);
@@ -774,7 +776,7 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft XXL 1 - Charged Creeper', ids('XXL1')],
       // LE21 is "Gold Ghast", not "Ghast".
       ['LEGO Minecraft LE21 Ghast', []],
-      // Base #5 is "Creeper" too, but "LE 19" is no #19.
+      // Base #5 is "Creeper" too: one name cannot confirm two numbers.
       ['LEGO Minecraft LE 19 - Creeper Karte 5', []],
       ['LEGO Minecraft LE  19 - Creeper', ids('LE19')],
     ]);

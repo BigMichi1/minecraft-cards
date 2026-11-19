@@ -116,7 +116,8 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   - Every number read must carry its own name. Then the cards' numbers and names are taken out,
     and only punctuation and the allowed words (`NAME_TITLE_WORDS`: `LEGO`, `Minecraft`,
     `Karte`, `Card`, `Trading`, `TCC`, `TCG`, `Einzelkarte`, `Ultra`, `Rare`, `Common`, `Neu`,
-    `OVP`, `Nr`, `No`, `2026`, the card types) may be left. Any other word gives nothing: another
+    `OVP`, `Nr`, `No`, `2026`, `Charakterkarte`) may be left; `Comickarte 3 - Steve` gives
+    nothing, and a puzzle card's name carries its `Puzzlekarte` itself. Any other word gives nothing: another
     series (`Comic Karte 3 - Steve`, series 1 card 3 is "Comic Steve"; `Staffel 2`, `S1`),
     another card's longer name (`Gold Ghast Karte 131`, `Karte 131 - Ghast (Gold)`: LE21 is
     "Gold Ghast"), a second card without its number (`Karte 3 - Steve / Alex`), another product

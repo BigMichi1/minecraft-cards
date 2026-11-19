@@ -26,22 +26,27 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
 - **Paging**: each search is read page by page, 200 items per page, with `offset` = page number
   × 200. eBay takes only offsets that are zero or a multiple of `limit` (any other is an HTTP 400),
   and a page may hold fewer than 200 items before the end (199 on 2026-11-19), so the offset is
-  never the number of items read. The walk ends once the next offset reaches the answer's `total`
-  (a later page without a `total` keeps the earlier one), the items read then checked against it
-  (tolerance below), or, without any `total`, at a short or empty page; at most 5 pages (1000
-  results) per query. 1500 ms between two search requests, as between two shop pages.
+  not the number of items read, and a short page never ends a walk by itself. The walk ends at an
+  empty page, or once the next offset reaches the answer's `total` (a later page without a
+  `total` keeps the earlier one); the items read are then checked against the `total`
+  (tolerance below). At most 5 pages (offsets below 1000) per query. 1500 ms between two search requests, as between two shop pages.
 - **Errors**: a failing page is a shop error, like a failing shop page. So is a partial walk,
-  because the unread listings would be marked unavailable: a walk that ends (an empty later page)
-  further below the `total` than its tolerance, an empty first page with a `total` above 0, a
+  because the unread listings would be marked unavailable: a walk that ends (on the last page by
+  the `total`, or on an empty later page) further below the `total` than its tolerance, a walk at
+  the cap that read fewer of the first 1000 offsets than the tolerance allows, an empty first page with a `total` above 0, a
   first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty result),
   and an answer of the wrong shape (not an object, `itemSummaries` not a list of items,
   `total` not a number) are `ShopLayoutError`s naming the query and the offset. All searches
   together returning no item is a `ShopLayoutError` as before.
-- **Total tolerance**: eBay's `total` is an estimate, so a walk past its first page may end up to
-  max(5, ceil(2 % of the total)) items short of it (455 announced, 450 delivered). That gap is
+- **Total tolerance**: eBay's `total` is an estimate and its pages may be short, so a walk may end
+  up to max(5, ceil(2 % of the total)) items short of it (455 announced, 450 delivered; 448 of
+  450 in pages of 199); an empty first page with a `total` above 0 is always an error. That gap is
   accepted with a warning naming the query, the total and the count read, and no admin alert; a
-  larger gap (600 announced, 400 delivered) stays a `ShopLayoutError`. At the page cap, a gap
-  within the tolerance also counts as complete; a larger one is a cut search (below).
+  larger gap (600 announced, 400 delivered) stays a `ShopLayoutError`. The page cap is reached
+  only with a `total` above 1000, or none: there, fewer than 1000 items read by more than the
+  tolerance is a `ShopLayoutError` (1500 announced, 500 read), a `total` within the tolerance of
+  the items read counts as complete (1021 announced, 1000 read), and a larger one is a cut search
+  (below; 1022 announced, 1000 read).
 - **Page cap**: a search cut at the cap logs a warning and is reported in `FetchResult.truncated`;
   the runner sends a throttled admin alert (`shop-truncated:ebay`, at most once a day), and
   `/admin status` shows the number of cut searches.

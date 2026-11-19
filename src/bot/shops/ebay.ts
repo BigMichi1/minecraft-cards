@@ -561,12 +561,13 @@ export function createEbayAdapter(
   }
 
   /**
-   * A walk that ended (an empty page, or the cap) below the announced total.
-   * eBay's `total` is an estimate, so a gap of at most max(5, 2 % of the total) is accepted
-   * with a warning and no alert; a larger one is a ShopLayoutError, as a partial walk would mark
-   * the unread listings unavailable.
+   * A walk that ended with `read` items, below the announced total; `offset` is the last offset
+   * requested (the empty page, the last page by the total, or the last page under the cap). eBay's
+   * `total` is an estimate and its pages may hold fewer items than the limit, so a gap of at most
+   * max(5, 2 % of the total) is accepted with a warning and no alert; a larger one is a
+   * ShopLayoutError, as a partial walk would mark the unread listings unavailable.
    */
-  function endShort(query: string, total: number, read: number): void {
+  function endShort(query: string, total: number, read: number, offset: number): void {
     const allowed = tolerance(total);
     if (total - read <= allowed) {
       logger.warn(
@@ -575,18 +576,23 @@ export function createEbayAdapter(
       return;
     }
     throw new ShopLayoutError(
-      `eBay search "${query}" offset ${read}: no more items, but the total is ${total} (tolerance ${allowed})`
+      `eBay search "${query}": the walk ended at offset ${offset} with ${read} items read, but the total is ${total} (tolerance ${allowed})`
     );
   }
 
   /**
-   * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. The
-   * walk ends at the answer's total (a later page without a total keeps the earlier one) or,
-   * without any total, at a short or empty page. A later empty page more than the tolerance
-   * below the total (endShort), an empty first page with a total above 0, or a first page with
-   * neither `itemSummaries` nor `total` is a ShopLayoutError: a partial walk would mark the
-   * unread listings unavailable. A search cut at the cap is logged and added to
-   * `truncated`.
+   * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. eBay takes
+   * only offsets that are a multiple of the limit, and a page may hold fewer items than the limit
+   * before the end, so the offset is the page number times SEARCH_LIMIT, not the number of items
+   * read, and a short page never ends a walk by itself. The walk ends at an empty page, or once the
+   * next offset reaches the answer's total (a later page without a total keeps the earlier one);
+   * the items read are then checked against the total (endShort). ShopLayoutErrors, as a partial
+   * walk would mark the unread listings unavailable: a walk ending more than the tolerance below
+   * the total (endShort), a walk at the cap reading more than tolerance(1000) = 20 fewer than 1000
+   * items (the offsets it read hold that many, whatever eBay's estimate of the total), an empty
+   * first page with a total above 0, and a first page with neither `itemSummaries` nor `total`. A
+   * search cut at the cap (more announced than 1000 offsets reach, or no total at all) is logged
+   * and added to `truncated`.
    */
   async function search(
     query: string,
@@ -596,7 +602,7 @@ export function createEbayAdapter(
     const all: EbayItem[] = [];
     let total: number | null = null;
     for (let page = 0; page < MAX_PAGES_PER_QUERY; page++) {
-      const offset = all.length;
+      const offset = page * SEARCH_LIMIT;
       const result = await searchPage(query, offset, pace);
       total = result.total ?? total;
       const items = result.items ?? [];
@@ -607,23 +613,36 @@ export function createEbayAdapter(
             `eBay search "${query}" offset 0: answer has neither itemSummaries nor total`
           );
         }
-        if (total !== null && total > offset) {
-          // The tolerance is for the end of a walk; an empty first page with a total is wrong.
-          if (offset === 0) {
-            throw new ShopLayoutError(
-              `eBay search "${query}" offset 0: empty page, but the total is ${total}`
-            );
-          }
-          endShort(query, total, offset);
+        // The tolerance is for the end of a walk; an empty first page with a total is wrong.
+        if (offset === 0 && total !== null && total > 0) {
+          throw new ShopLayoutError(
+            `eBay search "${query}" offset 0: empty page, but the total is ${total}`
+          );
         }
+        if (total !== null && total > all.length) endShort(query, total, all.length, offset);
         return all;
       }
-      if (total !== null ? all.length >= total : items.length < SEARCH_LIMIT) return all;
+      if (total !== null && offset + SEARCH_LIMIT >= total) {
+        if (all.length < total) endShort(query, total, all.length, offset);
+        return all;
+      }
     }
-    // At the cap within the tolerance of the total: complete as far as eBay's estimate goes.
-    if (total !== null && total - all.length <= tolerance(total)) {
-      endShort(query, total, all.length);
-      return all;
+    const lastOffset = (MAX_PAGES_PER_QUERY - 1) * SEARCH_LIMIT;
+    if (total !== null) {
+      // Only totals above the cap get here: every offset below it was read, so items missing
+      // there are short pages, not the estimate. Their tolerance is that of the offsets read,
+      // not of the total, or a large total would pass a partial walk as a cut one.
+      const reach = MAX_PAGES_PER_QUERY * SEARCH_LIMIT;
+      if (reach - all.length > tolerance(reach)) {
+        throw new ShopLayoutError(
+          `eBay search "${query}": the walk ended at offset ${lastOffset} with ${all.length} items read of the first ${reach}, total ${total} (tolerance ${tolerance(reach)})`
+        );
+      }
+      // Within the tolerance of the total: complete as far as eBay's estimate goes.
+      if (total - all.length <= tolerance(total)) {
+        endShort(query, total, all.length, lastOffset);
+        return all;
+      }
     }
     const note = `search "${query}": ${total ?? 'more'} results, only the first ${all.length} read (${MAX_PAGES_PER_QUERY}-page cap)`;
     logger.warn(`eBay ${note}`);

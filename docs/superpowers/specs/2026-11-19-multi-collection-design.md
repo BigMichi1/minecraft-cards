@@ -147,6 +147,28 @@ collection laststicker cannot serve: import takes a collection option and a past
 checklist (the maintainer pastes from the site; the Turbo Attax paste of 2026-11-19 lacked #135,
 which the synced list includes).
 
+### Cards laststicker is missing
+
+laststicker's checklist can lack a card (Turbo Attax 2026 #135, missing there on 2026-11-19).
+The admin adds such a card by hand:
+
+- `/admin catalog add collection:<c> card:<id> name:<name> [picture:<url>]`: the id must pass
+  the collection's id rule; the picture URL, when given, must pass `validUrl` and is used as the
+  reference (else the shop fallback or `no_reference`, as for an unscanned card). The card is
+  stored with `cards.source` = `manual`.
+- The laststicker sync never deletes, renames or re-pictures a manual card. If laststicker later
+  lists the same id, the card stays manual, and the sync reports it once in the admin DM ("now on
+  laststicker: #135 …") so the admin can turn it over with `/admin catalog release` (the card
+  becomes `laststicker`-sourced; its name and picture follow laststicker from the next sync).
+- `/admin catalog edit collection:<c> card:<id> [name:] [picture:]` corrects a manual card;
+  `/admin catalog remove collection:<c> card:<id>` removes a manual card only, and only after a
+  confirm button that names how many users have it on their missing list (as today's catalog
+  import preview does).
+- Users can put a manual card on their missing list like any other; `/missing status` shows it.
+- Cards from laststicker are `cards.source` = `laststicker` (column added by the migration;
+  existing series 3 cards start as `laststicker` and are confirmed by the first sync; a series 3
+  card the first sync does not find is reported, not removed, as for any vanished card).
+
 ### Names and reference pictures
 
 laststicker is the reference of every collection (the maintainer's decision), Minecraft included:
@@ -298,8 +320,9 @@ Each step is its own PR, reviewed with the pr-review-toolkit, and leaves the bot
 1. Collection key everywhere, registry with `lego-minecraft-3` only; migration backfill; no
    behaviour change (commands accept and default nothing yet: the option is added with one
    choice).
-2. laststicker as the reference for `lego-minecraft-3`: catalog sync, threshold measurement,
-   sammel-ente listings compared like any shop, the one-time re-match.
+2. laststicker as the reference for `lego-minecraft-3`: catalog sync, manual cards
+   (`/admin catalog add|edit|remove|release`), threshold measurement, sammel-ente listings
+   compared like any shop, the one-time re-match.
 3. `lego-minecraft-1` and `lego-minecraft-2`: definitions, shop settings, eBay classification.
 4. `turbo-attax-2026`: id rule, collect-it Turbo Attax titles, eBay title forms.
 5. `docs/collections.md` (how to add one) and doc updates (`shops.md`, `image-matching.md`,
@@ -308,6 +331,7 @@ Each step is its own PR, reviewed with the pr-review-toolkit, and leaves the bot
 
 ## Decided by the maintainer
 
+- The admin can add a card the reference list misses (Turbo Attax #135), per collection.
 - laststicker is the reference for names and pictures in every collection, Minecraft included.
 - Collections: LEGO Minecraft series 1, 2, 3 and Topps F1 Turbo Attax 2026; each with its own
   shops, ids and missing lists; easy to add more.
@@ -332,6 +356,8 @@ Each step is its own PR, reviewed with the pr-review-toolkit, and leaves the bot
 - A failing eBay query leaves all collections' eBay listings untouched (as today).
 - eBay: one run for all collections, titles placed by series markers, the name check kept for
   series 3 only.
+- Manual cards are never touched by the sync; handing one back to laststicker is an explicit
+  admin step.
 - Rollout in five PRs.
 
 ## Left to the builder

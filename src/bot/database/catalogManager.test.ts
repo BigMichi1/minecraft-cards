@@ -89,6 +89,19 @@ describe('catalogManager', () => {
     expect(parseKnownCardList('LE8, 12')).toEqual({ ok: true, ids: ids('12', 'LE8') });
   });
 
+  test('cardNames maps every named catalog card to its name, skipping unnamed ones', () => {
+    catalogManager.seedIfEmpty();
+    catalogManager.updateNamesAndReferences([
+      { cardId: cid('131'), name: 'Ghast', imageUrl: null },
+      { cardId: cid('LE8'), name: 'Golden Steve', imageUrl: null },
+    ]);
+    const names = catalogManager.cardNames();
+    expect(names.get(cid('131'))).toBe('Ghast');
+    expect(names.get(cid('LE8'))).toBe('Golden Steve');
+    expect(names.has(cid('1'))).toBe(false);
+    expect(names.size).toBe(2);
+  });
+
   test('updateNamesAndReferences only touches catalog ids', () => {
     catalogManager.seedIfEmpty();
     catalogManager.updateNamesAndReferences([

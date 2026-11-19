@@ -29,4 +29,27 @@ describe('createShopAdapters', () => {
     expect(value.map((a) => a.id)).toEqual([...SHOP_IDS]);
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(false);
   });
+
+  test('passes the catalog names on to eBay, read only when eBay fetches', async () => {
+    let reads = 0;
+    const cardNames = () => {
+      reads++;
+      return new Map();
+    };
+    const adapters = createShopAdapters({ clientId: 'id', clientSecret: 'secret' }, cardNames);
+    expect(reads).toBe(0);
+    // The token request fails; the names are read before it, at the start of the fetch.
+    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('', { status: 500 })
+    );
+    try {
+      await adapters
+        .find((a) => a.id === 'ebay')!
+        .fetchListings()
+        .catch(() => undefined);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+    expect(reads).toBe(1);
+  });
 });

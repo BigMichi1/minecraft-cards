@@ -61,8 +61,9 @@ export interface FetchResult {
    */
   skippedNoId?: number;
   /**
-   * eBay items whose title cannot offer a series 3 single card: series 1 or 2, no series word,
-   * a pick list, a number range, or a listing with variations. Not "without card number".
+   * eBay items whose title cannot offer a series 3 single card: series 1 or 2, no series word
+   * (unless its catalog name confirms its number, see nameMatchedCardIds), a pick list, a number
+   * range, or a listing with variations. Not "without card number".
    */
   skippedExcluded?: number;
   /** Product boxes or items without a usable link or title. */

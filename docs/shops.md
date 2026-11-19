@@ -104,6 +104,18 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   even in the clear `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms
   (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
   single in the probe named its series.
+- **No series word, but the catalog name** (`nameMatchedCardIds`): a title without any series
+  word still gives a card when the catalog name of that number (sammel-ente's, read at the start
+  of each eBay fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
+  because series 3 #131 is "Ghast". The number comes from the title forms above or a plain
+  `N - Name`; the name follows it (spaces and at most one `-`, `–`, `:` or `|` between, any case,
+  hyphens and spaces alike) or stands before it (`Wither Skeleton Karte 4`). Every number read
+  must carry its own name, or the title gives nothing; so must a title with no pick list, range,
+  variation or `COUNT_WORDS` word. `LEGO Minecraft Karte 104 - Ghast` (2026-11-19) gives nothing:
+  series 3 #104 is not Ghast (#15 and #131 are), so it is most likely a series 1 or 2 card. A
+  series 1 or 2 card with the same number and name does pass; its picture is compared as for any
+  title, so a clearly other series 3 card becomes a `mismatch`, and an unclear picture an alert
+  marked "number unconfirmed" (`docs/image-matching.md`).
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
   `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
   `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,
@@ -111,8 +123,8 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   a range or a choice says nothing about which card is in stock. A range has at most three digits
   on each side and a first number below the second, so `Serie 3 - 2026` and
   `107/228 - 1 Stück` are not ranges.
-- **Counters**: titles excluded by the series, pick-list, range or variation rules are counted as
-  `skippedExcluded` ("not series 3 single cards" in `/admin status`), series 3 titles naming no
+- **Counters**: titles excluded by the series, pick-list, range or variation rules (and not read
+  by their catalog name) are counted as `skippedExcluded` ("not series 3 single cards" in `/admin status`), series 3 titles naming no
   card as `skippedNoId` ("without card number"); both are logged with their reason at debug
   level. A series 3 title naming no card but with no count word and no number besides the series
   and a year (`isPictureCandidate`) is not skipped: it is passed on without ids for the picture

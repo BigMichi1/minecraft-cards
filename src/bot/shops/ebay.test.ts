@@ -6,6 +6,7 @@ import {
   createEbayAdapter,
   extractCardIdsFromTitle,
   isPictureCandidate,
+  nameMatchedCardIds,
   titleExclusion,
   EBAY_QUERIES,
 } from './ebay';
@@ -555,6 +556,68 @@ describe('extractCardIdsFromTitle', () => {
   });
 });
 
+describe('nameMatchedCardIds', () => {
+  // As sammel-ente names them: Ghast is #15 and #131, never #104.
+  const names = new Map([
+    [cid('15'), 'Ghast'],
+    [cid('131'), 'Ghast'],
+    [cid('104'), 'Snow Golem'],
+    [cid('4'), 'Wither Skeleton'],
+    [cid('2'), 'Ender Knight'],
+    [cid('LE8'), 'Golden Steve'],
+  ]);
+
+  test('a title without a series word gives the number whose catalog name stands beside it', () => {
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghast', names)).toEqual(ids('131'));
+    expect(nameMatchedCardIds('Lego Minecraft Karte 15 Ghast', names)).toEqual(ids('15'));
+    expect(nameMatchedCardIds('LEGO Minecraft Nr. 104 Snow Golem', names)).toEqual(ids('104'));
+    expect(nameMatchedCardIds('LEGO Minecraft 131 - Ghast', names)).toEqual(ids('131'));
+    expect(nameMatchedCardIds('Minecraft 4 - Wither Skeleton - Charakterkarte', names)).toEqual(
+      ids('4')
+    );
+    expect(nameMatchedCardIds('LEGO Minecraft #002: ender-knight', names)).toEqual(ids('2'));
+    expect(nameMatchedCardIds('LEGO Minecraft Wither Skeleton Karte 4', names)).toEqual(ids('4'));
+    expect(nameMatchedCardIds('LEGO Minecraft LE8 Golden Steve', names)).toEqual(ids('LE8'));
+  });
+
+  test('a number whose catalog name is another one gives nothing', () => {
+    // 2026-11-19: "104 - Ghast" is no series 3 card; series 3 #104 is not Ghast.
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 104 - Ghast', names)).toEqual([]);
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 16 - Ghast', names)).toEqual([]);
+    // The name elsewhere in the title, not beside the number, does not count.
+    expect(nameMatchedCardIds('LEGO Minecraft Ghast Karte 104 Snow', names)).toEqual([]);
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghasty', names)).toEqual([]);
+  });
+
+  test('every number read must carry its own name, or none counts', () => {
+    expect(
+      nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghast & Karte 104 - Ghast', names)
+    ).toEqual([]);
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghast, Karte 15 - Ghast', names)).toEqual(
+      ids('15', '131')
+    );
+  });
+
+  test('only a title excluded for lacking a series word qualifies', () => {
+    for (const title of [
+      'LEGO Minecraft Serie 3 Karte 131 - Ghast', // has ids by the title rules already
+      'LEGO Minecraft Serie 1 Karte 131 - Ghast',
+      'LEGO Minecraft Karte 131 - Ghast zum aussuchen',
+      'LEGO Minecraft Karten 1 - 228 131 - Ghast',
+      'LEGO Minecraft 131 Karten - Ghast',
+      'LEGO Minecraft Karte 131 - Ghast 3 Stück',
+      'LEGO Minecraft Nr. 104 Snow Golem Holo', // any COUNT_WORDS word, as for picture candidates
+    ]) {
+      expect({ title, ids: nameMatchedCardIds(title, names) }).toEqual({ title, ids: [] });
+    }
+  });
+
+  test('no names, or no number, gives nothing', () => {
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghast', new Map())).toEqual([]);
+    expect(nameMatchedCardIds('LEGO Minecraft Ghast', names)).toEqual([]);
+  });
+});
+
 describe('isPictureCandidate', () => {
   test('a series 3 title naming no card, product, count or number is a candidate', () => {
     expect(isPictureCandidate('LEGO Minecraft On Fire Serie 3 Ender Dragon')).toBe(true);
@@ -766,6 +829,79 @@ describe('createEbayAdapter', () => {
     } finally {
       debug.mockRestore();
     }
+  });
+
+  test('a title without a series word counts when the catalog name stands beside its number', async () => {
+    const debug = spyOn(logger, 'debug');
+    try {
+      const fake = makeFetch({
+        searchBody: () =>
+          body(
+            item({
+              itemId: 'v1|220000000131|0',
+              legacyItemId: '220000000131',
+              itemWebUrl: 'https://www.ebay.de/itm/220000000131',
+              title: 'LEGO Minecraft Karte 131 - Ghast',
+            }),
+            item({
+              itemId: 'v1|168608734848|0',
+              legacyItemId: '168608734848',
+              itemWebUrl: 'https://www.ebay.de/itm/168608734848',
+              title: 'LEGO Minecraft Karte 104 - Ghast',
+            }),
+            item({
+              itemId: 'v1|220000000132|0',
+              legacyItemId: '220000000132',
+              itemWebUrl: 'https://www.ebay.de/itm/220000000132',
+              title: 'LEGO Minecraft Karte 131 - Ghast',
+              itemGroupType: 'SELLER_DEFINED_VARIATIONS',
+            })
+          ),
+      });
+      let reads = 0;
+      const adapter = createEbayAdapter({
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        cardNames: () => {
+          reads++;
+          return new Map([
+            [cid('131'), 'Ghast'],
+            [cid('104'), 'Snow Golem'],
+          ]);
+        },
+      });
+      const result = await adapter.fetchListings();
+      expect(result.listings.map((l) => [l.url, l.cardIds, l.idSource])).toEqual([
+        ['https://www.ebay.de/itm/220000000131', ids('131'), undefined],
+      ]);
+      // The 104 title and the variation listing stay excluded.
+      expect(result.skippedExcluded).toBe(2);
+      // The names are read once per fetch, not once per item or query.
+      expect(reads).toBe(1);
+      const lines = debug.mock.calls.map((c) => String(c[0]));
+      expect(lines.some((l) => l.includes('Karte 131 - Ghast') && l.includes('catalog name'))).toBe(
+        true
+      );
+    } finally {
+      debug.mockRestore();
+    }
+  });
+
+  test('without catalog names, a title without a series word stays excluded', async () => {
+    const fake = makeFetch({
+      searchBody: () => body(item({ title: 'LEGO Minecraft Karte 131 - Ghast' })),
+    });
+    const adapter = createEbayAdapter({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    });
+    const result = await adapter.fetchListings();
+    expect(result.listings).toEqual([]);
+    expect(result.skippedExcluded).toBe(1);
   });
 
   test('a listing with seller-defined variations gives no ids', async () => {

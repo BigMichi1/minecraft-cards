@@ -109,18 +109,24 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   of each eBay fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
   because series 3 #131 is "Ghast".
   - The number comes from the title forms above or a plain `N - Name` (`LE 19 - Creeper` is
-    LE19). The name follows it (spaces and at most one `-`, `–`, `:` or `|` between) or stands
+    LE19, with any spacing). Titles with a `COUNT_WORDS` word never qualify, so the common
+    `Karten N - Name - Charakterkarte` form and `Holo`, `Foil` or `Sammelkarte` titles are not
+    read by name. The name follows it (spaces and at most one `-`, `–`, `:` or `|` between) or stands
     before it (`Wither Skeleton Karte 4`). Case, umlaut spelling (`ä`/`ae`) and punctuation
     between its words (`Sunny vs Blaze`) do not matter; glued words (`EnderKnight`) do.
-  - The name must be bounded: by the title's start or end, a separator (`- – | , / ( ) ! . : ;`)
-    or a neutral word (`LEGO`, `Minecraft`, `Karte`, `Card`, `Trading`, `TCC`, `TCG`,
+  - The name must be bounded: by the title's start or end, a separator (`| , / ( ) ! . : ; & +`),
+    a dash not glued to it (`Gold-Ghast` is `Gold Ghast`) or a neutral word (`LEGO`, `Minecraft`, `Karte`, `Card`, `Trading`, `TCC`, `TCG`,
     `Einzelkarte`, `Ultra`, `Rare`, `Common`, `Neu`, `OVP`, `2026`, the card types). Any other
     word may make it another card's longer name: `Comic Steve Karte 3` (series 1 card 3) is no
-    #3 "Steve", `Gold Ghast Karte 131` (LE21) no #131.
+    #3 "Steve", `Gold Ghast Karte 131` (LE21) no #131. No word of a longer catalog name
+    containing it may stand anywhere in the title either, even across a separator:
+    `Karte 131 - Ghast (Gold)` is no #131. Every number is checked against the whole title, so
+    the order of the cards does not matter.
   - Every number read must carry its own name, and the title may hold no other number but the
     year 2026 (another year, `S1`, a second card without its name), no other series or product
     line word (`Serie`, `Staffel`, `Season`, `Wave`, `Edition`, `S1`/`S2`, `Panini`, `Dungeons`,
-    `Legends`, `Earth`, `Topps`), and no pick list, range, variation or `COUNT_WORDS` word;
+    `Legends`, `Earth`, `Topps`, and the non-card products `Sticker`, `Figur`, `Figure`, `Movie`,
+    `Film`), and no pick list, range, variation or `COUNT_WORDS` word;
     otherwise the title gives nothing.
   - `LEGO Minecraft Karte 104 - Ghast` (2026-11-19) gives nothing: series 3 #104 is not Ghast
     (#15 and #131 are), so it is most likely a series 1 or 2 card. A series 1 or 2 card with the
@@ -134,13 +140,14 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   a range or a choice says nothing about which card is in stock. A range has at most three digits
   on each side and a first number below the second, so `Serie 3 - 2026` and
   `107/228 - 1 Stück` are not ranges.
-- **Counters**: titles excluded by the series, pick-list, range or variation rules (and not read by
-  their catalog name) are counted as `skippedExcluded` ("not series 3 single cards" in `/admin
-status`), series 3 titles naming no card as `skippedNoId` ("without card number"); both are logged
-  with their reason at debug level. A series 3 title naming no card but with no count word and no
-  number besides the series and a year (`isPictureCandidate`) is not skipped: it is passed on
-  without ids for the picture to decide (`docs/image-matching.md`, rule 4). Items without a link or
-  title (`skippedInvalid`) are counted once per item, not once per search that returns them.
+- **Counters**: titles excluded by the series, pick-list, range or variation rules (and not
+  read by their catalog name) are counted as `skippedExcluded` ("not series 3 single cards" in
+  `/admin status`), series 3 titles naming no card as `skippedNoId` ("without card number");
+  both are logged with their reason at debug level. A series 3 title naming no card but with no
+  count word and no number besides the series and a year (`isPictureCandidate`) is not skipped:
+  it is passed on without ids for the picture to decide (`docs/image-matching.md`, rule 4).
+  Items without a link or title (`skippedInvalid`) are counted once per item, not once per
+  search that returns them.
 - **Result**: on 2026-11-18 the adapter found 4 listings with ids before this change and 244
   after the second review round (226 distinct card ids, no bundles); 31 items were excluded
   (series 1 and 2, no series word, pick lists, ranges, variations) and 53 skipped without a card

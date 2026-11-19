@@ -577,6 +577,11 @@ describe('nameMatchedCardIds', () => {
     [cid('XXL1'), 'Charged Creeper'],
     [cid('154'), 'Puzzlekarte Oberwelt 1'],
     [cid('155'), 'Puzzlekarte Oberwelt 2'],
+    [cid('6'), 'Zombie'],
+    [cid('12'), 'Squid'],
+    [cid('14'), 'Alex'],
+    [cid('1'), 'Alex'],
+    [cid('60'), 'Burning Zombie'],
     [cid('200'), 'Sunny vs. Blaze'],
     [cid('201'), 'Das Wächterduell'],
   ]);
@@ -652,6 +657,11 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft S1 Karte 15 Ghast', []],
       ['Panini Minecraft Karte 15 Ghast', []],
       ['LEGO Minecraft Dungeons Karte 15 Ghast', []],
+      // Products that are no cards.
+      ['Minecraft Sticker Nr. 5 Creeper', []],
+      ['Minecraft Figur Nr. 5 Creeper', []],
+      ['LEGO Minecraft Karte 1 Alex - Minecraft Movie', []],
+      ['LEGO Minecraft Karte 1 Alex Film', []],
     ]);
   });
 
@@ -667,6 +677,17 @@ describe('nameMatchedCardIds', () => {
     ]);
   });
 
+  test('several cards: each by its own name, in either order, joined by a separator', () => {
+    check([
+      ['LEGO Minecraft Karte 1 - Alex & Karte 14 - Alex', ids('1', '14')],
+      ['LEGO Minecraft Karte 1 Alex + Karte 14 Alex', ids('1', '14')],
+      // No separator between them: the second name is bounded by the first number only, in
+      // whichever order the cards are checked.
+      ['LEGO Minecraft Steve Karte 3 Ghast Karte 15', []],
+      ['LEGO Minecraft Ghast Karte 15 Steve Karte 3', []],
+    ]);
+  });
+
   test("a name that is part of another card's longer name gives nothing", () => {
     check([
       // Series 1 card 3 is "Comic Steve"; series 3 #3 is "Steve".
@@ -677,6 +698,17 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft Karte 15 Ghast Gold', []],
       ['LEGO Minecraft Karte 13 Skeleton Horseman', []],
       ['LEGO Minecraft Karte 5 Creeper Charged', []],
+      // A glued hyphen joins words, as in the name check: "Gold-Ghast" is "Gold Ghast".
+      ['LEGO Minecraft Gold-Ghast Karte 131', []],
+      ['LEGO Minecraft Wither-Skeleton Karte 13', []],
+      ['LEGO Minecraft Glow-Squid Karte 12', []],
+      // A word of a longer catalog name anywhere, even across a separator: LE21 "Gold Ghast",
+      // #60 "Burning Zombie".
+      ['LEGO Minecraft Karte 131 - Ghast (Gold)', []],
+      ['LEGO Minecraft Karte 131 - Ghast - Gold', []],
+      ['LEGO Minecraft Karte 6 - Zombie - Burning', []],
+      // A spaced dash still bounds a name.
+      ['LEGO Minecraft Karte 12 - Squid - Ultra Rare', ids('12')],
       // Brand, card and rarity words beside the name are fine.
       ['LEGO Minecraft Karte 13 Skeleton Ultra Rare', ids('13')],
       ['LEGO Minecraft Karte 41 Skeleton Horseman', ids('41')],
@@ -695,6 +727,7 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft LE21 Ghast', []],
       // Base #5 is "Creeper" too, but "LE 19" is no #19.
       ['LEGO Minecraft LE 19 - Creeper Karte 5', []],
+      ['LEGO Minecraft LE  19 - Creeper', ids('LE19')],
     ]);
   });
 
@@ -720,6 +753,8 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft Karte 201 Das Waechterduell', ids('201')],
       ['LEGO Minecraft Karte 2 Ender  Knight', ids('2')],
       ['LEGO Minecraft Karte 2 EnderKnight', []],
+      ['LEGO Minecraft Karte 2 —Ender Knight', ids('2')],
+      ['LEGO Minecraft Wither Skeleton Karte #4', ids('4')],
     ]);
   });
 });

@@ -40,15 +40,14 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   `total` not a number) are `ShopLayoutError`s naming the query and the offset. All searches
   together returning no item is a `ShopLayoutError` as before.
 - **Total tolerance**: eBay's `total` is an estimate and its pages may be short, so a walk may end
-  up to max(5, ceil(2 % of the total)) items short of it (455 announced, 450 delivered; 448 of
-  450 in pages of 199); an empty first page with a `total` above 0 is always an error. That gap is
+  up to max(5, ceil(2 % of the total)) items short of it (455 announced, 450 delivered; 448 of 450
+  in pages of 199); an empty first page with a `total` above 0 is always an error. That gap is
   accepted with a warning naming the query, the total and the count read, and no admin alert; a
-  larger gap (600 announced, 400 delivered) stays a `ShopLayoutError`. The page cap is reached
-  only with a `total` above 1000, or none: there, the offsets read hold 1000 items whatever the
-  estimate, so more than tolerance(1000) = 20 fewer is a `ShopLayoutError` (1500 announced, 500
-  read; 1001 announced, 979 read), a `total` within the tolerance of
-  the items read counts as complete (1021 announced, 1000 read), and a larger one is a cut search
-  (below; 1022 announced, 1000 read).
+  larger gap (600 announced, 400 delivered) stays a `ShopLayoutError`. The page cap is reached only
+  with a `total` above 1000, or none: there, the offsets read hold 1000 items whatever the estimate,
+  so more than tolerance(1000) = 20 fewer is a `ShopLayoutError` (1500 announced, 500 read; 1001
+  announced, 979 read), a `total` within the tolerance of the items read counts as complete (1021
+  announced, 1000 read), and a larger one is a cut search (below; 1022 announced, 1000 read).
 - **Page cap**: a search cut at the cap logs a warning and is reported in `FetchResult.truncated`;
   the runner sends a throttled admin alert (`shop-truncated:ebay`, at most once a day), and
   `/admin status` shows the number of cut searches.

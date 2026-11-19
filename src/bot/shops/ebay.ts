@@ -562,10 +562,10 @@ export function createEbayAdapter(
 
   /**
    * A walk that ended with `read` items, below the announced total; `offset` is the last offset
-   * requested (the empty page, the last page by the total, or the last page under the cap). eBay's `total` is an estimate and
-   * its pages may hold fewer items than the limit, so a gap of at most max(5, 2 % of the total)
-   * is accepted with a warning and no alert; a larger one is a ShopLayoutError, as a partial walk
-   * would mark the unread listings unavailable.
+   * requested (the empty page, the last page by the total, or the last page under the cap). eBay's
+   * `total` is an estimate and its pages may hold fewer items than the limit, so a gap of at most
+   * max(5, 2 % of the total) is accepted with a warning and no alert; a larger one is a
+   * ShopLayoutError, as a partial walk would mark the unread listings unavailable.
    */
   function endShort(query: string, total: number, read: number, offset: number): void {
     const allowed = tolerance(total);
@@ -581,18 +581,18 @@ export function createEbayAdapter(
   }
 
   /**
-   * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. eBay
-   * takes only offsets that are a multiple of the limit, and a page may hold fewer items than
-   * the limit before the end, so the offset is the page number times SEARCH_LIMIT, not the
-   * number of items read, and a short page never ends a walk by itself. The walk ends at an
-   * empty page, or once the next offset reaches the answer's total (a later page without a total
-   * keeps the earlier one); the items read are then checked against the total (endShort).
-   * ShopLayoutErrors, as a partial walk would mark the unread listings unavailable: a walk ending
-   * more than the tolerance below the total (endShort), a walk at the cap reading more than
-   * tolerance(1000) = 20 fewer than 1000 items (the offsets it read hold that many, whatever
-   * eBay's estimate of the total), an empty first page with a total above 0, and a first page with neither
-   * `itemSummaries` nor `total`. A search cut at the cap (more announced than 1000 offsets
-   * reach, or no total at all) is logged and added to `truncated`.
+   * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. eBay takes
+   * only offsets that are a multiple of the limit, and a page may hold fewer items than the limit
+   * before the end, so the offset is the page number times SEARCH_LIMIT, not the number of items
+   * read, and a short page never ends a walk by itself. The walk ends at an empty page, or once the
+   * next offset reaches the answer's total (a later page without a total keeps the earlier one);
+   * the items read are then checked against the total (endShort). ShopLayoutErrors, as a partial
+   * walk would mark the unread listings unavailable: a walk ending more than the tolerance below
+   * the total (endShort), a walk at the cap reading more than tolerance(1000) = 20 fewer than 1000
+   * items (the offsets it read hold that many, whatever eBay's estimate of the total), an empty
+   * first page with a total above 0, and a first page with neither `itemSummaries` nor `total`. A
+   * search cut at the cap (more announced than 1000 offsets reach, or no total at all) is logged
+   * and added to `truncated`.
    */
   async function search(
     query: string,

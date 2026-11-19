@@ -203,6 +203,19 @@ describe('listingManager', () => {
     expect(listingManager.getByUrl(blue12.url)!.available).toBe(true);
   });
 
+  test('an eBay single read by its catalog name starts pending, so its picture is compared', () => {
+    // nameMatchedCardIds gives an ordinary title listing: no idSource, one card id.
+    const byName: Listing = {
+      ...blue12,
+      shop: 'ebay',
+      url: 'https://www.ebay.de/itm/220000000131',
+      title: 'LEGO Minecraft Karte 131 - Ghast',
+      cardIds: [cid('131')],
+    };
+    listingManager.upsertFromRun('ebay', [byName], 1000);
+    expect(listingManager.getByUrl(byName.url)!.matchStatus).toBe('pending');
+  });
+
   test('default match status and reset to pending when the image changes', () => {
     const bundle = { ...blue12, url: 'https://x/b', cardIds: ids('1', '2') };
     const ente = { ...blue12, shop: 'sammel-ente' as const, url: 'https://x/e' };

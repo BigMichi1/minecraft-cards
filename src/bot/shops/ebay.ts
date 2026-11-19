@@ -561,12 +561,13 @@ export function createEbayAdapter(
   }
 
   /**
-   * A walk that ended (an empty page, or the cap) below the announced total.
-   * eBay's `total` is an estimate, so a gap of at most max(5, 2 % of the total) is accepted
-   * with a warning and no alert; a larger one is a ShopLayoutError, as a partial walk would mark
-   * the unread listings unavailable.
+   * A walk that ended (an empty page, the last page by the total, or the cap) with `read` items,
+   * below the announced total; `offset` is where it stopped. eBay's `total` is an estimate and
+   * its pages may hold fewer items than the limit, so a gap of at most max(5, 2 % of the total)
+   * is accepted with a warning and no alert; a larger one is a ShopLayoutError, as a partial walk
+   * would mark the unread listings unavailable.
    */
-  function endShort(query: string, total: number, read: number): void {
+  function endShort(query: string, total: number, read: number, offset: number): void {
     const allowed = tolerance(total);
     if (total - read <= allowed) {
       logger.warn(
@@ -575,14 +576,17 @@ export function createEbayAdapter(
       return;
     }
     throw new ShopLayoutError(
-      `eBay search "${query}" offset ${read}: no more items, but the total is ${total} (tolerance ${allowed})`
+      `eBay search "${query}" offset ${offset}: no more items, but the total is ${total} and only ${read} were read (tolerance ${allowed})`
     );
   }
 
   /**
-   * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. The
-   * walk ends at the answer's total (a later page without a total keeps the earlier one) or,
-   * without any total, at a short or empty page. A later empty page more than the tolerance
+   * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. eBay
+   * takes only offsets that are a multiple of the limit, and a page may hold fewer items than
+   * the limit before the end, so the offset is the page number times SEARCH_LIMIT, not the
+   * number of items read. The walk ends once the next offset reaches the answer's total (a later
+   * page without a total keeps the earlier one), checking the items read against it (endShort),
+   * or, without any total, at a short or empty page. A later empty page more than the tolerance
    * below the total (endShort), an empty first page with a total above 0, or a first page with
    * neither `itemSummaries` nor `total` is a ShopLayoutError: a partial walk would mark the
    * unread listings unavailable. A search cut at the cap is logged and added to
@@ -596,7 +600,7 @@ export function createEbayAdapter(
     const all: EbayItem[] = [];
     let total: number | null = null;
     for (let page = 0; page < MAX_PAGES_PER_QUERY; page++) {
-      const offset = all.length;
+      const offset = page * SEARCH_LIMIT;
       const result = await searchPage(query, offset, pace);
       total = result.total ?? total;
       const items = result.items ?? [];
@@ -614,15 +618,20 @@ export function createEbayAdapter(
               `eBay search "${query}" offset 0: empty page, but the total is ${total}`
             );
           }
-          endShort(query, total, offset);
+          endShort(query, total, all.length, offset);
         }
         return all;
       }
-      if (total !== null ? all.length >= total : items.length < SEARCH_LIMIT) return all;
+      if (total === null) {
+        if (items.length < SEARCH_LIMIT) return all;
+      } else if (offset + SEARCH_LIMIT >= total) {
+        if (all.length < total) endShort(query, total, all.length, offset + SEARCH_LIMIT);
+        return all;
+      }
     }
     // At the cap within the tolerance of the total: complete as far as eBay's estimate goes.
     if (total !== null && total - all.length <= tolerance(total)) {
-      endShort(query, total, all.length);
+      endShort(query, total, all.length, MAX_PAGES_PER_QUERY * SEARCH_LIMIT);
       return all;
     }
     const note = `search "${query}": ${total ?? 'more'} results, only the first ${all.length} read (${MAX_PAGES_PER_QUERY}-page cap)`;

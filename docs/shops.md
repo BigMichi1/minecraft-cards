@@ -23,9 +23,12 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   single cards (295 results on 2026-11-18; the other three found 2 to 30 each, almost all of them
   packs, limited cards and pick lists). `tcc serie 3` found nothing usable that day but is kept: it
   costs one request and catches titles without "Karten" or "On Fire".
-- **Paging**: each search is read page by page, 200 items per page, with `offset` (the number of
-  items read so far), until the answer's `total` is reached (a later page without a `total` keeps
-  the earlier one) or, without any `total`, until a short or empty page; at most 5 pages (1000
+- **Paging**: each search is read page by page, 200 items per page, with `offset` = page number
+  × 200. eBay takes only offsets that are zero or a multiple of `limit` (any other is an HTTP 400),
+  and a page may hold fewer than 200 items before the end (199 on 2026-11-19), so the offset is
+  never the number of items read. The walk ends once the next offset reaches the answer's `total`
+  (a later page without a `total` keeps the earlier one), the items read then checked against it
+  (tolerance below), or, without any `total`, at a short or empty page; at most 5 pages (1000
   results) per query. 1500 ms between two search requests, as between two shop pages.
 - **Errors**: a failing page is a shop error, like a failing shop page. So is a partial walk,
   because the unread listings would be marked unavailable: a walk that ends (an empty later page)

@@ -816,6 +816,11 @@ describe('createEbayAdapter', () => {
       const fetchFn: FetchFn = async (url) => {
         if (url.includes('/oauth2/token')) return new Response(readFixture('ebay-token.json'));
         urls.push(url);
+        // eBay's own rule: "The 'offset' value must be either zero or a multiple of the 'limit' value."
+        const params = new URL(url).searchParams;
+        if (Number(params.get('offset') ?? '0') % Number(params.get('limit')) !== 0) {
+          return new Response(JSON.stringify({ errors: [{ errorId: 12023 }] }), { status: 400 });
+        }
         return new Response(answer(url));
       };
       const adapter = createEbayAdapter({
@@ -960,12 +965,23 @@ describe('createEbayAdapter', () => {
       expect(urls).toHaveLength(3 * EBAY_QUERIES.length);
     });
 
-    test('short pages with a total: the offset follows the items read (P4)', async () => {
-      const { urls } = await run(paged(450, 150));
+    test('short pages with a total: the offset stays a multiple of the limit', async () => {
+      // eBay answered 199 of 200 on 2026-11-19; asking for offset 199 next was a 400.
+      const { urls, result } = await run(paged(450, 199));
       expect(offsets(urls).slice(0, 3)).toEqual(
-        [0, 150, 300].map((o) => `${EBAY_QUERIES[0]}@${o}`)
+        [0, 200, 400].map((o) => `${EBAY_QUERIES[0]}@${o}`)
       );
       expect(urls).toHaveLength(3 * EBAY_QUERIES.length);
+      // 199 + 199 + 50 of 450: within the tolerance.
+      expect(result.listings).toHaveLength(448);
+    });
+
+    test('short pages missing more than the tolerance are a layout error', async () => {
+      // 150 + 150 + 50 of 450: 100 short.
+      const error = await runError(paged(450, 150));
+      expect(error).toBeInstanceOf(ShopLayoutError);
+      expect(error.message).toContain('450');
+      expect(error.message).toContain('350');
     });
 
     test('a failure on a later query after the first returned items rejects (P4)', async () => {
@@ -1016,13 +1032,14 @@ describe('createEbayAdapter', () => {
     test('a walk short of the total by the tolerance ends with a warning (F7)', async () => {
       const warn = spyOn(logger, 'warn');
       try {
-        // 455 announced, 450 delivered: within max(5, 2 %).
+        // 455 announced, 450 delivered: within max(5, 2 %). The third page is the last by the
+        // total, so no fourth is asked for.
         const { result, urls } = await run((url) => {
           const answer = JSON.parse(paged(450)(url)) as Record<string, unknown>;
           answer.total = 455;
           return JSON.stringify(answer);
         });
-        expect(urls).toHaveLength(4 * EBAY_QUERIES.length);
+        expect(urls).toHaveLength(3 * EBAY_QUERIES.length);
         expect(result.listings).toHaveLength(450);
         expect(result.truncated).toBeUndefined();
         const lines = warn.mock.calls.map((c) => String(c[0]));
@@ -1037,10 +1054,18 @@ describe('createEbayAdapter', () => {
         });
         expect(big.result.listings).toHaveLength(980);
         expect(big.result.truncated).toBeUndefined();
-        // 979 of 1000 at the cap is beyond the tolerance: a cut search, not a complete one.
-        const cut = await run((url) => {
+        // 979 of 1000 is beyond the tolerance; five pages reach every offset below 1000, so the
+        // walk is complete and short: a layout error.
+        const short = await runError((url) => {
           const answer = JSON.parse(paged(979)(url)) as Record<string, unknown>;
           answer.total = 1000;
+          return JSON.stringify(answer);
+        });
+        expect(short).toBeInstanceOf(ShopLayoutError);
+        // 979 of 1001 at the cap: offsets past 1000 are unread, a cut search.
+        const cut = await run((url) => {
+          const answer = JSON.parse(paged(979)(url)) as Record<string, unknown>;
+          answer.total = 1001;
           return JSON.stringify(answer);
         });
         expect(cut.result.truncated).toHaveLength(EBAY_QUERIES.length);
@@ -1425,7 +1450,7 @@ describe('createEbayAdapter', () => {
     const warn = spyOn(logger, 'warn');
     try {
       const fake = makeFetch({
-        searchBody: () => JSON.stringify({ total: 450, itemSummaries: [item({})] }),
+        searchBody: () => JSON.stringify({ total: 5000, itemSummaries: [item({})] }),
       });
       const adapter = createEbayAdapter({
         clientId: 'id',
@@ -1434,7 +1459,7 @@ describe('createEbayAdapter', () => {
         sleep: noSleep,
       });
       await adapter.fetchListings();
-      expect(warn.mock.calls.some((c) => String(c[0]).includes('450 results'))).toBe(true);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('5000 results'))).toBe(true);
     } finally {
       warn.mockRestore();
     }

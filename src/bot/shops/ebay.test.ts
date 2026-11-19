@@ -6,6 +6,7 @@ import {
   createEbayAdapter,
   extractCardIdsFromTitle,
   isPictureCandidate,
+  NAME_TITLE_WORDS,
   nameMatchedCardIds,
   titleExclusion,
   EBAY_QUERIES,
@@ -681,10 +682,58 @@ describe('nameMatchedCardIds', () => {
     check([
       ['LEGO Minecraft Karte 1 - Alex & Karte 14 - Alex', ids('1', '14')],
       ['LEGO Minecraft Karte 1 Alex + Karte 14 Alex', ids('1', '14')],
-      // No separator between them: the second name is bounded by the first number only, in
-      // whichever order the cards are checked.
-      ['LEGO Minecraft Steve Karte 3 Ghast Karte 15', []],
-      ['LEGO Minecraft Ghast Karte 15 Steve Karte 3', []],
+      // Each card beside its own name, in whichever order.
+      ['LEGO Minecraft Steve Karte 3 Ghast Karte 15', ids('3', '15')],
+      ['LEGO Minecraft Ghast Karte 15 Steve Karte 3', ids('3', '15')],
+      // The same card twice is still that card.
+      ['LEGO Minecraft Karte 15 - Ghast Karte 15 - Ghast', ids('15')],
+      // A second card named without its number: not one single #3.
+      ['LEGO Minecraft Karte 3 - Steve / Alex', []],
+      ['LEGO Minecraft Creeper 5 - Zombie', []],
+    ]);
+  });
+
+  test('the allowed words are the reviewed list', () => {
+    // An allow-list: adding a word lets more titles through, so it is a reviewed change.
+    expect([...NAME_TITLE_WORDS].sort()).toEqual(
+      [
+        '2026',
+        'card',
+        'charakterkarte',
+        'comickarte',
+        'common',
+        'einzelkarte',
+        'karte',
+        'lego',
+        'minecraft',
+        'neu',
+        'no',
+        'nr',
+        'ovp',
+        'puzzlekarte',
+        'rare',
+        'setkarte',
+        'tcc',
+        'tcg',
+        'trading',
+        'ultra',
+      ].sort()
+    );
+  });
+
+  test('any word left beside the cards but the allowed ones gives nothing', () => {
+    check([
+      // Series 1 card 3 is "Comic Steve"; its qualifier may stand anywhere.
+      ['LEGO Minecraft Comic Karte 3 - Steve', []],
+      ['Comic #3 Steve', []],
+      ['LEGO Minecraft Karte 3 - Steve - Comic', []],
+      ['LEGO Minecraft Karte 3 Steve (Comic)', []],
+      ['Comic: Steve Karte 3', []],
+      ['LEGO Minecraft Trading Card 3 - Steve - Skin Karte', []],
+      ['LEGO Minecraft Karte 3 - Steve - Pokemon', []],
+      ['LEGO Minecraft Karte 3 - Steve - Proxy', []],
+      // Only NAME_TITLE_WORDS words and punctuation remain: accepted.
+      ['LEGO Minecraft Trading Card 3 - Steve - Charakterkarte Ultra Rare NEU OVP 2026', ids('3')],
     ]);
   });
 
@@ -698,16 +747,16 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft Karte 15 Ghast Gold', []],
       ['LEGO Minecraft Karte 13 Skeleton Horseman', []],
       ['LEGO Minecraft Karte 5 Creeper Charged', []],
-      // A glued hyphen joins words, as in the name check: "Gold-Ghast" is "Gold Ghast".
+      // "Gold" is left over, glued by a hyphen or not: "Gold-Ghast" is "Gold Ghast".
       ['LEGO Minecraft Gold-Ghast Karte 131', []],
       ['LEGO Minecraft Wither-Skeleton Karte 13', []],
       ['LEGO Minecraft Glow-Squid Karte 12', []],
-      // A word of a longer catalog name anywhere, even across a separator: LE21 "Gold Ghast",
+      // A word of a longer catalog name left over, even across a separator: LE21 "Gold Ghast",
       // #60 "Burning Zombie".
       ['LEGO Minecraft Karte 131 - Ghast (Gold)', []],
       ['LEGO Minecraft Karte 131 - Ghast - Gold', []],
       ['LEGO Minecraft Karte 6 - Zombie - Burning', []],
-      // A spaced dash still bounds a name.
+      // Only allowed words left over.
       ['LEGO Minecraft Karte 12 - Squid - Ultra Rare', ids('12')],
       // Brand, card and rarity words beside the name are fine.
       ['LEGO Minecraft Karte 13 Skeleton Ultra Rare', ids('13')],
@@ -747,7 +796,7 @@ describe('nameMatchedCardIds', () => {
     check([
       ['LEGO Minecraft Karte 200 Sunny vs. Blaze', ids('200')],
       ['LEGO Minecraft Karte 200 Sunny vs Blaze', ids('200')],
-      // An unescaped "." would accept this one.
+      // "vsx" is one word, not "vs" then "x".
       ['LEGO Minecraft Karte 200 Sunny vsX Blaze', []],
       ['LEGO Minecraft Karte 201 DAS WÄCHTERDUELL', ids('201')],
       ['LEGO Minecraft Karte 201 Das Waechterduell', ids('201')],

@@ -317,13 +317,6 @@ const SPACED_LE_XXL_PATTERN = new RegExp(
   'gi'
 );
 
-// Words that mark another series or another product, in a title naming no series 3: any
-// series word ("Staffel 2", "Serie II", "1. Serie", "Season 1", "S1"), the other Minecraft card
-// lines, and products that are no cards (stickers, figures, the film). A title naming none of
-// them may still be series 1 or 2; the name decides that.
-const OTHER_LINE_PATTERN =
-  /\b(?:Serie|Series|Staffel|Season|Wave|Edition)\b|\bS\s?[12]\b|\b(?:Panini|Dungeons|Legends|Earth|Topps|Sticker|Figur|Figure|Movie|Film)\b/i;
-
 /**
  * Title text for the name comparison: lowercase, umlauts and ß spelled out ("Wächterduell" and
  * "Waechterduell" alike), so the name check needs no Unicode case rules.
@@ -337,6 +330,9 @@ function nameText(text: string): string {
     .replace(/ß/g, 'ss');
 }
 
+/** A name's or title's letter and digit runs, in nameText form. */
+const nameWords = (text: string): string[] => nameText(text).match(/[a-z\d]+/g) ?? [];
+
 /** A card id as a (nameText) title writes it: `131`, `#131`, `0131`; `le8`, `le 08`, `le  8`. */
 function cardIdPattern(id: CardId): string {
   const m = /^([A-Z]*)(\d+)$/.exec(id);
@@ -349,125 +345,88 @@ function cardIdPattern(id: CardId): string {
 /**
  * A catalog name in a (nameText) title: its letter and digit runs in order, with any spaces or
  * punctuation between them ("Sunny vs. Blaze" also as "Sunny vs Blaze", "Ender-Knight" as
- * "ender knight"), but not glued together ("Sunny vsX Blaze"). Null for a name with no letter
- * or digit.
+ * "ender knight"), but not glued together ("Sunny vsX Blaze"), and not part of a longer word.
+ * Null for a name with no letter or digit.
  */
 function cardNamePattern(name: string): string | null {
   const words = nameWords(name);
-  return words.length > 0 ? words.join('[^a-z\\d]+') : null;
+  return words.length > 0 ? `(?<![a-z\\d])${words.join('[^a-z\\d]+')}(?![a-z\\d])` : null;
 }
 
-/** A name's or title's letter and digit runs, in nameText form. */
-const nameWords = (text: string): string[] => nameText(text).match(/[a-z\d]+/g) ?? [];
-
-/**
- * The words that turn `name` into another catalog name containing it ("gold" for "Ghast", as
- * LE21 is "Gold Ghast"): such a word anywhere in the title, even across a separator ("Ghast
- * (Gold)"), may make it that other card. Digits are left to the leftover number check.
- */
-function longerNameWords(name: string, names: ReadonlyMap<CardId, string>): Set<string> {
-  const own = nameWords(name);
-  const extra = new Set<string>();
-  for (const other of new Set(names.values())) {
-    const words = nameWords(other);
-    if (words.length <= own.length) continue;
-    for (let i = 0; i + own.length <= words.length; i++) {
-      if (own.every((w, k) => words[i + k] === w)) {
-        for (const [k, w] of words.entries()) {
-          if ((k < i || k >= i + own.length) && !/^\d+$/.test(w)) extra.add(w);
-        }
-      }
-    }
-  }
-  return extra;
-}
-
-// Words that may stand right before or after a card name without changing it: the brand, the
-// card words and types, rarity and condition, and the series 3 year. Any other word there may
-// make it another card's longer name ("Comic Steve", "Gold Ghast", "Skeleton Horseman"), so the
-// title gives nothing.
-const NAME_NEIGHBOUR_WORDS = [
-  'lego',
-  'minecraft',
-  'karte',
-  'card',
-  'trading',
-  'tcc',
-  'tcg',
-  'einzelkarte',
-  'ultra',
-  'rare',
-  'common',
-  'neu',
-  'ovp',
-  '2026',
-  ...CARD_TYPES.map(nameText),
-];
-const NEIGHBOUR = `(?:${NAME_NEIGHBOUR_WORDS.join('|')})(?![a-z\\d])`;
-// What may stand beside a card name: the title's start or end, a separator, or such a word.
-// A dash bounds a name only when it is not glued to it: "Gold-Ghast" is "Gold Ghast", as in
-// cardNamePattern.
-const SEPARATOR = '[|,/()!.:;&+]';
-const NAME_START = `(?<=(?:^|${SEPARATOR}|(?<![a-z\\d])[-–—]|(?<![a-z\\d])${NEIGHBOUR})\\s*)`;
-const NAME_END = `(?=\\s*(?:$|${SEPARATOR}|[-–—](?![a-z\\d])|${NEIGHBOUR}))`;
 // Between a number and its name: spaces, and at most one dash, colon or bar.
 const BESIDE = '\\s*(?:[-–—:|]\\s*)?';
 // Before a number its name may stand with a prefix: "Wither Skeleton Karte 4", "Karte #4".
 const NUMBER_PREFIX = '(?:(?:nr\\.?|no\\.?|karte|card)\\s*)?(?:#\\s*)?';
-// The only number a title read by name may carry besides its cards: the series 3 year.
-const SERIES_3_YEAR = /(?<!\d)2026(?!\d)/g;
 
 /**
- * Card ids of a title naming no series ("LEGO Minecraft Karte 131 - Ghast"), each confirmed by its
- * catalog name (`names`, the sammel-ente names) standing right beside its number: series 1 and 2
- * used the same title forms and numbers, so a number alone may be another series' card. Only a
- * title excluded for lacking a series word qualifies, and only without a pick list, range or
- * COUNT_WORDS word (a lot or a count is no single card; so "Karten N - Name - Charakterkarte"
- * never qualifies), without any other series or product word (OTHER_LINE_PATTERN), and without any
- * number but its cards and the year 2026 (another year, "S1" or a second card without its name).
- * Every number the title forms (and `N - Name`, `LE  19`) read must carry its own name, bounded by
- * the title's start or end, a separator, a spaced dash or a NAME_NEIGHBOUR_WORDS word, and no word
- * of a longer catalog name containing it may stand anywhere in the title (longerNameWords);
- * otherwise none counts: "Comic Steve Karte 3" is no #3 "Steve", "Karte 131 - Ghast (Gold)" no
- * #131. "Karte 104 - Ghast" gives nothing: series 3 #104 is not Ghast (#15 and #131 are). A series
- * 1 or 2 card sharing number and name still passes; its picture is compared as for every title
- * (docs/image-matching.md).
+ * The only words a title read by name may hold besides its cards' numbers and names: the brand,
+ * card words and types, rarity, condition, number prefixes and the series 3 year. An allow-list:
+ * any other word may be another series ("Comic Steve", "Staffel 2", "S1"), another card's
+ * longer name ("Gold Ghast", "Skeleton Horseman"), a second card ("Steve / Alex"), another
+ * product ("Sticker", "Movie") or a year, and makes the title give nothing.
+ */
+export const NAME_TITLE_WORDS: readonly string[] = [
+  '2026',
+  'card',
+  'common',
+  'einzelkarte',
+  'karte',
+  'lego',
+  'minecraft',
+  'neu',
+  'no',
+  'nr',
+  'ovp',
+  'rare',
+  'tcc',
+  'tcg',
+  'trading',
+  'ultra',
+  ...CARD_TYPES.map(nameText),
+];
+const NAME_TITLE_WORD_SET = new Set(NAME_TITLE_WORDS);
+
+/**
+ * Card ids of a title naming no series ("LEGO Minecraft Karte 131 - Ghast"), each confirmed by
+ * its catalog name (`names`, the sammel-ente names) standing right beside its number: series 1
+ * and 2 used the same title forms and numbers, so a number alone may be another series' card.
+ * Only a title excluded for lacking a series word qualifies, and only without a pick list, range
+ * or COUNT_WORDS word (so "Karten N - Name - Charakterkarte" never qualifies). Every number the
+ * title forms (and `N - Name`, `LE  19`) read must carry its own name, and once those numbers
+ * and names are taken out, nothing but NAME_TITLE_WORDS words and punctuation may be left:
+ * "Comic Karte 3 - Steve", "Gold Ghast Karte 131" and "Karte 131 - Ghast 2025" give nothing.
+ * "Karte 104 - Ghast" gives nothing too: series 3 #104 is not Ghast (#15 and #131 are). A
+ * series 1 or 2 card sharing number and name still passes; its picture is compared as for every
+ * title (docs/image-matching.md).
  */
 export function nameMatchedCardIds(title: string, names: ReadonlyMap<CardId, string>): CardId[] {
   if (titleExclusion(title) !== 'no series 3') return [];
   if (MULTI_PICK_PATTERN.test(title) || hasRange(title) || ANY_COUNT_WORD.test(title)) return [];
-  if (OTHER_LINE_PATTERN.test(title)) return [];
   const candidates = new Set(readCardIds(title));
-  for (const m of title.matchAll(NUMBER_DASH_PATTERN)) {
-    const id = normalizeCardId(m[1] ?? '');
-    if (id) candidates.add(id);
-  }
-  // "LE  19" with any spacing; the name beside it must confirm it as for any number.
-  for (const m of title.matchAll(SPACED_LE_XXL_PATTERN)) {
-    const id = normalizeCardId(`${m[1]}${m[2]}`);
-    if (id) candidates.add(id);
+  for (const pattern of [NUMBER_DASH_PATTERN, SPACED_LE_XXL_PATTERN]) {
+    for (const m of title.matchAll(pattern)) {
+      const id = normalizeCardId(m[2] === undefined ? (m[1] ?? '') : `${m[1]}${m[2]}`);
+      if (id) candidates.add(id);
+    }
   }
   if (candidates.size === 0) return [];
-  const text = nameText(title);
-  const titleWords = new Set(nameWords(title));
-  // Every candidate is checked against the whole title first, so the order of the checks does
-  // not matter; only then are the matched spans removed to look for any other number.
-  const matched: RegExp[] = [];
+  // Every card is looked for in the whole title, so their order does not matter; then all of
+  // them are taken out at once, and only allowed words may be left.
+  let rest = nameText(title);
+  const spans: RegExp[] = [];
   for (const id of candidates) {
-    const name = names.get(id);
-    const namePattern = name ? cardNamePattern(name) : null;
-    if (!name || !namePattern) return [];
-    for (const word of longerNameWords(name, names)) if (titleWords.has(word)) return [];
+    const namePattern = cardNamePattern(names.get(id) ?? '');
+    if (!namePattern) return [];
     const num = cardIdPattern(id);
     const beside = new RegExp(
-      `${num}${BESIDE}${namePattern}${NAME_END}|${NAME_START}${namePattern}${BESIDE}${NUMBER_PREFIX}${num}`
+      `${num}${BESIDE}${namePattern}|${namePattern}${BESIDE}${NUMBER_PREFIX}${num}`,
+      'g'
     );
-    if (!beside.test(text)) return [];
-    matched.push(beside);
+    if (!beside.test(rest)) return [];
+    spans.push(beside);
   }
-  let rest = text;
-  for (const beside of matched) rest = rest.replace(beside, ' ');
-  if (/\d/.test(rest.replace(SERIES_3_YEAR, ' '))) return [];
+  for (const beside of spans) rest = rest.replace(beside, ' ');
+  if (nameWords(rest).some((w) => !NAME_TITLE_WORD_SET.has(w))) return [];
   return [...candidates].sort(compareCardIds);
 }
 

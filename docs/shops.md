@@ -108,31 +108,28 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   word still gives a card when the catalog name of that number (sammel-ente's, read at the start
   of each eBay fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
   because series 3 #131 is "Ghast".
-  - The number comes from the title forms above or a plain `N - Name` (`LE 19 - Creeper` is
-    LE19, with any spacing). Titles with a `COUNT_WORDS` word never qualify, so the common
+  - The number comes from the title forms above, a plain `N - Name`, or `LE`/`XXL` with any
+    spacing (`LE 19 - Creeper` is LE19). The name follows it (spaces and at most one `-`, `–`,
+    `—`, `:` or `|` between) or stands before it (`Wither Skeleton Karte 4`, `Karte #4`). Case,
+    umlaut spelling (`ä`/`ae`) and punctuation between its words (`Sunny vs Blaze`,
+    `Ender-Knight`) do not matter; glued words (`EnderKnight`) do.
+  - Every number read must carry its own name. Then the cards' numbers and names are taken out,
+    and only punctuation and the allowed words (`NAME_TITLE_WORDS`: `LEGO`, `Minecraft`,
+    `Karte`, `Card`, `Trading`, `TCC`, `TCG`, `Einzelkarte`, `Ultra`, `Rare`, `Common`, `Neu`,
+    `OVP`, `Nr`, `No`, `2026`, the card types) may be left. Any other word gives nothing: another
+    series (`Comic Karte 3 - Steve`, series 1 card 3 is "Comic Steve"; `Staffel 2`, `S1`),
+    another card's longer name (`Gold Ghast Karte 131`, `Karte 131 - Ghast (Gold)`: LE21 is
+    "Gold Ghast"), a second card without its number (`Karte 3 - Steve / Alex`), another product
+    (`Sticker`, `Movie`), or another number (`2025`). Several cards each beside their own name
+    give all of them, in any order.
+  - Titles with a pick list, range, variation or `COUNT_WORDS` word never qualify, so the common
     `Karten N - Name - Charakterkarte` form and `Holo`, `Foil` or `Sammelkarte` titles are not
-    read by name. The name follows it (spaces and at most one `-`, `–`, `:` or `|` between) or stands
-    before it (`Wither Skeleton Karte 4`). Case, umlaut spelling (`ä`/`ae`) and punctuation
-    between its words (`Sunny vs Blaze`) do not matter; glued words (`EnderKnight`) do.
-  - The name must be bounded: by the title's start or end, a separator (`| , / ( ) ! . : ; & +`),
-    a dash not glued to it (`Gold-Ghast` is `Gold Ghast`) or a neutral word (`LEGO`, `Minecraft`, `Karte`, `Card`, `Trading`, `TCC`, `TCG`,
-    `Einzelkarte`, `Ultra`, `Rare`, `Common`, `Neu`, `OVP`, `2026`, the card types). Any other
-    word may make it another card's longer name: `Comic Steve Karte 3` (series 1 card 3) is no
-    #3 "Steve", `Gold Ghast Karte 131` (LE21) no #131. No word of a longer catalog name
-    containing it may stand anywhere in the title either, even across a separator:
-    `Karte 131 - Ghast (Gold)` is no #131. Every number is checked against the whole title, so
-    the order of the cards does not matter.
-  - Every number read must carry its own name, and the title may hold no other number but the
-    year 2026 (another year, `S1`, a second card without its name), no other series or product
-    line word (`Serie`, `Staffel`, `Season`, `Wave`, `Edition`, `S1`/`S2`, `Panini`, `Dungeons`,
-    `Legends`, `Earth`, `Topps`, and the non-card products `Sticker`, `Figur`, `Figure`, `Movie`,
-    `Film`), and no pick list, range, variation or `COUNT_WORDS` word;
-    otherwise the title gives nothing.
+    read by name.
   - `LEGO Minecraft Karte 104 - Ghast` (2026-11-19) gives nothing: series 3 #104 is not Ghast
     (#15 and #131 are), so it is most likely a series 1 or 2 card. A series 1 or 2 card with the
-    same number and name does pass; it starts `pending` and its picture is compared as for any
-    title, so a clearly other series 3 card becomes a `mismatch`, and an unclear picture an
-    alert marked "number unconfirmed" (`docs/image-matching.md`).
+    same number and name, and nothing else in its title, does pass; it starts `pending` and its
+    picture is compared as for any title, so a clearly other series 3 card becomes a `mismatch`,
+    and an unclear picture an alert marked "number unconfirmed" (`docs/image-matching.md`).
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
   `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
   `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,

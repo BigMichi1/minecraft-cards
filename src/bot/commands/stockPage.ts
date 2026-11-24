@@ -15,7 +15,10 @@ export type StockFilter = (typeof STOCK_FILTERS)[number];
 export interface StockInput extends CellContext {
   /** The collection shown; the paging buttons carry it. */
   collection: CollectionId;
-  /** The cards of the filter, in display order: the catalog, or the user's missing list. */
+  /**
+   * The cards of the filter, in display order: the collection's catalog, or the user's missing
+   * list in it.
+   */
   cards: CardId[];
   filter: StockFilter;
   /** The page asked for, from 1; a page past the end shows the last page. */

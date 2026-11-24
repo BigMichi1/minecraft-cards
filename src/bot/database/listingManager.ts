@@ -175,8 +175,9 @@ export const listingManager = {
   /**
    * Insert or update by url; listings of `shop` in `collection` missing from `found` become
    * unavailable (eBay: once unseen for EBAY_MISSING_GRACE_MS). Ended auctions are unavailable.
-   * A URL already stored under another collection belongs to that one (the first to claim it):
-   * it is left as it is and not returned. Call only after a successful fetch.
+   * A URL already stored under another collection (stored there first) is left as it is, not
+   * returned, not marked unavailable by this run, and logged. Call only after a successful
+   * fetch.
    */
   upsertFromRun(
     shop: ShopId,

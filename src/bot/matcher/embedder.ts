@@ -316,7 +316,7 @@ export interface MatchOptions {
    */
   onUnavailable?: (status: 'model_unavailable' | 'image_unavailable', reason: string) => void;
   /**
-   * Every catalog card's embedded reference picture, and the cards left out, for the picture
+   * Every card of the listing's collection: its embedded reference picture, or why it is left out, for the picture
    * identification (rules 1 to 5 in docs/image-matching.md). Called only once a picture has
    * been embedded; the runner loads them once per run. Without it a listing is only compared
    * with its title card's reference.
@@ -424,7 +424,7 @@ function retryStatus(set: ReferenceSet): Unavailable | null {
  * Check a listing's picture against the card's reference picture, and with `references` also
  * against every card's reference (docs/image-matching.md):
  * 1. the picture decides the title card: `confirmed`;
- * 2. it decides another card (not a puzzle card, no twin, every catalog card in the set) and
+ * 2. it decides another card (not a puzzle card, no twin, every card of the collection in the set) and
  *    the title card's reference stays below the threshold: `mismatch`, holding that card;
  * 3. it decides nothing: `confirmed` or `unconfirmed` by the title card's reference alone;
  * 4. an eBay title naming no card (`idSource` `picture`): the picture's decided card (same

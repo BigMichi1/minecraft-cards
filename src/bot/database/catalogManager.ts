@@ -24,7 +24,7 @@ export interface CatalogCard {
   puzzle: boolean;
 }
 
-/** The usable reference pictures, and every catalog card without one (and why). */
+/** The usable reference pictures of one collection, and every card of it without one (and why). */
 export interface ReferenceCatalog {
   usable: ReferenceCard[];
   missing: MissingReference[];
@@ -65,14 +65,17 @@ export interface ImportPreview {
 
 /**
  * A parsed card list: the ids, or why there are none: `empty` (no token at all) or `invalid`
- * (unparseable tokens, then ids not in the catalog when that was checked).
+ * (unparseable tokens, then ids not in the collection's catalog when that was checked).
  */
 export type CardListResult =
   | { ok: true; ids: CardId[] }
   | { ok: false; reason: 'empty' }
   | { ok: false; reason: 'invalid'; invalid: string[] };
 
-/** Parse a comma separated card list; with `checkCatalog`, ids outside the catalog are invalid. */
+/**
+ * Parse a comma separated card list; with `checkCatalog`, ids outside the collection's catalog
+ * are invalid.
+ */
 export function parseKnownCardList(
   collection: CollectionId,
   input: string,
@@ -124,7 +127,7 @@ export const catalogManager = {
     );
   },
 
-  /** Every named catalog card's name (sammel-ente's), for the eBay title check by name. */
+  /** The name (sammel-ente's) of every named card of the collection, for the eBay title check by name. */
   cardNames(collection: CollectionId): Map<CardId, string> {
     const names = new Map<CardId, string>();
     const rows = db
@@ -157,11 +160,11 @@ export const catalogManager = {
   },
 
   /**
-   * Every catalog card, in card order, split into the usable reference pictures and the cards
+   * Every card of the collection's catalog, in card order, split into the usable reference pictures and the cards
    * without one: no picture yet (`no_picture`), a placeholder file (`_leer.`, `placeholder`), or
    * a picture the shop shows for more than one card (`shared`). The last two tell no card apart,
    * so such a card has no reference (`no_reference`) and is never identified by picture.
-   * Only the collection's own cards count, also for a picture shared by several cards.
+   * A picture counts as shared only when several cards of this collection show it.
    */
   referenceCatalog(collection: CollectionId): ReferenceCatalog {
     const rows = db

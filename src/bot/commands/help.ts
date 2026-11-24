@@ -19,7 +19,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       .addFields(
         {
           name: 'Collections',
-          value: `Every command names its collection (\`collection:\`), each with its own list: ${COLLECTIONS.map((c) => c.name).join(', ')}.`,
+          value: `Every card command names its collection (\`collection:\`), each with its own list: ${COLLECTIONS.map((c) => c.name).join(', ')}.`,
         },
         {
           name: '/missing set collection:<c> list:<cards>',

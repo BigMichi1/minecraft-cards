@@ -360,6 +360,21 @@ Each step is its own PR, reviewed with the pr-review-toolkit, and leaves the bot
   admin step.
 - Rollout in five PRs.
 
+## Notes from PR 1 for the later steps
+
+Found in the review of PR 1 (collection key), to settle in the step that needs them:
+
+- `cards.type` (`CARD_TYPES`: base, LE, XXL) is Minecraft-only. With per-collection id rules
+  (step 4, Turbo Attax `GU7`, `MR-HAM`) the type comes from the collection's rule; do not widen
+  `CardType` into a bag of every collection's kinds.
+- The run summary, a shop's recent peak and the shop alert keys (`shop-error:<shop>`, ...) are
+  keyed per shop. `createShopAdapters` refuses a second adapter of one shop until they are keyed
+  per (shop, collection) (step 3).
+- `/admin map` refuses to move a listing to another collection: no run of its shop would update
+  it there. Step 3 decides moves together with title-driven collection changes.
+- Shop parsers (`ShopFetcher`) still read series 3 rules; step 3 gives them per-collection
+  settings (typed per shop, a collection lists only the shops that sell it).
+
 ## Left to the builder
 
 - Exact module layout inside each adapter, the migration's SQL (generated), names of helpers.

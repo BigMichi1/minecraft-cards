@@ -333,6 +333,23 @@ XXL1 picture score below `TWIN_SIMILARITY`, so the twin rule no longer saw the p
 same art, so the collection names them (`knownTwins: [['59', 'XXL1']]`): a known twin is a twin
 whatever its pictures score, and its picture alone never decides another card (rule 2 and 4).
 
+### Series 1 (2026-11-24)
+
+`./bin/mise run measure:laststicker -- --collection lego-minecraft-1`, same method and values:
+laststicker lists 283 cards; 22 scans answer 404 (#157 to #162 and #165 to #180, the puzzle
+cards), so 261 load and those 22 use sammel-ente's picture.
+
+| Shop        | Pairs | True min | True median | False max | Missed at 0.78 | Wrong at 0.78 | Decided | Wrong decisions |
+| ----------- | ----- | -------- | ----------- | --------- | -------------- | ------------- | ------- | --------------- |
+| sammel-ente | 283   | 0.691    | 0.920       | 0.824     | 11 (4 %)       | 7 (2.5 %)     | 267     | 0               |
+| collect-it  | 256   | 0.434    | 0.897       | 0.836     | 13 (5 %)       | 7 (2.7 %)     | 243     | 3               |
+
+- The 3 wrong decisions (collect-it #154, #155, #156 decided as #157, #158, #159) are puzzle cards:
+  rule 5 never takes a puzzle card from the picture alone, so none becomes a card or a mismatch.
+- Twins by similarity: #84 and XXL1 (0.982), #108 and XXL2 (0.961), #109 and #152 (0.923); the
+  twin rule covers them, so series 1 needs no `knownTwins`.
+- The values stay (0.78, 0.02, 0.9) and series 1 keeps its scans.
+
 ## Data quality finding
 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",

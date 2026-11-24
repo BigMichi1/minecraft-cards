@@ -11,7 +11,13 @@ import type { ButtonInteraction, MessageCreateOptions, ModalSubmitInteraction } 
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { reportManager, type ReportReason } from '../database/reportManager';
 import { runManager } from '../database/runManager';
-import { adminActionRow, adminListingEmbed, NO_LISTING, type AdminDm } from './adminActions';
+import {
+  adminActionRow,
+  adminListingEmbed,
+  MAX_FIELD,
+  NO_LISTING,
+  type AdminDm,
+} from './adminActions';
 import { parseListingId } from './buttonIds';
 import logger, { logError } from '../utils/logger';
 import { ephemeral, replyWithError } from '../utils/interactionReply';
@@ -22,7 +28,6 @@ const REASONS: Record<ReportReason, string> = {
   other: 'Other',
 };
 const MAX_NOTE = 500;
-const MAX_FIELD = 1024;
 const THANKS = "Thanks — the admin has been notified. This listing is paused until it's checked.";
 const THANKS_UNSENT =
   "Thanks — this listing is paused until it's checked. The admin could not be reached just now; the bot will try again with the next check.";

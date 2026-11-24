@@ -13,6 +13,7 @@ import { clipText, DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
 import {
   adminActionRow,
   adminListingEmbed,
+  MAX_FIELD,
   NO_LISTING,
   rejectInvalidButton,
   type AdminDm,
@@ -21,7 +22,6 @@ import { decodeRightId } from './buttonIds';
 
 /** One admin DM per listing within this period, however many users click. */
 const REQUEST_EVERY_MS = 24 * 60 * 60 * 1000;
-const MAX_FIELD = 1024;
 
 export interface RightDeps {
   notifyAdmin: AdminDm;

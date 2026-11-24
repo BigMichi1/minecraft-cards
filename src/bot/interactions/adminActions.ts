@@ -17,7 +17,8 @@ import logger, { logError } from '../utils/logger';
 import { clipText, DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
 import { decodeConfirmId, decodeDismissId, encodeConfirmId, encodeDismissId } from './buttonIds';
 
-const MAX_FIELD = 1024;
+/** Discord's limit for an embed field value. */
+export const MAX_FIELD = 1024;
 export const NO_LISTING = 'This listing no longer exists.';
 export const INVALID_BUTTON = 'This button is not valid.';
 const NOT_ADMIN = 'Only the admin can do this.';

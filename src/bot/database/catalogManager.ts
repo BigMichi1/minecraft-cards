@@ -1,4 +1,4 @@
-import { count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray } from 'drizzle-orm';
 import {
   cardType,
   compareCardIds,
@@ -7,11 +7,13 @@ import {
   type CardType,
 } from '../cards/cardId';
 import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
+import type { CollectionId } from '../collections/ids';
 import type { MissingReference } from '../matcher/identify';
 import { db } from './db';
 import { cards, wantedCards } from './schema/index';
 
 export interface CatalogCard {
+  collection: CollectionId;
   cardId: CardId;
   type: CardType;
   name: string | null;
@@ -70,11 +72,12 @@ export type CardListResult =
 
 /** Parse a comma separated card list; with `checkCatalog`, ids outside the catalog are invalid. */
 export function parseKnownCardList(
+  collection: CollectionId,
   input: string,
   { checkCatalog = true }: { checkCatalog?: boolean } = {}
 ): CardListResult {
   const parsed = parseCardList(input);
-  const known = checkCatalog ? catalogManager.knownIds() : null;
+  const known = checkCatalog ? catalogManager.knownIds(collection) : null;
   const unknown = known ? parsed.ids.filter((id) => !known.has(id)) : [];
   const invalid = [...parsed.invalid, ...unknown];
   if (invalid.length > 0) return { ok: false, reason: 'invalid', invalid };
@@ -82,47 +85,59 @@ export function parseKnownCardList(
   return { ok: true, ids: parsed.ids };
 }
 
-function insertCards(ids: CardId[]): void {
+function insertCards(collection: CollectionId, ids: CardId[]): void {
   const now = Date.now();
   for (const cardId of ids) {
     db.insert(cards)
-      .values({ cardId, type: cardType(cardId), updatedAt: now })
+      .values({ collection, cardId, type: cardType(cardId), updatedAt: now })
       .run();
   }
 }
 
 export const catalogManager = {
-  /** Insert the starter catalog when `cards` is empty. */
+  /** Insert the starter catalog when `lego-minecraft-3`, the collection it lists, has no card. */
   seedIfEmpty(): void {
+    const collection: CollectionId = 'lego-minecraft-3';
     db.transaction(() => {
-      const row = db.select({ n: count() }).from(cards).get();
+      const row = db
+        .select({ n: count() })
+        .from(cards)
+        .where(eq(cards.collection, collection))
+        .get();
       if ((row?.n ?? 0) > 0) return;
-      insertCards(parseChecklist(STARTER_CHECKLIST).ids);
+      insertCards(collection, parseChecklist(STARTER_CHECKLIST).ids);
     });
   },
 
-  knownIds(): Set<CardId> {
+  knownIds(collection: CollectionId): Set<CardId> {
     return new Set(
       db
         .select({ cardId: cards.cardId })
         .from(cards)
+        .where(eq(cards.collection, collection))
         .all()
         .map((r) => r.cardId)
     );
   },
 
   /** Every named catalog card's name (sammel-ente's), for the eBay title check by name. */
-  cardNames(): Map<CardId, string> {
+  cardNames(collection: CollectionId): Map<CardId, string> {
     const names = new Map<CardId, string>();
-    for (const row of db.select({ cardId: cards.cardId, name: cards.name }).from(cards).all()) {
+    const rows = db
+      .select({ cardId: cards.cardId, name: cards.name })
+      .from(cards)
+      .where(eq(cards.collection, collection))
+      .all();
+    for (const row of rows) {
       if (row.name) names.set(row.cardId, row.name);
     }
     return names;
   },
 
-  getCard(id: CardId): CatalogCard | undefined {
+  getCard(collection: CollectionId, id: CardId): CatalogCard | undefined {
     const row = db
       .select({
+        collection: cards.collection,
         cardId: cards.cardId,
         type: cards.type,
         name: cards.name,
@@ -130,7 +145,7 @@ export const catalogManager = {
         puzzleSeen: cards.puzzleSeen,
       })
       .from(cards)
-      .where(eq(cards.cardId, id))
+      .where(and(eq(cards.collection, collection), eq(cards.cardId, id)))
       .get();
     if (!row) return undefined;
     const { puzzleSeen, ...card } = row;
@@ -142,8 +157,9 @@ export const catalogManager = {
    * without one: no picture yet (`no_picture`), a placeholder file (`_leer.`, `placeholder`), or
    * a picture the shop shows for more than one card (`shared`). The last two tell no card apart,
    * so such a card has no reference (`no_reference`) and is never identified by picture.
+   * Only the collection's own cards count, also for a picture shared by several cards.
    */
-  referenceCatalog(): ReferenceCatalog {
+  referenceCatalog(collection: CollectionId): ReferenceCatalog {
     const rows = db
       .select({
         cardId: cards.cardId,
@@ -152,6 +168,7 @@ export const catalogManager = {
         puzzleSeen: cards.puzzleSeen,
       })
       .from(cards)
+      .where(eq(cards.collection, collection))
       .all()
       .sort((a, b) => compareCardIds(a.cardId, b.cardId));
     const uses = new Map<string, number>();
@@ -187,6 +204,7 @@ export const catalogManager = {
    * again.
    */
   updateNamesAndReferences(
+    collection: CollectionId,
     entries: { cardId: CardId; name: string; imageUrl: string | null }[]
   ): CardId[] {
     const now = Date.now();
@@ -196,7 +214,7 @@ export const catalogManager = {
         const before = db
           .select({ url: cards.referenceImageUrl })
           .from(cards)
-          .where(eq(cards.cardId, e.cardId))
+          .where(and(eq(cards.collection, collection), eq(cards.cardId, e.cardId)))
           .get();
         if (!before) continue;
         if (e.imageUrl !== null && e.imageUrl !== before.url) changed.push(e.cardId);
@@ -207,16 +225,16 @@ export const catalogManager = {
             ...(isPuzzleCardName(e.name) ? { puzzleSeen: true } : {}),
             updatedAt: now,
           })
-          .where(eq(cards.cardId, e.cardId))
+          .where(and(eq(cards.collection, collection), eq(cards.cardId, e.cardId)))
           .run();
       }
     });
     return changed;
   },
 
-  previewImport(ids: CardId[]): ImportPreview {
+  previewImport(collection: CollectionId, ids: CardId[]): ImportPreview {
     const next = new Set(ids);
-    const current = catalogManager.knownIds();
+    const current = catalogManager.knownIds(collection);
     const added = [...next].filter((id) => !current.has(id)).sort(compareCardIds);
     const removed = [...current].filter((id) => !next.has(id)).sort(compareCardIds);
     const counts: Record<CardType, number> = { base: 0, le: 0, xxl: 0 };
@@ -227,7 +245,7 @@ export const catalogManager = {
       const rows = db
         .select({ cardId: wantedCards.cardId, users: count() })
         .from(wantedCards)
-        .where(inArray(wantedCards.cardId, removed))
+        .where(and(eq(wantedCards.collection, collection), inArray(wantedCards.cardId, removed)))
         .groupBy(wantedCards.cardId)
         .all();
       const byId = new Map(rows.map((r) => [r.cardId, r.users]));
@@ -240,11 +258,15 @@ export const catalogManager = {
   },
 
   /** Insert added ids and delete removed ones from `cards`; wanted lists are untouched. */
-  applyImport(ids: CardId[]): void {
-    const { added, removed } = catalogManager.previewImport(ids);
+  applyImport(collection: CollectionId, ids: CardId[]): void {
+    const { added, removed } = catalogManager.previewImport(collection, ids);
     db.transaction(() => {
-      insertCards(added);
-      for (const cardId of removed) db.delete(cards).where(eq(cards.cardId, cardId)).run();
+      insertCards(collection, added);
+      for (const cardId of removed) {
+        db.delete(cards)
+          .where(and(eq(cards.collection, collection), eq(cards.cardId, cardId)))
+          .run();
+      }
     });
   },
 };

@@ -205,11 +205,11 @@ describe('/stock', () => {
   });
 
   test('a click re-reads the data: a card that sold out since drops from in-stock', async () => {
-    const stored = listing('sammel-ente', [cid('1')]);
+    let stored = listing('sammel-ente', [cid('1')]);
     const read = spyOn(listingManager, 'listingsForCards').mockImplementation(() => [stored]);
     try {
       await handleStockButton(button('u1', 'stock:1:in-stock'), CTX);
-      stored.available = false;
+      stored = { ...stored, available: false };
       await handleStockButton(button('u1', 'stock:1:in-stock'), CTX);
     } finally {
       read.mockRestore();

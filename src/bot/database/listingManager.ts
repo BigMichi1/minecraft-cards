@@ -17,7 +17,8 @@ import type { Listing as ListingRow } from './schema/index';
 import { userManager } from './userManager';
 import logger from '../utils/logger';
 
-export type StoredListing = {
+/** A stored listing as read; read-only, as several modules pass the same object around. */
+export type StoredListing = Readonly<{
   id: number;
   /** The collection its `cardIds` and `pictureCardId` belong to. */
   collection: CollectionId;
@@ -44,7 +45,7 @@ export type StoredListing = {
   idSource: IdSource;
   /** The card the picture was taken for (see the `pictureCardId` column), or null. */
   pictureCardId: CardId | null;
-};
+}>;
 
 /** One listing to tell a user about: the cards of it they want, for this availability period. */
 export interface PendingNotification {

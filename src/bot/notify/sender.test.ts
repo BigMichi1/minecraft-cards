@@ -172,9 +172,8 @@ describe('createDiscordSender', () => {
   });
 
   test('a listing with a bad URL does not stop other users', async () => {
-    const bad = seedListing(1);
+    const bad = { ...seedListing(1), url: `https://shop/${'x'.repeat(600)}` };
     const good = seedListing(2);
-    bad.url = `https://shop/${'x'.repeat(600)}`;
     const client = fakeClient();
     const sender = createDiscordSender(client, { alert: noAlert, sleep: async () => {} });
     const batch = new Map([

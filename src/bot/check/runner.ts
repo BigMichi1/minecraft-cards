@@ -753,7 +753,7 @@ interface SharedPlacement {
  * listing the admin mapped, the collection they put it in (kept fresh there, whatever its title
  * names now). A listing whose collection the run does not cover (an admin mapping into a
  * collection without eBay settings) is left where it is, neither refreshed nor marked gone, and
- * named in `outside`; a listing that names no collection falls back to the adapter's, logged.
+ * named in `outsideLabels`; a listing that names no collection falls back to the adapter's, logged.
  */
 function placeShared(
   adapter: ShopAdapter,

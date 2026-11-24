@@ -40,7 +40,8 @@ Minecraft TCC 1`, the product number in the URL), which need their own parser (P
 `lego minecraft boom bastic karte`; the series 3 ones below) and its series marker. The run
 searches all of them once, places each title by marker (exactly one collection; several or none
 give no ids, series 3's name check apart) and tags each listing with its collection. A
-collection whose own searches all return nothing is a shop error of that collection (its stored
+collection whose own searches all return no usable item (one without a link or a title counts
+as none) is a shop error of that collection (its stored
 listings are left alone); the others are stored as usual. A probe of
 the series 1 and 2 searches (536 items; 40 of them, without seller data, in
 `src/test/fixtures/ebay-search-series-1-2.json`) found:
@@ -77,7 +78,8 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   0, a first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty result),
   and an answer of the wrong shape (not an object, `itemSummaries` not a list of items,
   `total` not a number) are `ShopLayoutError`s naming the query and the offset. All searches
-  together returning no item is a `ShopLayoutError` as before.
+  together returning no item, or no usable item (one without a link or a title counts as none),
+  is a `ShopLayoutError` as before.
 - **Total tolerance**: eBay's `total` is an estimate and its pages may be short, so a walk may end
   up to max(5, ceil(2 % of the total)) items short of it (455 announced, 450 delivered; 448 of 450
   in pages of 199); an empty first page with a `total` above 0 is always an error. That gap is
@@ -141,11 +143,14 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   series (series 3: `Serie 3`, `Series 3`, `Serie3`, `Staffel 3`, `TCC 3`, `On Fire`), and are
   that collection's. A title naming several series gives no ids, as does a series list with one
   series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 1 bis 3`, `Serie 2/3`, and the
-  unclear `Serie 1 - 2 - Steve`): a mixed lot is ambiguous. The first two numbers after the
-  series word decide: series numbers 1 to 3 joined by a word or `/ & + ,` (`Serie 3 und 1`)
-  are a list in any order, joined by a dash or a space only going upward. A number that is no
+  unclear `Serie 1 - 2 - Steve`): a mixed lot is ambiguous. The series numbers 1 to 3
+  after the series word are read pair by pair: joined by a list word (`und`, `oder`, `bis`,
+  `bzw.`, `sowie`, `plus`, …) or a sign other than a dash (`Serie 3 und 1`, `Serie 1 | 2`)
+  they are a list in any order, joined by a dash or a space only going upward, and any list
+  pair makes the title a list (`Serie 3 - 1 & 2`). A number followed by `/NN` is a card
+  fraction, no series. A number that is no
   series number (`Serie 3 - 12 - Steve - Charakterkarte`, `Serie 3 - 5 - …`), or one lower
-  than the series after a dash (`Serie 3 - 1 - Steve - Charakterkarte`), is a card number. An
+  than the series after a dash or a space (`Serie 3 - 1 - Steve - Charakterkarte`), is a card number. An
   admin mapping into a collection eBay does not search is left alone and alerted
   (`shop-outside:ebay`). A title with no series word gives no ids either, even in the clear
   `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms

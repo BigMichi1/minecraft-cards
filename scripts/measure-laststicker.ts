@@ -139,7 +139,8 @@ if (!definition.shops.ebay) {
           clientId: EBAY_CLIENT_ID,
           clientSecret: EBAY_CLIENT_SECRET,
           collections: ebayCollectionsOf([definition]),
-          // Kept on purpose: the fetcher then warns that the other card lists are not loaded.
+          // Kept on purpose: for series 3, the fetcher then warns that the other card lists are not
+          // loaded.
           cardNames: (c) => (c === definition.id ? names : new Map()),
         }).fetchListings()
       ).listings.filter((l) => l.collection === definition.id),

@@ -456,6 +456,32 @@ describe('runCheck', () => {
       expect(s.collections?.['lego-minecraft-1']?.ebay).toEqual({ listings: 1 });
     });
 
+    test("another collection's store failing files no run counts there", async () => {
+      const real = listingManager.upsertFromRun.bind(listingManager);
+      const upsert = spyOn(listingManager, 'upsertFromRun').mockImplementation(
+        (shop, collection, ...rest) => {
+          if (collection === 'lego-minecraft-1') throw new Error('disk full');
+          return real(shop, collection, ...rest);
+        }
+      );
+      const log = spyOn(logger, 'log').mockImplementation(() => logger);
+      let s: RunSummary;
+      try {
+        s = await runCheck(
+          depsWith([shared([item('1', 'lego-minecraft-1')], { skippedExcluded: 3 })])
+        );
+      } finally {
+        upsert.mockRestore();
+        log.mockRestore();
+      }
+      expect(s.collections?.['lego-minecraft-1']?.ebay).toEqual({
+        listings: 1,
+        error: expect.stringContaining('disk full'),
+      });
+      expect(s.shops.ebay).toMatchObject({ skippedExcluded: 3 });
+      expect(s.shops.ebay?.error).toBeUndefined();
+    });
+
     test("series 3's searches all empty: the run's counts are still filed under it", async () => {
       const s = await runCheck(
         depsWith([

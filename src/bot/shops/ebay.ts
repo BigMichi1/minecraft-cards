@@ -55,10 +55,10 @@ const LETTER = 'A-Za-zÄÖÜäöüß';
 // A listing the buyer picks a card from: "zum aussuchen", "auswählen", "Auswahl", "du wählst",
 // "waehlen". `pick` only as a whole word: "Pickaxe" is a card name.
 const MULTI_PICK_PATTERN = /aussuch|auswahl|w(?:ä|ae)hl|\bchoos|\bpick\b/i;
-// Not right after a series word: "Serie 3 - Steve" and "TCC 3 - Steve" name the series, not
-// card 3.
 /** The numbered series there are (1 to 3): raise it with a new numbered series. */
 const SERIES_NUMBER = '[1-3]';
+// Not right after a series word: "Serie 3 - Steve" and "TCC 3 - Steve" name the series, not
+// card 3.
 const NOT_AFTER_SERIES = '(?<!\\b(?:Serie|Series|Staffel|TCC)\\s*)';
 // A number range: "1 - 228", "151-254", "LE1 - LE22", "1 bis 228". Only 1 to 3 digits, so
 // "Serie 3 - 2026" (a year) is not one; the first number must be the smaller (see hasRange).
@@ -275,24 +275,35 @@ export type TitleExclusion =
   'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
 
 // A series word followed by a list of series numbers ("Serie 1-2", "Serie 1 & 2 - Karte 45",
-// "Serie 1 bis 3", "Serie 3 und 1", "Serie 1 2 3"). Only the first two numbers decide, each a
-// series number (SERIES_NUMBER) not followed by another digit:
-// joined by a word or `/ & + ,` they are a list in any order; joined by a dash or a space only
-// going upward, as a smaller number there is a card number ("Serie 3 - 1 - Steve -
-// Charakterkarte" is #1). A larger number is a card number or a year ("Serie 3 - 12 - Steve -
-// Charakterkarte" is #12, "Serie 3 - 2026" a year). "Serie 1 - 2 - Steve" may be series 1 #2
-// or a list: unclear, so no ids.
-const SERIES_PAIR = new RegExp(
-  `\\b(?:Series?|Staffel|TCC)\\s*(${SERIES_NUMBER})(?!\\d)(\\s*(?:[-–/&+,]|\\bund\\b|\\band\\b|\\bu\\.|\\bbis\\b|\\boder\\b|\\bor\\b|\\bto\\b)\\s*|\\s+)(${SERIES_NUMBER})(?!\\d)`,
-  'gi'
+// "Serie 1 bis 3", "Serie 3 und 1", "Serie 1 bzw. 2", "Serie 1 2 3"). The series numbers
+// (SERIES_NUMBER) right after the series word are read pair by pair; a number followed by
+// another digit is a card number or a year ("Serie 3 - 12 - Steve - Charakterkarte" is #12,
+// "Serie 3 - 2026" a year), and one followed by "/NN" a card fraction ("Serie 1 2/150"). Two
+// joined by a word or a sign other than a dash are a list in any order; joined by a dash or a
+// space only going upward, as a smaller or equal number there is a card number ("Serie 3 - 1 -
+// Steve - Charakterkarte" is #1). Any pair that is a list makes the title one: "Serie 1 - 2 -
+// Steve" may be series 1 #2 or a list, unclear, so no ids.
+const LIST_WORD =
+  '(?:und\\/oder|und|and|oder|or|bis|to|sowie|plus|bzw\\.?|u\\.?|o\\.?)(?![A-Za-zÄÖÜäöüß])';
+const LIST_SIGN = '[-–—‑−/&+,|·;~.]';
+const SERIES_START = new RegExp(`\\b(?:Series?|Staffel|TCC)\\s*(${SERIES_NUMBER})(?!\\d)`, 'gi');
+const NEXT_SERIES = new RegExp(
+  `((?:\\s*${LIST_SIGN}+)+\\s*|\\s*${LIST_WORD}\\s*|\\s+)(${SERIES_NUMBER})(?!\\d|\\/\\d{2})`,
+  'iy'
 );
+/** A dash or a space alone: "3 - 1" may be a series and a card number. */
+const AMBIGUOUS_JOIN = /^[-–—‑−]?$/;
 
-/** Whether a title names a list of series with one series word (see SERIES_PAIR). */
+/** Whether a title names a list of series with one series word (see SERIES_START). */
 function namesSeriesList(title: string): boolean {
-  for (const m of title.matchAll(SERIES_PAIR)) {
-    const separator = m[2]!.trim();
-    const ambiguous = separator === '' || separator === '-' || separator === '–';
-    if (!ambiguous || Number(m[3]) > Number(m[1])) return true;
+  for (const m of title.matchAll(SERIES_START)) {
+    let previous = Number(m[1]);
+    NEXT_SERIES.lastIndex = m.index + m[0].length;
+    for (let next = NEXT_SERIES.exec(title); next; next = NEXT_SERIES.exec(title)) {
+      const number = Number(next[2]);
+      if (!AMBIGUOUS_JOIN.test(next[1]!.trim()) || number > previous) return true;
+      previous = number;
+    }
   }
   return false;
 }
@@ -526,7 +537,6 @@ export function isPictureCandidate(
   title: string,
   markers: readonly EbayCollection[] = EBAY_COLLECTIONS
 ): boolean {
-  // Series 3 only; `markers` are the series markers that place the title.
   if (titleExclusion(title, LEGACY_COLLECTION, markers) !== null) return false;
   if (ANY_COUNT_WORD.test(title)) return false;
   return !/\d/.test(title.replace(SERIES_OR_YEAR, ' '));

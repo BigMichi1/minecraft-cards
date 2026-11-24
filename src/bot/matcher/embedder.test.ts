@@ -504,9 +504,11 @@ describe('matchListing with picture identification', () => {
 });
 
 describe('loadReferenceSet', () => {
-  const card = (id: string, url: string, puzzle = false) => ({
+  const card = (id: string, url: string, puzzle = false, fallbackUrl: string | null = null) => ({
     cardId: cid(id),
     referenceImageUrl: url,
+    source: 'laststicker' as const,
+    fallbackUrl,
     puzzle,
   });
 
@@ -606,13 +608,14 @@ describe('loadReferenceSet', () => {
 const IMG = 'https://shop-sammel-ente.de/media/12.jpg';
 
 describe('allowedImageUrl', () => {
-  test('only https on the shop and eBay image hosts', () => {
+  test('only https on the shop, eBay and laststicker image hosts', () => {
     for (const ok of [
       'https://shop-sammel-ente.de/media/a.jpg',
       'https://cdn.blue-ocean.de/a.jpg',
       'https://www.blue-ocean.de/a.jpg',
       'https://www.collect-it.de/media/image/product/623996/md/12-squid-charakterkarte-serie-3.jpg',
       'https://i.ebayimg.com/images/g/a/s-l225.jpg',
+      'https://www.laststicker.com/i/cards/12125/1.jpg',
     ]) {
       expect(allowedImageUrl(ok)).toBe(true);
     }

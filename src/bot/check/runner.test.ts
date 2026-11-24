@@ -34,7 +34,7 @@ import {
   formatWindow,
 } from './runner';
 import { cid, ids } from '../../test/cardIds';
-import { setCatalogCards } from '../../test/catalog';
+import { chosenReference, setCatalogCards } from '../../test/catalog';
 import type { CollectionId } from '../collections/ids';
 
 /** A collection outside the registry, to show a run keeps each adapter's collection apart. */
@@ -272,7 +272,19 @@ describe('runCheck', () => {
     await runCheck(depsWith([ok('sammel-ente', [ente])]));
     const card = catalogManager.getCard('lego-minecraft-3', cid('12'))!;
     expect(card.name).toBeNull();
-    expect(card.referenceImageUrl).toBe('https://ente/12.jpg');
+    // The card has no scan yet: the shop picture is its reference.
+    expect(catalogManager.referenceCatalog('lego-minecraft-3').usable).toContainEqual({
+      cardId: cid('12'),
+      referenceImageUrl: 'https://ente/12.jpg',
+      source: 'shop',
+      fallbackUrl: null,
+      puzzle: false,
+    });
+  });
+
+  test("only the collection's fallback shop writes shop pictures", async () => {
+    await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+    expect(chosenReference('lego-minecraft-3', cid('12'))).toBeNull();
   });
 
   test('each adapter stores, names and matches in its own collection', async () => {
@@ -305,7 +317,7 @@ describe('runCheck', () => {
         collection: OTHER,
         cardId: cid('12'),
         type: 'base',
-        referenceImageUrl: 'https://o/12.jpg',
+        shopImageUrl: 'https://o/12.jpg',
         updatedAt: 1,
       })
       .run();
@@ -335,15 +347,11 @@ describe('runCheck', () => {
       cardName: 'Two',
     };
     await runCheck(depsWith([ok('sammel-ente', [several])]));
-    expect(catalogManager.getCard('lego-minecraft-3', cid('12'))).toMatchObject({
-      name: null,
-      referenceImageUrl: null,
-    });
+    expect(catalogManager.getCard('lego-minecraft-3', cid('12'))?.name).toBeNull();
+    expect(chosenReference('lego-minecraft-3', cid('12'))).toBeNull();
     // A single card without a name still gives its picture.
     await runCheck(depsWith([ok('sammel-ente', [nameless])]));
-    expect(catalogManager.getCard('lego-minecraft-3', cid('12'))?.referenceImageUrl).toBe(
-      'https://ente/x.jpg'
-    );
+    expect(chosenReference('lego-minecraft-3', cid('12'))).toBe('https://ente/x.jpg');
   });
 
   test('a failing prune of old alert rows is logged and the run goes on', async () => {

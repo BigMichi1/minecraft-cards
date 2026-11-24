@@ -128,7 +128,7 @@ describe('/admin', () => {
         return {
           collection,
           ok: true,
-          result: { added: ids('LE23'), renamed: [], vanished: [], nowListed: [] },
+          result: { added: ids('LE23'), renamed: [], vanished: [], nowListed: [], repictured: [] },
         };
       },
     };

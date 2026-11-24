@@ -1,6 +1,6 @@
 import type { CardId } from '../cards/cardId';
-import type { CollectionId } from '../collections/ids';
-import { collectionName } from '../collections/index';
+import type { CollectionDefinition, CollectionId } from '../collections/ids';
+import { collectionById, collectionName } from '../collections/index';
 import { catalogManager, type ReferenceCatalog } from '../database/catalogManager';
 import {
   listingManager,
@@ -400,8 +400,10 @@ async function checkShop(
       );
     }
     for (const l of found) fetched.set(l.url, l);
-    if (adapter.id === 'sammel-ente') {
-      const changed = catalogManager.updateReferences(
+    // A row's collection may have no definition in this build (collectionName).
+    const definition: CollectionDefinition | undefined = collectionById(adapter.collection);
+    if (definition?.referenceFallbackShop === adapter.id) {
+      const changed = catalogManager.updateShopPictures(
         adapter.collection,
         found.flatMap((l) => {
           const [cardId] = l.cardIds;

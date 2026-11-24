@@ -3,10 +3,10 @@ import { eq } from 'drizzle-orm';
 import { db, initializeDatabase } from './db';
 import { cards, catalogSyncs, users, wantedCards } from './schema/index';
 import { userManager } from './userManager';
-import { catalogManager, parseKnownCardList } from './catalogManager';
+import { catalogManager, parseKnownCardList, SCAN_RETRY_MS } from './catalogManager';
 import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
 import { cid, ids } from '../../test/cardIds';
-import { setCatalogCards } from '../../test/catalog';
+import { chosenReference, setCatalogCards } from '../../test/catalog';
 import { CatalogLayoutError, type LaststickerRow } from '../catalog/laststicker';
 import type { CollectionId } from '../collections/ids';
 
@@ -54,7 +54,7 @@ describe('catalogManager', () => {
         cardId: cid('999'),
         type: 'base',
         name: 'Other',
-        referenceImageUrl: 'https://o/999.jpg',
+        shopImageUrl: 'https://o/999.jpg',
         updatedAt: 1,
       })
       .run();
@@ -64,17 +64,23 @@ describe('catalogManager', () => {
     expect(catalogManager.cardNames('lego-minecraft-3').has(cid('999'))).toBe(false);
     expect(catalogManager.referenceCatalog('lego-minecraft-3').usable).toEqual([]);
     expect(catalogManager.referenceCatalog(OTHER).usable).toEqual([
-      { cardId: cid('999'), referenceImageUrl: 'https://o/999.jpg', puzzle: false },
+      {
+        cardId: cid('999'),
+        referenceImageUrl: 'https://o/999.jpg',
+        source: 'shop',
+        fallbackUrl: null,
+        puzzle: false,
+      },
     ]);
     expect(parseKnownCardList('lego-minecraft-3', '999')).toEqual({
       ok: false,
       reason: 'invalid',
       invalid: ['999'],
     });
-    catalogManager.updateReferences('lego-minecraft-3', [
+    catalogManager.updateShopPictures('lego-minecraft-3', [
       { cardId: cid('999'), imageUrl: 'https://changed/999.jpg' },
     ]);
-    expect(catalogManager.getCard(OTHER, cid('999'))?.referenceImageUrl).toBe('https://o/999.jpg');
+    expect(chosenReference(OTHER, cid('999'))).toBe('https://o/999.jpg');
     catalogManager.applyImport({ collection: 'lego-minecraft-3', ids: ids('1') });
     expect(catalogManager.knownIds(OTHER)).toEqual(new Set(ids('999')));
   });
@@ -95,7 +101,7 @@ describe('catalogManager', () => {
 
   test("a picture another collection also uses is still this collection's reference", () => {
     catalogManager.seedIfEmpty();
-    catalogManager.updateReferences('lego-minecraft-3', [
+    catalogManager.updateShopPictures('lego-minecraft-3', [
       { cardId: cid('12'), imageUrl: 'https://shared/12.jpg' },
     ]);
     db.insert(cards)
@@ -103,12 +109,18 @@ describe('catalogManager', () => {
         collection: OTHER,
         cardId: cid('12'),
         type: 'base',
-        referenceImageUrl: 'https://shared/12.jpg',
+        shopImageUrl: 'https://shared/12.jpg',
         updatedAt: 1,
       })
       .run();
     expect(catalogManager.referenceCatalog('lego-minecraft-3').usable).toEqual([
-      { cardId: cid('12'), referenceImageUrl: 'https://shared/12.jpg', puzzle: false },
+      {
+        cardId: cid('12'),
+        referenceImageUrl: 'https://shared/12.jpg',
+        source: 'shop',
+        fallbackUrl: null,
+        puzzle: false,
+      },
     ]);
   });
 
@@ -144,13 +156,11 @@ describe('catalogManager', () => {
 
   test('a missing picture keeps the stored reference', () => {
     catalogManager.seedIfEmpty();
-    catalogManager.updateReferences('lego-minecraft-3', [
+    catalogManager.updateShopPictures('lego-minecraft-3', [
       { cardId: cid('12'), imageUrl: 'https://x/12.jpg' },
     ]);
-    catalogManager.updateReferences('lego-minecraft-3', [{ cardId: cid('12'), imageUrl: null }]);
-    expect(catalogManager.getCard('lego-minecraft-3', cid('12'))?.referenceImageUrl).toBe(
-      'https://x/12.jpg'
-    );
+    catalogManager.updateShopPictures('lego-minecraft-3', [{ cardId: cid('12'), imageUrl: null }]);
+    expect(chosenReference('lego-minecraft-3', cid('12'))).toBe('https://x/12.jpg');
   });
 
   test('parseKnownCardList tells empty input from invalid tokens', () => {
@@ -184,10 +194,10 @@ describe('catalogManager', () => {
     expect(names.size).toBe(2);
   });
 
-  test('updateReferences writes only pictures, of catalog cards that are not manual', () => {
+  test("updateShopPictures writes only shop pictures; a manual card keeps the admin's", () => {
     catalogManager.seedIfEmpty();
     catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', 'https://m/229.jpg', 5);
-    catalogManager.updateReferences('lego-minecraft-3', [
+    catalogManager.updateShopPictures('lego-minecraft-3', [
       { cardId: cid('12'), imageUrl: 'https://x/12.jpg' },
       { cardId: cid('229'), imageUrl: 'https://x/229.jpg' },
       { cardId: cid('999'), imageUrl: null },
@@ -200,12 +210,14 @@ describe('catalogManager', () => {
       kind: null,
       variant: null,
       source: 'laststicker',
-      referenceImageUrl: 'https://x/12.jpg',
+      referenceImageUrl: null,
       puzzle: false,
     });
+    expect(chosenReference('lego-minecraft-3', cid('12'))).toBe('https://x/12.jpg');
     expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.referenceImageUrl).toBe(
       'https://m/229.jpg'
     );
+    expect(chosenReference('lego-minecraft-3', cid('229'))).toBe('https://m/229.jpg');
     expect(catalogManager.getCard('lego-minecraft-3', cid('999'))).toBeUndefined();
   });
 
@@ -223,7 +235,7 @@ describe('catalogManager', () => {
     catalogManager.seedIfEmpty();
     expect(catalogManager.referenceCatalog('lego-minecraft-3').usable).toEqual([]);
     expect(catalogManager.referenceCatalog('lego-minecraft-3').missing).toHaveLength(251);
-    catalogManager.updateReferences('lego-minecraft-3', [
+    catalogManager.updateShopPictures('lego-minecraft-3', [
       { cardId: cid('12'), imageUrl: 'https://se/12.jpg' },
       { cardId: cid('160'), imageUrl: 'https://se/160.jpg' },
       { cardId: cid('13'), imageUrl: null },
@@ -231,28 +243,40 @@ describe('catalogManager', () => {
     setCatalogCards('lego-minecraft-3', [{ cardId: cid('160'), puzzle: true }]);
     const { usable, missing } = catalogManager.referenceCatalog('lego-minecraft-3');
     expect(usable).toEqual([
-      { cardId: cid('12'), referenceImageUrl: 'https://se/12.jpg', puzzle: false },
-      { cardId: cid('160'), referenceImageUrl: 'https://se/160.jpg', puzzle: true },
+      {
+        cardId: cid('12'),
+        referenceImageUrl: 'https://se/12.jpg',
+        source: 'shop',
+        fallbackUrl: null,
+        puzzle: false,
+      },
+      {
+        cardId: cid('160'),
+        referenceImageUrl: 'https://se/160.jpg',
+        source: 'shop',
+        fallbackUrl: null,
+        puzzle: true,
+      },
     ]);
     expect(missing).toHaveLength(249);
     expect(missing).toContainEqual({ cardId: cid('13'), reason: 'no_picture' });
   });
 
-  test('updateReferences returns the cards whose reference picture changed (R12)', () => {
+  test('updateShopPictures returns the cards whose reference picture changed (R12)', () => {
     catalogManager.seedIfEmpty();
     expect(
-      catalogManager.updateReferences('lego-minecraft-3', [
+      catalogManager.updateShopPictures('lego-minecraft-3', [
         { cardId: cid('12'), imageUrl: 'https://se/12.jpg' },
         { cardId: cid('13'), imageUrl: null },
       ])
     ).toEqual([cid('12')]);
     expect(
-      catalogManager.updateReferences('lego-minecraft-3', [
+      catalogManager.updateShopPictures('lego-minecraft-3', [
         { cardId: cid('12'), imageUrl: 'https://se/12.jpg' },
       ])
     ).toEqual([]);
     expect(
-      catalogManager.updateReferences('lego-minecraft-3', [
+      catalogManager.updateShopPictures('lego-minecraft-3', [
         { cardId: cid('12'), imageUrl: 'https://se/12b.jpg' },
       ])
     ).toEqual([cid('12')]);
@@ -265,7 +289,7 @@ describe('catalogManager', () => {
 
     test('a "_leer." picture is no reference: missing as a placeholder', () => {
       catalogManager.seedIfEmpty();
-      catalogManager.updateReferences('lego-minecraft-3', [
+      catalogManager.updateShopPictures('lego-minecraft-3', [
         { cardId: cid('LE10'), imageUrl: leer },
         { cardId: cid('12'), imageUrl: 'https://se/mnc3_012.jpg' },
       ]);
@@ -276,7 +300,7 @@ describe('catalogManager', () => {
 
     test('one picture shown for several cards is no reference for any of them', () => {
       catalogManager.seedIfEmpty();
-      catalogManager.updateReferences('lego-minecraft-3', [
+      catalogManager.updateShopPictures('lego-minecraft-3', [
         { cardId: cid('LE10'), imageUrl: 'https://se/same.jpg?ts=1' },
         { cardId: cid('LE11'), imageUrl: 'https://se/same.jpg?ts=2' },
         { cardId: cid('12'), imageUrl: 'https://se/mnc3_012.jpg' },
@@ -287,6 +311,106 @@ describe('catalogManager', () => {
       expect(missing).toContainEqual({ cardId: cid('LE11'), reason: 'shared' });
     });
   });
+  describe('reference source', () => {
+    const scan = (id: string) => `https://www.laststicker.com/i/cards/12125/${id}.jpg`;
+
+    test('referenceCatalog uses the laststicker scan, with the shop picture as fallbackUrl', () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('1'), scanUrl: scan('1'), imageUrl: 'https://shop-sammel-ente.de/1.jpg' },
+        { cardId: cid('2'), scanUrl: scan('2') },
+      ]);
+      const { usable } = catalogManager.referenceCatalog('lego-minecraft-3');
+      expect(usable).toEqual([
+        {
+          cardId: cid('1'),
+          referenceImageUrl: scan('1'),
+          source: 'laststicker',
+          fallbackUrl: 'https://shop-sammel-ente.de/1.jpg',
+          puzzle: false,
+        },
+        {
+          cardId: cid('2'),
+          referenceImageUrl: scan('2'),
+          source: 'laststicker',
+          fallbackUrl: null,
+          puzzle: false,
+        },
+      ]);
+    });
+
+    test('a scan missing within SCAN_RETRY_MS gives the shop picture; after it the scan again', () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('1'), scanUrl: scan('1'), imageUrl: 'https://se/1.jpg' },
+      ]);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('1'), 1000);
+      const at = (now: number) =>
+        catalogManager
+          .referenceCatalog('lego-minecraft-3', now)
+          .usable.find((c) => c.cardId === '1');
+      expect(at(1001)).toMatchObject({ referenceImageUrl: 'https://se/1.jpg', source: 'shop' });
+      expect(at(1000 + SCAN_RETRY_MS)).toMatchObject({
+        referenceImageUrl: scan('1'),
+        source: 'laststicker',
+      });
+    });
+
+    test('a missing scan without a shop picture is no_picture', () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('1'), scanUrl: scan('1') }]);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('1'), 1000);
+      expect(catalogManager.referenceCatalog('lego-minecraft-3', 1001).missing).toContainEqual({
+        cardId: cid('1'),
+        reason: 'no_picture',
+      });
+    });
+
+    test('updateShopPictures returns only cards whose chosen reference changed', () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('1'), scanUrl: scan('1') },
+        { cardId: cid('2'), scanUrl: scan('2') },
+      ]);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('2'), Date.now());
+      expect(
+        catalogManager.updateShopPictures('lego-minecraft-3', [
+          { cardId: cid('1'), imageUrl: 'https://se/1.jpg' },
+          { cardId: cid('2'), imageUrl: 'https://se/2.jpg' },
+        ])
+      ).toEqual(ids('2'));
+    });
+
+    test('syncCollection reports repictured cards and clears their missing mark', () => {
+      catalogManager.seedIfEmpty();
+      const rows = (suffix: string): LaststickerRow[] =>
+        starter.map((id) => ({
+          cardId: id,
+          name: `Card ${id}`,
+          kind: 'Characterkarten',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: scan(`${id.toLowerCase()}${id === '1' ? suffix : ''}`),
+        }));
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('1'), imageUrl: 'https://se/1.jpg' }]);
+      catalogManager.syncCollection('lego-minecraft-3', rows(''), 10);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('1'), 11);
+      expect(catalogManager.syncCollection('lego-minecraft-3', rows(''), 12).repictured).toEqual(
+        []
+      );
+      expect(catalogManager.referenceCatalog('lego-minecraft-3', 13).usable[0]).toMatchObject({
+        source: 'shop',
+      });
+      expect(catalogManager.syncCollection('lego-minecraft-3', rows('-v2'), 14).repictured).toEqual(
+        ids('1')
+      );
+      expect(catalogManager.referenceCatalog('lego-minecraft-3', 15).usable[0]).toMatchObject({
+        referenceImageUrl: scan('1-v2'),
+        source: 'laststicker',
+      });
+    });
+  });
+
   describe('syncCollection', () => {
     const row = (
       id: string,
@@ -306,7 +430,9 @@ describe('catalogManager', () => {
     test('a first sync over the starter catalog adds nothing and sets names, kinds and pictures', () => {
       catalogManager.seedIfEmpty();
       const result = catalogManager.syncCollection('lego-minecraft-3', starterRows(), 10);
-      expect(result).toEqual({ added: [], renamed: [], vanished: [], nowListed: [] });
+      expect(result).toMatchObject({ added: [], renamed: [], vanished: [], nowListed: [] });
+      // The starter catalog had no pictures: every card's reference is new.
+      expect(result.repictured).toHaveLength(251);
       expect(catalogManager.getCard('lego-minecraft-3', cid('LE8'))).toMatchObject({
         name: 'Card LE8',
         kind: 'Characterkarten',
@@ -331,6 +457,7 @@ describe('catalogManager', () => {
         renamed: ids('12'),
         vanished: [],
         nowListed: [],
+        repictured: [],
       });
       expect(catalogManager.getCard('lego-minecraft-3', cid('LE23'))).toMatchObject({
         type: 'le',
@@ -424,14 +551,13 @@ describe('catalogManager', () => {
         name: 'Theirs',
         kind: 'Characterkarten',
         source: 'laststicker',
-        // The admin's picture stays until a sammel-ente run gives one.
-        referenceImageUrl: 'https://m/229.jpg',
+        // Released, the card's reference is laststicker's scan: the admin's picture goes.
+        referenceImageUrl: null,
       });
-      expect(
-        catalogManager.updateReferences('lego-minecraft-3', [
-          { cardId: cid('229'), imageUrl: 'https://se/229.jpg' },
-        ])
-      ).toEqual(ids('229'));
+      expect(result.repictured).toEqual(ids('229'));
+      expect(chosenReference('lego-minecraft-3', cid('229'))).toBe(
+        'https://www.laststicker.com/i/cards/12125/229.jpg'
+      );
     });
 
     test("another collection's cards are untouched", () => {
@@ -495,18 +621,33 @@ describe('catalogManager', () => {
       expect(catalogManager.laststickerCardCount('lego-minecraft-3')).toBe(251);
     });
 
-    test('a manual card without a picture takes the sammel-ente one, then keeps it', () => {
+    test("a manual card keeps the admin's picture over the shop's, uses the shop's without one, and is no_picture without both", () => {
       catalogManager.seedIfEmpty();
-      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 5);
-      catalogManager.updateReferences('lego-minecraft-3', [
-        { cardId: cid('229'), imageUrl: 'https://se/229.jpg' },
-      ]);
-      catalogManager.updateReferences('lego-minecraft-3', [
-        { cardId: cid('229'), imageUrl: 'https://se/229-new.jpg' },
-      ]);
-      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.referenceImageUrl).toBe(
-        'https://se/229.jpg'
-      );
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', 'https://m/229.jpg', 5);
+      catalogManager.addManual('lego-minecraft-3', cid('230'), 'Bare', null, 5);
+      catalogManager.addManual('lego-minecraft-3', cid('231'), 'None', null, 5);
+      expect(
+        catalogManager.updateShopPictures('lego-minecraft-3', [
+          { cardId: cid('229'), imageUrl: 'https://se/229.jpg' },
+          { cardId: cid('230'), imageUrl: 'https://se/230.jpg' },
+        ])
+      ).toEqual(ids('230'));
+      const { usable, missing } = catalogManager.referenceCatalog('lego-minecraft-3');
+      expect(usable).toContainEqual({
+        cardId: cid('229'),
+        referenceImageUrl: 'https://m/229.jpg',
+        source: 'manual',
+        fallbackUrl: null,
+        puzzle: false,
+      });
+      expect(usable).toContainEqual({
+        cardId: cid('230'),
+        referenceImageUrl: 'https://se/230.jpg',
+        source: 'shop',
+        fallbackUrl: null,
+        puzzle: false,
+      });
+      expect(missing).toContainEqual({ cardId: cid('231'), reason: 'no_picture' });
     });
 
     test('a catalog import never removes a manual card', () => {

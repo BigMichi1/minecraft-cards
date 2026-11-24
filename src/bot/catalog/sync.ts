@@ -3,6 +3,7 @@ import type { AlertFn } from '../check/adminAlert';
 import type { CollectionDefinition, CollectionId } from '../collections/ids';
 import { COLLECTIONS, collectionName } from '../collections/index';
 import { catalogManager, type SyncResult } from '../database/catalogManager';
+import { listingManager } from '../database/listingManager';
 import { errorMessage, sleep as realSleep } from '../utils/async';
 import { logError } from '../utils/logger';
 import { DISCORD_MESSAGE_LIMIT, clipText } from '../utils/messageLimit';
@@ -160,13 +161,25 @@ async function fetchAndApply(
   });
 }
 
-/** After an applied sync: record it and tell the admin; failures here are logged only. */
+/**
+ * After an applied sync: record it, compare the mismatches of re-pictured cards again and tell
+ * the admin; failures here are logged only.
+ */
 async function report(collection: CollectionId, result: SyncResult, deps: SyncDeps): Promise<void> {
   const name = collectionName(collection);
   try {
     catalogManager.markSyncSuccess(collection, deps.now());
   } catch (error) {
     logError(`catalog sync of ${collection} applied, but recording its success failed`, error);
+  }
+  try {
+    // A new scan may settle a mismatch either way: compare those again.
+    listingManager.rematchMismatches(collection, result.repictured);
+  } catch (error) {
+    logError(
+      `catalog sync of ${collection} applied, but re-matching its new pictures failed`,
+      error
+    );
   }
   if (result.vanished.length > 0) {
     await deps.alert(

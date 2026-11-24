@@ -23,6 +23,7 @@ export interface CatalogCard {
   kind: string | null;
   variant: string | null;
   source: CardSource;
+  /** The admin's picture of a manual card; null for laststicker cards (see referenceCatalog). */
   referenceImageUrl: string | null;
   /** A puzzle card: never identified by its picture alone (docs/image-matching.md, rule 5). */
   puzzle: boolean;
@@ -40,6 +41,8 @@ export interface SyncResult {
    * marks them noted (markListedNoted) once the admin alert is delivered.
    */
   readonly nowListed: readonly CardId[];
+  /** Cards whose reference picture changed (a new or changed scan): their mismatches go back. */
+  readonly repictured: readonly CardId[];
 }
 
 /** Why a manual-card command was refused. */
@@ -73,11 +76,97 @@ export interface ReferenceCatalog {
   missing: MissingReference[];
 }
 
+/**
+ * Where a card's reference picture comes from: laststicker's scan, the collection's fallback
+ * shop (`referenceFallbackShop`: no scan, or a manual card without the admin's picture), or the
+ * admin's picture of a manual card.
+ */
+export type ReferenceSource = 'laststicker' | 'shop' | 'manual';
+
 /** A card with a reference picture, for the picture identification. */
 export interface ReferenceCard {
   cardId: CardId;
   referenceImageUrl: string;
+  source: ReferenceSource;
+  /**
+   * The shop picture to use instead when the scan answers 404 (embedder's loadReferenceSet);
+   * set only for `source` `laststicker`.
+   */
+  fallbackUrl: string | null;
   puzzle: boolean;
+}
+
+/** A scan that answered 404 is tried again this long after (laststicker may add it). */
+export const SCAN_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** The stored pictures of a card that its reference is chosen from. */
+interface PictureColumns {
+  source: CardSource;
+  referenceImageUrl: string | null;
+  shopImageUrl: string | null;
+  laststickerImageUrl: string | null;
+  laststickerScanMissingAt: number | null;
+}
+
+const PICTURE_COLUMNS = {
+  source: cards.source,
+  referenceImageUrl: cards.referenceImageUrl,
+  shopImageUrl: cards.shopImageUrl,
+  laststickerImageUrl: cards.laststickerImageUrl,
+  laststickerScanMissingAt: cards.laststickerScanMissingAt,
+};
+
+/**
+ * The one rule for a card's reference picture: a manual card's is the admin's picture, else the
+ * shop's; a laststicker card's is its scan (the shop picture as fallback), unless the scan
+ * answered 404 within SCAN_RETRY_MS, then the shop picture. Null: no picture at all.
+ */
+function chooseReference(
+  row: PictureColumns,
+  now: number
+): { url: string; source: ReferenceSource; fallbackUrl: string | null } | null {
+  if (row.source === 'manual') {
+    if (row.referenceImageUrl !== null) {
+      return { url: row.referenceImageUrl, source: 'manual', fallbackUrl: null };
+    }
+  } else {
+    const missing =
+      row.laststickerScanMissingAt !== null && now - row.laststickerScanMissingAt < SCAN_RETRY_MS;
+    if (row.laststickerImageUrl !== null && !missing) {
+      return { url: row.laststickerImageUrl, source: 'laststicker', fallbackUrl: row.shopImageUrl };
+    }
+  }
+  return row.shopImageUrl === null
+    ? null
+    : { url: row.shopImageUrl, source: 'shop', fallbackUrl: null };
+}
+
+/** Card id -> the URL of its chosen reference picture, for the collection's cards in `ids`. */
+function chosenUrls(
+  collection: CollectionId,
+  cardIds: readonly CardId[],
+  now: number
+): Map<CardId, string | null> {
+  const out = new Map<CardId, string | null>();
+  if (cardIds.length === 0) return out;
+  const rows = db
+    .select({ cardId: cards.cardId, ...PICTURE_COLUMNS })
+    .from(cards)
+    .where(and(eq(cards.collection, collection), inArray(cards.cardId, [...cardIds])))
+    .all();
+  for (const row of rows) out.set(row.cardId, chooseReference(row, now)?.url ?? null);
+  return out;
+}
+
+/** The ids whose chosen reference URL differs between two chosenUrls reads, sorted. */
+function changedIds(
+  before: Map<CardId, string | null>,
+  after: Map<CardId, string | null>
+): CardId[] {
+  return [...after]
+    .filter(([id, url]) => before.get(id) !== url)
+    .map(([id]) => id)
+    .sort(compareCardIds);
 }
 
 // sammel-ente's empty card ("mnc3_leer.jpg", 2026-11-18 for LE10 and LE11).
@@ -219,6 +308,11 @@ export const catalogManager = {
     return { ...card, puzzle: puzzleSeen };
   },
 
+  /** Record that the card's laststicker scan answered 404: the shop picture is used meanwhile. */
+  markScanMissing(collection: CollectionId, cardId: CardId, now: number): void {
+    db.update(cards).set({ laststickerScanMissingAt: now }).where(ofCard(collection, cardId)).run();
+  },
+
   /** The card's laststicker scan URL as last synced, or null. */
   laststickerPicture(collection: CollectionId, id: CardId): string | null {
     return (
@@ -228,78 +322,76 @@ export const catalogManager = {
   },
 
   /**
-   * Every card of the collection's catalog, in card order, split into the usable reference pictures and the cards
-   * without one: no picture yet (`no_picture`), a placeholder file (`_leer.`, `placeholder`), or
-   * a picture the shop shows for more than one card (`shared`). The last two tell no card apart,
-   * so such a card has no reference (`no_reference`) and is never identified by picture.
-   * A picture counts as shared only when several cards of this collection show it.
+   * Every card of the collection's catalog, in card order, split into the usable reference
+   * pictures and the cards without one. The one accessor for references: each card's picture is
+   * chosen by its source (chooseReference: the admin's, laststicker's scan, or the fallback
+   * shop's). Without one: no picture yet (`no_picture`), a placeholder file (`_leer.`,
+   * `placeholder`), or a picture shown for more than one card (`shared`). The last two tell no
+   * card apart, so such a card has no reference (`no_reference`) and is never identified by
+   * picture. A picture counts as shared only when several cards of this collection show it.
    */
-  referenceCatalog(collection: CollectionId): ReferenceCatalog {
+  referenceCatalog(collection: CollectionId, now: number = Date.now()): ReferenceCatalog {
     const rows = db
-      .select({
-        cardId: cards.cardId,
-        url: cards.referenceImageUrl,
-        puzzleSeen: cards.puzzleSeen,
-      })
+      .select({ cardId: cards.cardId, puzzleSeen: cards.puzzleSeen, ...PICTURE_COLUMNS })
       .from(cards)
       .where(eq(cards.collection, collection))
       .all()
+      .map((r) => ({ cardId: r.cardId, puzzleSeen: r.puzzleSeen, chosen: chooseReference(r, now) }))
       .sort((a, b) => compareCardIds(a.cardId, b.cardId));
     const uses = new Map<string, number>();
     for (const r of rows) {
-      if (r.url === null) continue;
-      const key = pictureKey(r.url);
+      if (r.chosen === null) continue;
+      const key = pictureKey(r.chosen.url);
       uses.set(key, (uses.get(key) ?? 0) + 1);
     }
     const usable: ReferenceCard[] = [];
     const missing: MissingReference[] = [];
-    for (const { cardId, url, puzzleSeen } of rows) {
-      if (url === null) {
+    for (const { cardId, chosen, puzzleSeen } of rows) {
+      if (chosen === null) {
         missing.push({ cardId, reason: 'no_picture' });
-      } else if (PLACEHOLDER_FILE.test(pictureKey(url))) {
+      } else if (PLACEHOLDER_FILE.test(pictureKey(chosen.url))) {
         missing.push({ cardId, reason: 'placeholder' });
-      } else if ((uses.get(pictureKey(url)) ?? 0) > 1) {
+      } else if ((uses.get(pictureKey(chosen.url)) ?? 0) > 1) {
         missing.push({ cardId, reason: 'shared' });
       } else {
-        usable.push({ cardId, referenceImageUrl: url, puzzle: puzzleSeen });
+        usable.push({
+          cardId,
+          referenceImageUrl: chosen.url,
+          source: chosen.source,
+          fallbackUrl: chosen.fallbackUrl,
+          puzzle: puzzleSeen,
+        });
       }
     }
     return { usable, missing };
   },
 
   /**
-   * Update the reference picture of catalog cards (sammel-ente's run); unknown cards and manual
-   * cards with a picture are skipped (a manual card added without one takes the shop's once). An entry without a picture keeps the
-   * stored one: a listing that lost its picture must not erase it. Names and puzzle flags come
-   * from the laststicker sync only. Returns the cards whose reference picture URL changed, so
-   * their mismatches are compared again.
+   * Store the newest picture of catalog cards from the collection's fallback shop
+   * (`referenceFallbackShop`, sammel-ente's run), manual cards included; unknown cards are
+   * skipped, and an entry without a picture keeps the stored one (a listing that lost its
+   * picture must not erase it). Returns the cards whose chosen reference changed
+   * (referenceCatalog), so their mismatches are compared again.
    */
-  updateReferences(
+  updateShopPictures(
     collection: CollectionId,
     entries: { cardId: CardId; imageUrl: string | null }[]
   ): CardId[] {
     const now = Date.now();
-    const changed: CardId[] = [];
-    db.transaction(() => {
-      for (const e of entries) {
-        if (e.imageUrl === null) continue;
-        const before = db
-          .select({ url: cards.referenceImageUrl, source: cards.source })
-          .from(cards)
-          .where(ofCard(collection, e.cardId))
-          .get();
-        // A manual card keeps the admin's picture; one added without a picture takes the
-        // shop's once.
-        const manualWithPicture = before?.source === 'manual' && before.url !== null;
-        if (!before || manualWithPicture || e.imageUrl === before.url) continue;
-        changed.push(e.cardId);
+    const withPicture = entries.filter(
+      (e): e is { cardId: CardId; imageUrl: string } => e.imageUrl !== null
+    );
+    const ids = withPicture.map((e) => e.cardId);
+    return db.transaction(() => {
+      const before = chosenUrls(collection, ids, now);
+      for (const e of withPicture) {
         db.update(cards)
-          .set({ referenceImageUrl: e.imageUrl, updatedAt: now })
+          .set({ shopImageUrl: e.imageUrl, updatedAt: now })
           .where(ofCard(collection, e.cardId))
           .run();
       }
+      return changedIds(before, chosenUrls(collection, ids, now));
     });
-    return changed;
   },
 
   /**
@@ -317,6 +409,11 @@ export const catalogManager = {
     { maxVanished = Number.POSITIVE_INFINITY }: SyncOptions = {}
   ): SyncResult {
     return db.transaction((tx) => {
+      const before = chosenUrls(
+        collection,
+        rows.map((r) => r.cardId),
+        now
+      );
       const stored = new Map(
         tx
           .select({
@@ -324,6 +421,7 @@ export const catalogManager = {
             name: cards.name,
             source: cards.source,
             listedNotedAt: cards.listedNotedAt,
+            laststickerImageUrl: cards.laststickerImageUrl,
           })
           .from(cards)
           .where(eq(cards.collection, collection))
@@ -354,7 +452,12 @@ export const catalogManager = {
           if (before.listedNotedAt === null) nowListed.push(row.cardId);
         } else {
           if (before.name !== null && before.name !== row.name) renamed.push(row.cardId);
-          tx.update(cards).set(fields).where(ofCard(collection, row.cardId)).run();
+          // Another scan URL is another picture: whether it loads is not known yet.
+          const newScan = before.laststickerImageUrl !== row.pictureUrl;
+          tx.update(cards)
+            .set({ ...fields, ...(newScan ? { laststickerScanMissingAt: null } : {}) })
+            .where(ofCard(collection, row.cardId))
+            .run();
         }
       }
       const vanished = [...stored]
@@ -369,11 +472,17 @@ export const catalogManager = {
         );
       }
       const sorted = (list: CardId[]) => list.sort(compareCardIds);
+      const after = chosenUrls(
+        collection,
+        rows.map((r) => r.cardId),
+        now
+      );
       return {
         added: sorted(added),
         renamed: sorted(renamed),
         vanished: sorted(vanished),
         nowListed: sorted(nowListed),
+        repictured: changedIds(before, after).filter((id) => !added.includes(id)),
       };
     });
   },
@@ -425,9 +534,9 @@ export const catalogManager = {
 
   /**
    * Hand a manual card laststicker lists (a sync reported it, `listedNotedAt` set) to
-   * laststicker: the next sync sets its name, kind and scan, a sammel-ente run its reference
-   * picture. A card laststicker does not list is refused (`not_listed`): released, it would be
-   * reported as vanished every day.
+   * laststicker: the admin's picture goes, and the next sync sets its name, kind and scan, which
+   * becomes its reference. A card laststicker does not list is refused (`not_listed`): released,
+   * it would be reported as vanished every day.
    */
   releaseManual(
     collection: CollectionId,
@@ -442,7 +551,13 @@ export const catalogManager = {
     if (row?.source === 'manual' && row.at === null) return { ok: false, reason: 'not_listed' };
     return onManual(collection, cardId, () => {
       db.update(cards)
-        .set({ source: 'laststicker', listedNotedAt: null, updatedAt: now })
+        // A laststicker card's reference is its scan: the admin's picture goes.
+        .set({
+          source: 'laststicker',
+          listedNotedAt: null,
+          referenceImageUrl: null,
+          updatedAt: now,
+        })
         .where(ofCard(collection, cardId))
         .run();
     });

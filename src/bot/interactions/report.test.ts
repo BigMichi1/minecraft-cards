@@ -478,7 +478,7 @@ describe('report flow', () => {
     expect(json.url).toBeUndefined();
     expect(json.image.url).toBe('https://img/12.jpg');
     const names = json.fields.map((f: any) => f.name);
-    expect(names).toEqual(['Reporter', 'Cards', 'Shop', 'URL', 'Reason', 'Note']);
+    expect(names).toEqual(['Reporter', 'Collection', 'Cards', 'Shop', 'URL', 'Reason', 'Note']);
     expect(msg.content).toContain('/admin map url:not a url collection:lego-minecraft-3 cards:12');
     expect(msg.content).toContain('/admin clear url:not a url');
   });

@@ -285,7 +285,7 @@ describe('/admin', () => {
     expect(text).toContain('blue-ocean: 3 listings');
     expect(text).toContain('sammel-ente: 0 listings — error: boom');
     expect(text).toContain(
-      'ebay: 5 listings (skipped 2 without card number) (skipped 7 not series 3 single cards) (1 search cut at the page cap)'
+      'ebay: 5 listings (skipped 2 without card number) (skipped 7 not single cards of this collection) (1 search cut at the page cap)'
     );
     expect(text).toContain('Notified: 4 · DM failures: 1');
   });
@@ -392,7 +392,7 @@ describe('/admin', () => {
         error: 'gateway gone',
       })
     ).toBe(
-      'ebay: 1 listings (skipped 3 without link or title)\nRun failed: gateway gone\nNotified: 4 · DM failures: 1'
+      'LEGO Minecraft Serie 3 "On Fire":\nebay: 1 listings (skipped 3 without link or title)\nRun failed: gateway gone\nNotified: 4 · DM failures: 1'
     );
   });
 
@@ -404,7 +404,19 @@ describe('/admin', () => {
         pictures: { decided: 3, undecided: 5, puzzle: 1, incomplete: 2 },
       })
     ).toBe(
-      'ebay: 1 listings\nPictures: 3 decided · not counted: 5 undecided, 1 puzzle, 2 incomplete reference set\nNotified: 4 · DM failures: 1'
+      'LEGO Minecraft Serie 3 "On Fire":\nebay: 1 listings\nPictures: 3 decided · not counted: 5 undecided, 1 puzzle, 2 incomplete reference set\nNotified: 4 · DM failures: 1'
+    );
+  });
+
+  test('formatSummary prints a block per collection', () => {
+    expect(
+      formatSummary({
+        ...summary,
+        shops: { 'sammel-ente': { listings: 251 } },
+        collections: { 'lego-minecraft-1': { 'sammel-ente': { listings: 283 } } },
+      })
+    ).toBe(
+      'LEGO Minecraft Serie 1:\nsammel-ente: 283 listings\nLEGO Minecraft Serie 3 "On Fire":\nsammel-ente: 251 listings\nNotified: 4 · DM failures: 1'
     );
   });
 
@@ -415,7 +427,9 @@ describe('/admin', () => {
         shops: { ebay: { listings: 1 } },
         rematch: { compared: 12, changed: 2, changes: ['#12 ebay confirmed→mismatch u'] },
       })
-    ).toBe('ebay: 1 listings\nRe-match: 12 compared, 2 changed\nNotified: 4 · DM failures: 1');
+    ).toBe(
+      'LEGO Minecraft Serie 3 "On Fire":\nebay: 1 listings\nRe-match: 12 compared, 2 changed\nNotified: 4 · DM failures: 1'
+    );
   });
 
   describe('catalog sync and manual cards', () => {

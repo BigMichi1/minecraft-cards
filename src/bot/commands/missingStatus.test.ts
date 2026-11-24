@@ -78,6 +78,7 @@ const ALL: readonly ShopId[] = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay
 
 function input(over: Partial<StatusInput> = {}): StatusInput {
   return {
+    collection: 'lego-minecraft-3',
     cards: ids('12'),
     latest: { summary: okRun, newerUnreadable: false },
     enabledShops: ['sammel-ente', 'blue-ocean'],
@@ -977,10 +978,10 @@ describe('linkList', () => {
 describe('needsLastSuccess', () => {
   test('only an enabled shop whose latest check failed or did not run needs it', () => {
     const enabled = ['sammel-ente', 'blue-ocean', 'ebay'] as const;
-    expect(needsLastSuccess(blueFailed, 'blue-ocean', enabled)).toBe(true);
-    expect(needsLastSuccess(blueFailed, 'ebay', enabled)).toBe(true);
-    expect(needsLastSuccess(blueFailed, 'sammel-ente', enabled)).toBe(false);
-    expect(needsLastSuccess(blueFailed, 'ebay', ['sammel-ente'])).toBe(false);
-    expect(needsLastSuccess(undefined, 'ebay', enabled)).toBe(false);
+    expect(needsLastSuccess(blueFailed, 'lego-minecraft-3', 'blue-ocean', enabled)).toBe(true);
+    expect(needsLastSuccess(blueFailed, 'lego-minecraft-3', 'ebay', enabled)).toBe(true);
+    expect(needsLastSuccess(blueFailed, 'lego-minecraft-3', 'sammel-ente', enabled)).toBe(false);
+    expect(needsLastSuccess(blueFailed, 'lego-minecraft-3', 'ebay', ['sammel-ente'])).toBe(false);
+    expect(needsLastSuccess(undefined, 'lego-minecraft-3', 'ebay', enabled)).toBe(false);
   });
 });

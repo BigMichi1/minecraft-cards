@@ -11,8 +11,11 @@ their embeddings reaches `IMAGE_MATCH_THRESHOLD`. Code: `src/bot/matcher/embedde
 collection step 2, measured in "Measurement on laststicker scans" below):
 
 - **A laststicker card**: its laststicker scan (`/i/cards/<set id>/<id>.jpg`, stored by the
-  catalog sync). The collection's `referenceFallbackShop` (sammel-ente for series 3) gives the
+  catalog sync). The collection's `referenceFallbackShop` (sammel-ente for every series) gives the
   fallback: the newest picture of that shop's listing of the card.
+- **A set without scans** (`laststicker.scans: false`, series 2): the sync stores no scan URL,
+  so the fallback shop's picture is the reference from the start; nothing is fetched from
+  laststicker for it.
 - **A scan that answers 404 or 410** (laststicker has none: 17 series 3 cards on 2026-11-24,
   LE3 to LE12, LE16 to LE19, LE21, LE22, XXL1): the reference loader embeds the fallback in the
   same run and records the miss (`laststicker_scan_missing_at`). The shop picture is the
@@ -332,6 +335,24 @@ of 228: its #59 picture was decided as XXL1 (0.945). laststicker's #59 scan and 
 XXL1 picture score below `TWIN_SIMILARITY`, so the twin rule no longer saw the pair. They show the
 same art, so the collection names them (`knownTwins: [['59', 'XXL1']]`): a known twin is a twin
 whatever its pictures score, and its picture alone never decides another card (rule 2 and 4).
+
+### Series 1 (2026-11-24)
+
+`./bin/mise run measure:laststicker -- --collection lego-minecraft-1`, same method and values:
+laststicker lists 283 cards; 22 scans answer 404 (#157 to #162 and #165 to #180, 22 of the 27
+puzzle cards #154 to #180), so 261 load and those 22 use sammel-ente's picture.
+
+| Shop        | Pairs | True min | True median | False max | Missed at 0.78 | Wrong at 0.78 | Decided | Wrong decisions |
+| ----------- | ----- | -------- | ----------- | --------- | -------------- | ------------- | ------- | --------------- |
+| sammel-ente | 283   | 0.691    | 0.920       | 0.824     | 11 (4 %)       | 7 (2.5 %)     | 267     | 0               |
+| collect-it  | 256   | 0.434    | 0.897       | 0.836     | 13 (5 %)       | 7 (2.7 %)     | 243     | 3               |
+
+- sammel-ente's true pairs include the 22 fallback cards' own picture against itself (1.0).
+- The 3 wrong decisions (collect-it #154, #155, #156 decided as #157, #158, #159) are puzzle cards:
+  rule 5 never takes a puzzle card from the picture alone, so none becomes a card or a mismatch.
+- Twins by similarity: #84 and XXL1 (0.982), #108 and XXL2 (0.961), #109 and #152 (0.923); the
+  twin rule covers them, so series 1 needs no `knownTwins`.
+- The values stay (0.78, 0.02, 0.9) and series 1 keeps its scans.
 
 ## Data quality finding
 

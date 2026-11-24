@@ -1,5 +1,5 @@
 import type { CardId } from '../cards/cardId';
-import type { CollectionDefinition, CollectionId } from '../collections/ids';
+import type { CollectionDefinition, CollectionId, LEGACY_COLLECTION } from '../collections/ids';
 import { collectionById, collectionName } from '../collections/index';
 import { catalogManager, SCAN_RETRY_MS, type ReferenceCatalog } from '../database/catalogManager';
 import {
@@ -7,7 +7,7 @@ import {
   type PendingNotifications,
   type StoredListing,
 } from '../database/listingManager';
-import { runManager, SHOP_PEAK_WINDOW_MS } from '../database/runManager';
+import { runManager, setShopEntry, SHOP_PEAK_WINDOW_MS } from '../database/runManager';
 import { userManager } from '../database/userManager';
 import {
   loadReferenceSet,
@@ -46,6 +46,10 @@ export interface ShopSummary extends Pick<
 export interface RunSummary {
   startedAt: number;
   finishedAt: number;
+  /**
+   * Series 3's (LEGACY_COLLECTION) shop results, as in every row before collections; read and
+   * write only through runManager.shopEntry and setShopEntry.
+   */
   shops: Partial<Record<ShopId, ShopSummary>>;
   notified: number;
   dmFailures: number;
@@ -57,6 +61,13 @@ export interface RunSummary {
    * nothing was compared with every reference.
    */
   pictures?: PictureCounts;
+  /**
+   * The shops of every collection but series 3, whose results stay in `shops` as in every row
+   * before collections (read both through runManager.shopEntry).
+   */
+  collections?: Partial<
+    Record<Exclude<CollectionId, typeof LEGACY_COLLECTION>, Partial<Record<ShopId, ShopSummary>>>
+  >;
   /**
    * Listings compared again this run after the reference switch (migration 0008): how many, how
    * many changed status, and up to MAX_REMATCH_NAMED of the changes. Absent when there was none.
@@ -590,11 +601,14 @@ function toShopListing(source: Listing, l: StoredListing): Listing {
 }
 
 /** The baseline for the drop check; a failed lookup is logged and only skips that check. */
-function recentPeak(shop: ShopId, now: number): number | undefined {
+function recentPeak(shop: ShopId, collection: CollectionId, now: number): number | undefined {
   try {
-    return runManager.shopPeakListings(shop, now);
+    return runManager.shopPeakListings(shop, collection, now);
   } catch (error) {
-    logError(`shop ${shop}: reading the recent listing counts failed, drop check skipped`, error);
+    logError(
+      `shop ${shop} (${collection}): reading the recent listing counts failed, drop check skipped`,
+      error
+    );
     return undefined;
   }
 }
@@ -608,50 +622,72 @@ async function checkShop(
   stored: StoredListing[],
   fetched: Map<string, Listing>
 ): Promise<void> {
+  // Keys and texts name the collection too: one shop is checked once per collection.
+  const key = `${adapter.id}:${adapter.collection}`;
+  const shop = `${adapter.id} (${collectionName(adapter.collection)})`;
+  const record = (entry: ShopSummary) =>
+    setShopEntry(summary, adapter.collection, adapter.id, entry);
   let result: FetchResult;
   try {
     result = await adapter.fetchListings();
   } catch (error) {
     const message = errorMessage(error);
-    logError(`shop ${adapter.id} failed`, error);
-    summary.shops[adapter.id] = { listings: 0, error: message };
-    await alert(`shop-error:${adapter.id}`, `Shop ${adapter.id} check failed: ${message}`);
+    logError(`shop ${shop} failed`, error);
+    record({ listings: 0, error: message });
+    await alert(`shop-error:${key}`, `Shop ${shop} check failed: ${message}`);
     return;
   }
   const found = result.listings;
   try {
-    const peak = recentPeak(adapter.id, deps.now());
-    stored.push(...listingManager.upsertFromRun(adapter.id, adapter.collection, found, deps.now()));
-    if (found.length > 0 && found.every((l) => !l.available)) {
-      // Every card sold out at once is more likely a changed stock marker than real.
+    const peak = recentPeak(adapter.id, adapter.collection, deps.now());
+    const ours = listingManager.upsertFromRun(adapter.id, adapter.collection, found, deps.now());
+    stored.push(...ours);
+    // Only listings stored under this collection count here: a URL another collection holds is
+    // neither matched, nor a picture source, of this one.
+    const ownUrls = new Set(ours.map((l) => l.url));
+    const foreign = found.filter((l) => !ownUrls.has(l.url)).map((l) => l.url);
+    if (foreign.length > 0) {
       await alert(
-        `shop-all-unavailable:${adapter.id}`,
-        `Shop ${adapter.id}: all ${found.length} card listings read as unavailable — check the stock marker.`
+        `shop-foreign:${key}`,
+        clipText(
+          `Shop ${shop}: ${foreign.length} listing(s) are stored under another collection and not read here (moving a listing between collections is not supported yet): ${foreign.slice(0, MAX_NAMED).join(' ')}${foreign.length > MAX_NAMED ? ` … and ${foreign.length - MAX_NAMED} more` : ''}`,
+          DISCORD_MESSAGE_LIMIT
+        )
       );
     }
-    if (peak !== undefined && found.length < peak * DROP_ALERT_SHARE) {
+    // This collection's own listings: a URL another collection holds is counted there.
+    const own = found.filter((l) => ownUrls.has(l.url));
+    if (own.length > 0 && own.every((l) => !l.available)) {
+      // Every card sold out at once is more likely a changed stock marker than real.
+      await alert(
+        `shop-all-unavailable:${key}`,
+        `Shop ${shop}: all ${own.length} card listings read as unavailable — check the stock marker.`
+      );
+    }
+    if (peak !== undefined && own.length < peak * DROP_ALERT_SHARE) {
       // A pagination or markup change can leave only part of the shop readable. Measured
       // against the peak of the successful runs of the last SHOP_PEAK_WINDOW_MS (3 days, longer
       // than the 24 h throttle), a lasting drop keeps alerting daily until its last healthy run
       // is older than that (about three alerts).
       await alert(
-        `shop-drop:${adapter.id}`,
-        `Shop ${adapter.id}: ${found.length} card listings, down from ${peak} at most in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)} — check the pagination and markup.`
+        `shop-drop:${key}`,
+        `Shop ${shop}: ${own.length} card listings, down from ${peak} at most in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)} — check the pagination and markup.`
       );
     }
     if (result.truncated && result.truncated.length > 0) {
       await alert(
-        `shop-truncated:${adapter.id}`,
-        `Shop ${adapter.id}: ${result.truncated.length} search(es) cut at the page cap, later results are not seen: ${result.truncated.join('; ')}`
+        `shop-truncated:${key}`,
+        `Shop ${shop}: ${result.truncated.length} search(es) cut at the page cap, later results are not seen: ${result.truncated.join('; ')}`
       );
     }
-    for (const l of found) fetched.set(l.url, l);
+    for (const l of found) if (ownUrls.has(l.url)) fetched.set(l.url, l);
     // A row's collection may have no definition in this build (collectionName).
     const definition: CollectionDefinition | undefined = collectionById(adapter.collection);
     if (definition?.referenceFallbackShop === adapter.id) {
       const changed = catalogManager.updateShopPictures(
         adapter.collection,
         found.flatMap((l) => {
+          if (!ownUrls.has(l.url)) return [];
           const [cardId] = l.cardIds;
           return l.cardIds.length === 1 && cardId !== undefined
             ? [{ cardId, imageUrl: l.imageUrl }]
@@ -664,29 +700,29 @@ async function checkShop(
         listingManager.rematchMismatches(adapter.collection, changed);
       } catch (error) {
         // The listings are stored; only the re-check is lost, and these cards are known only now.
-        logError(`shop ${adapter.id}: re-matching the cards with new pictures failed`, error);
+        logError(`shop ${shop}: re-matching the cards with new pictures failed`, error);
         await alert(
           // Per card list: another run's failure names other cards and must not be throttled.
           `shop-rematch:${adapter.collection}:${changed.join(',')}`,
           clipText(
-            `Shop ${adapter.id}: could not compare the mismatches of ${changed.length} card(s) again: ${namedCards(changed)} — ${errorMessage(error)}`,
+            `Shop ${shop}: could not compare the mismatches of ${changed.length} card(s) again: ${namedCards(changed)} — ${errorMessage(error)}`,
             DISCORD_MESSAGE_LIMIT
           )
         );
       }
     }
-    summary.shops[adapter.id] = {
-      listings: found.length,
+    record({
+      listings: own.length,
       ...(result.skippedNoId ? { skippedNoId: result.skippedNoId } : {}),
       ...(result.skippedExcluded ? { skippedExcluded: result.skippedExcluded } : {}),
       ...(result.skippedInvalid ? { skippedInvalid: result.skippedInvalid } : {}),
       ...(result.truncated?.length ? { truncated: result.truncated.length } : {}),
-    };
+    });
   } catch (error) {
     const message = `storing listings failed: ${errorMessage(error)}`;
-    logError(`shop ${adapter.id}: storing listings failed`, error);
-    summary.shops[adapter.id] = { listings: found.length, error: message };
-    await alert(`shop-error:${adapter.id}`, `Shop ${adapter.id} check failed: ${message}`);
+    logError(`shop ${shop}: storing listings failed`, error);
+    record({ listings: found.length, error: message });
+    await alert(`shop-error:${key}`, `Shop ${shop} check failed: ${message}`);
   }
 }
 

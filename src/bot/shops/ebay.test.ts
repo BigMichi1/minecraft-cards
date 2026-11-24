@@ -1121,7 +1121,7 @@ describe('createEbayFetcher', () => {
   test('with the real sammel-ente names, the fixture gives the same listings and counts', async () => {
     const names = new Map<CardId, string>();
     for (const page of ['sammel-ente-p1.html', 'sammel-ente-p11.html']) {
-      for (const l of parseSammelEntePage(readFixture(page)).listings) {
+      for (const l of parseSammelEntePage(readFixture(page), null).listings) {
         if (l.cardName && l.cardIds.length === 1) names.set(l.cardIds[0]!, l.cardName);
       }
     }

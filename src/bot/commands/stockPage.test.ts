@@ -108,6 +108,31 @@ describe('buildStockPage', () => {
     );
   });
 
+  test("another collection's page reads its own shop results from the run", () => {
+    const page = buildStockPage(
+      input({
+        collection: 'lego-minecraft-1',
+        latest: {
+          summary: {
+            startedAt: T,
+            finishedAt: T,
+            shops: { 'blue-ocean': { listings: 3 } },
+            collections: { 'lego-minecraft-1': { 'sammel-ente': { listings: 283 } } },
+            notified: 0,
+            dmFailures: 0,
+          },
+          newerUnreadable: false,
+        },
+        enabledShops: ['sammel-ente', 'collect-it'],
+        lastSuccess: { 'collect-it': null },
+      })
+    );
+    // series 3's blue-ocean result is no series 1 result.
+    expect(page.content.split('\n')[1]).toBe(
+      `Last check <t:${S}:R> · ✅ sammel-ente · ⚪ blue-ocean n/a · ⚠️ collect-it not checked, no success in 7 days · ⚪ eBay n/a`
+    );
+  });
+
   test('without a readable run every enabled cell is `?`', () => {
     const none = buildStockPage(
       input({ latest: { summary: undefined, newerUnreadable: false }, enabledShops: ['ebay'] })
@@ -187,7 +212,9 @@ describe('buildStockPage', () => {
       'No card is in stock in any enabled shop right now.'
     );
     expect(empty('in-stock', ids('12')).components).toEqual([]);
-    expect(empty('all').content).toBe('This collection has no cards.');
+    expect(empty('all').content).toBe(
+      'The card list of LEGO Minecraft Serie 3 "On Fire" is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).'
+    );
   });
 
   describe('paging over the full catalog', () => {

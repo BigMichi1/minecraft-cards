@@ -8,7 +8,7 @@ import type { ShopId } from '../shops/types';
  * starting with a letter; button custom ids split on `:` and embed them unescaped
  * (`ids.test.ts`).
  */
-export const COLLECTION_IDS = ['lego-minecraft-3'] as const;
+export const COLLECTION_IDS = ['lego-minecraft-1', 'lego-minecraft-2', 'lego-minecraft-3'] as const;
 
 export type CollectionId = (typeof COLLECTION_IDS)[number];
 
@@ -17,7 +17,7 @@ export type CollectionId = (typeof COLLECTION_IDS)[number];
  * `/stock` paging buttons sent before them (`stock:<page>:<filter>`). Not a default for new
  * data: every new row and command names its collection.
  */
-export const LEGACY_COLLECTION: CollectionId = 'lego-minecraft-3';
+export const LEGACY_COLLECTION = 'lego-minecraft-3' satisfies CollectionId;
 
 /** Where a card comes from: the laststicker sync, or the admin (`/admin catalog add`). */
 export const CARD_SOURCES = ['laststicker', 'manual'] as const;
@@ -25,6 +25,33 @@ export type CardSource = (typeof CARD_SOURCES)[number];
 
 export function isCollectionId(value: string): value is CollectionId {
   return (COLLECTION_IDS as readonly string[]).includes(value);
+}
+
+/** A shop category of one series: its absolute URL and the series label its titles carry. */
+export interface CategoryShopSettings {
+  readonly category: string;
+  /** `Serie N`: sammel-ente titles name it before their pipe, collect-it's end with it. */
+  readonly series: string;
+}
+
+/** How a collection's laststicker set page is read. */
+export interface LaststickerSetOptions {
+  /** `false`: laststicker has no scans of the set (the fallback shop's pictures serve). */
+  readonly scans?: false;
+  /** A raw checklist number taken as this card id (series 2's bare `XXL` is `XXL1`). */
+  readonly numberAliases?: Readonly<Record<string, string>>;
+}
+
+/** A collection's settings per shop; a collection lists only the shops that sell it. */
+export interface CollectionShops {
+  /** The category page (`?p=N` pages). */
+  readonly 'sammel-ente'?: CategoryShopSettings;
+  /** The single-card category (walked by `rel="next"`). */
+  readonly 'collect-it'?: CategoryShopSettings;
+  /** Series 3 only, today's category (PR 3c reads the TCC categories). */
+  readonly 'blue-ocean'?: Record<string, never>;
+  /** Series 3 only until eBay is read for every collection (PR 3b). */
+  readonly ebay?: Record<string, never>;
 }
 
 /** One card set the bot watches: its own catalog, shops and wanted lists. */
@@ -35,7 +62,7 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   /** A checklist (`parseChecklist` form) seeded into an empty catalog at start, if any. */
   readonly starterChecklist?: string;
   /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */
-  readonly laststicker?: { readonly set: string };
+  readonly laststicker?: { readonly set: string } & LaststickerSetOptions;
   /**
    * The shop whose listing picture is a card's reference when laststicker has no scan of it
    * (404 or 410, or none synced yet), or a manual card has no picture of the admin's; none: such
@@ -47,6 +74,8 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
    * other whatever their reference pictures score, so the picture alone never tells them apart.
    */
   readonly knownTwins?: readonly (readonly [string, string])[];
+  /** The shops that sell the collection, with their settings for it. */
+  readonly shops: CollectionShops;
 }
 
 /**

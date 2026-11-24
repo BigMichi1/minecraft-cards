@@ -405,6 +405,24 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
 - Steps 3 and 4: a new collection with a laststicker set needs `referenceFallbackShop` only if a
   shop's pictures should stand in for missing scans.
 
+## Notes from PR 3a for the later steps
+
+- Step 3 is split: 3a (series 1 and 2 catalogs, sammel-ente and collect-it per collection, run
+  results and alerts per (shop, collection)), 3b (eBay across collections: series markers,
+  moving a listing to the collection its title names, the name rule for `Karte 104 - Ghast`),
+  3c (blue-ocean's TCC categories, a new parser: `Nummer N I Name I LEGO Minecraft TCC 1`).
+- laststicker: series 1 is `blue_ocean_lego_minecraft-1` (German names, section `Puzzlekarte`),
+  series 2 `blue_ocean_lego_minecraft_tnt_boom_bastic` (no scans at all, a bare `XXL`). The
+  definition's `laststicker.scans: false` and `numberAliases` cover them; a puzzle card is a
+  section starting with `Puzzlekarte`.
+- The run summary keeps series 3 in `shops` (every stored row) and the other collections in
+  `collections`; `runManager.shopEntry` reads both.
+- Shop alert keys are per (shop, collection) for now, eBay included
+  (`shop-truncated:ebay:lego-minecraft-3`); 3b, with one eBay run for every collection, keys
+  eBay once (`shop:ebay`) as designed above.
+- Step 4 (Turbo Attax): its id rule goes into the definition (`normalize` for the laststicker
+  parser, the shops' title patterns), and `collect-it` settings already take a series label.
+
 ## Left to the builder
 
 - Exact module layout inside each adapter, the migration's SQL (generated), names of helpers.

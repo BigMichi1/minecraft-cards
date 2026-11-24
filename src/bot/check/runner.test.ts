@@ -74,10 +74,14 @@ function ok(
     },
   };
 }
-function failing(id: ShopId, error: Error): ShopAdapter {
+function failing(
+  id: ShopId,
+  error: Error,
+  collection: CollectionId = 'lego-minecraft-3'
+): ShopAdapter {
   return {
     id,
-    collection: 'lego-minecraft-3',
+    collection,
     fetchListings: async () => {
       fetchCount++;
       throw error;
@@ -160,6 +164,143 @@ describe('runCheck', () => {
     embedded = [];
     clock = 1_000_000;
     fetchCount = 0;
+  });
+
+  test("a failing shop for one collection leaves the other collections' listings alone", async () => {
+    await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+    const s1: Listing = { ...blue12, url: 'https://www.blue-ocean.de/p/s1-12' };
+    userManager.setList('u1', 'lego-minecraft-1', '12');
+    catalogManager.syncCollection(
+      'lego-minecraft-1',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Skin Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      clock
+    );
+    await runCheck(
+      depsWith([ok('blue-ocean', [blue12]), ok('blue-ocean', [s1], {}, 'lego-minecraft-1')])
+    );
+    expect(listingManager.getByUrl(s1.url)!.available).toBe(true);
+    const s = await runCheck(
+      depsWith([
+        ok('blue-ocean', [blue12]),
+        failing('blue-ocean', new ShopLayoutError('no cards'), 'lego-minecraft-1'),
+      ])
+    );
+    expect(listingManager.getByUrl(blue12.url)!.available).toBe(true);
+    expect(listingManager.getByUrl(s1.url)!.available).toBe(true);
+    expect(s.shops['blue-ocean']).toEqual({ listings: 1 });
+    expect(s.collections?.['lego-minecraft-1']?.['blue-ocean']?.error).toContain('no cards');
+    expect(
+      alerts.filter((a) => a.startsWith('Shop blue-ocean (LEGO Minecraft Serie 1) check failed'))
+    ).toHaveLength(1);
+  });
+
+  test('one shop failing in two collections alerts twice and records each apart', async () => {
+    const s = await runCheck(
+      depsWith([
+        failing('sammel-ente', new ShopLayoutError('a')),
+        failing('sammel-ente', new ShopLayoutError('b'), 'lego-minecraft-1'),
+      ])
+    );
+    expect(alerts.filter((a) => a.startsWith('Shop sammel-ente ('))).toHaveLength(2);
+    expect(s.shops['sammel-ente']?.error).toContain('a');
+    expect(s.collections?.['lego-minecraft-1']?.['sammel-ente']?.error).toContain('b');
+    expect(runManager.lastAlertAt('shop-error:sammel-ente:lego-minecraft-3')).toBeDefined();
+    expect(runManager.lastAlertAt('shop-error:sammel-ente:lego-minecraft-1')).toBeDefined();
+  });
+
+  test("the drop check measures each collection's shop against its own peak", async () => {
+    const many = (prefix: string, n: number): Listing[] =>
+      Array.from({ length: n }, (_, i) => ({
+        ...blue12,
+        url: `https://www.blue-ocean.de/${prefix}/${i}`,
+      }));
+    await runCheck(
+      depsWith([
+        ok('blue-ocean', many('s3', 250)),
+        ok('blue-ocean', many('s1', 20), {}, 'lego-minecraft-1'),
+      ])
+    );
+    expect(alerts.filter((a) => a.includes('down from'))).toEqual([]);
+    await runCheck(
+      depsWith([
+        ok('blue-ocean', many('s3', 250)),
+        ok('blue-ocean', many('s1', 5), {}, 'lego-minecraft-1'),
+      ])
+    );
+    const drops = alerts.filter((a) => a.includes('down from'));
+    expect(drops).toHaveLength(1);
+    expect(drops[0]).toStartWith(
+      'Shop blue-ocean (LEGO Minecraft Serie 1): 5 card listings, down from 20'
+    );
+  });
+
+  test("in one run, another collection's copy of a listing is neither matched nor sent", async () => {
+    catalogManager.syncCollection(
+      'lego-minecraft-1',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Skin Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      clock
+    );
+    userManager.setList('u2', 'lego-minecraft-1', '12');
+    setCatalogCards('lego-minecraft-3', [{ cardId: cid('12'), imageUrl: 'https://ente/12.jpg' }]);
+    const s1Copy: Listing = { ...blue12, imageUrl: 'https://img/s1-copy.jpg' };
+    await runCheck(
+      depsWith([ok('blue-ocean', [blue12]), ok('blue-ocean', [s1Copy], {}, 'lego-minecraft-1')])
+    );
+    // Matched with series 3's own picture, not the copy the series 1 adapter returned.
+    expect(embedded).toContain(blue12.imageUrl!);
+    expect(embedded).not.toContain(s1Copy.imageUrl!);
+    const notified = db
+      .select()
+      .from(notifications)
+      .all()
+      .map((n) => n.discordId);
+    expect(notified).toContain('u1');
+    expect(notified).not.toContain('u2');
+  });
+
+  test('the foreign-listing alert is throttled, and names at most ten listings', async () => {
+    const many: Listing[] = Array.from({ length: 12 }, (_, i) => ({
+      ...blue12,
+      url: `https://www.blue-ocean.de/p/f${i}`,
+    }));
+    await runCheck(depsWith([ok('blue-ocean', many)]));
+    await runCheck(depsWith([ok('blue-ocean', many, {}, 'lego-minecraft-1')]));
+    await runCheck(depsWith([ok('blue-ocean', many, {}, 'lego-minecraft-1')]));
+    const foreign = alerts.filter((a) => a.includes('stored under another collection'));
+    expect(foreign).toHaveLength(1);
+    expect(foreign[0]).toContain('… and 2 more');
+    expect(foreign[0]!.length).toBeLessThanOrEqual(2000);
+  });
+
+  test('a listing another collection holds is named in one alert, and not read here', async () => {
+    await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+    await runCheck(depsWith([ok('blue-ocean', [blue12], {}, 'lego-minecraft-1')]));
+    const foreign = alerts.filter((a) => a.includes('stored under another collection'));
+    expect(foreign).toHaveLength(1);
+    // Counted for the collection that holds it, not this one.
+    expect(runManager.last()!.collections?.['lego-minecraft-1']?.['blue-ocean']).toEqual({
+      listings: 0,
+    });
+    expect(foreign[0]).toContain(blue12.url);
+    expect(runManager.lastAlertAt('shop-foreign:blue-ocean:lego-minecraft-1')).toBeDefined();
   });
 
   test('a failing shop keeps its stored state and alerts once per 24 h', async () => {
@@ -643,6 +784,33 @@ describe('runCheck', () => {
     ).toContain('#10 … and 2 more');
   });
 
+  test('a sammel-ente listing stored under another collection gives this one no picture', async () => {
+    const ente: Listing = {
+      ...blue12,
+      shop: 'sammel-ente',
+      url: 'https://shop-sammel-ente.de/12',
+      imageUrl: 'https://ente/12.jpg',
+    };
+    await runCheck(depsWith([ok('sammel-ente', [ente])]));
+    catalogManager.syncCollection(
+      'lego-minecraft-1',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Skin Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      clock
+    );
+    // The same URL in the series 1 category: a series 3 listing, skipped there.
+    await runCheck(depsWith([ok('sammel-ente', [ente], {}, 'lego-minecraft-1')]));
+    expect(chosenReference('lego-minecraft-1', cid('12'))).toBeNull();
+  });
+
   test("only the collection's fallback shop writes shop pictures", async () => {
     await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     expect(chosenReference('lego-minecraft-3', cid('12'))).toBeNull();
@@ -868,7 +1036,7 @@ describe('runCheck', () => {
     expect(alerts[0]).toContain('5000 results');
     await runCheck(depsWith([cut()]));
     expect(alerts).toHaveLength(1);
-    expect(runManager.lastAlertAt('shop-truncated:ebay')).toBeDefined();
+    expect(runManager.lastAlertAt('shop-truncated:ebay:lego-minecraft-3')).toBeDefined();
     await runCheck(depsWith([ok('ebay', [], { truncated: [] })]));
     expect(alerts).toHaveLength(1);
   });
@@ -1111,7 +1279,9 @@ describe('runCheck', () => {
     expect(alerts[0]).toContain('all 2');
     await runCheck(depsWith([ok('blue-ocean', soldOut)]));
     expect(alerts).toHaveLength(1);
-    expect(runManager.lastAlertAt('shop-all-unavailable:blue-ocean')).not.toBeNull();
+    expect(
+      runManager.lastAlertAt('shop-all-unavailable:blue-ocean:lego-minecraft-3')
+    ).toBeDefined();
   });
 
   test('no alert when some listings are available or the shop returned none', async () => {
@@ -1252,7 +1422,10 @@ describe('runCheck', () => {
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('160'), puzzle: true }]);
     });
     /** The admin alerts but the one for the sold-out references. */
-    const notes = () => alerts.filter((a) => !a.startsWith('Shop sammel-ente: all'));
+    const notes = () =>
+      alerts.filter(
+        (a) => !a.startsWith('Shop sammel-ente (LEGO Minecraft Serie 3 "On Fire"): all')
+      );
 
     test('a sammel-ente "Puzzlekarte" name no longer marks a puzzle card', async () => {
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('160'), puzzle: false }]);

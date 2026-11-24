@@ -5,16 +5,29 @@
 import type { CardId } from '../cards/cardId';
 import type { RunSummary } from '../check/runner';
 import type { StoredListing } from '../database/listingManager';
-import type { LatestRun } from '../database/runManager';
-import type { ShopId } from '../shops/types';
+import { shopEntry, type LatestRun } from '../database/runManager';
+import type { CollectionId } from '../collections/ids';
+import type { EnabledShops, ShopId } from '../shops/types';
+
+export type { EnabledShops } from '../shops/types';
+
+/** The shops checked for `collection`; none for a collection nothing checks. */
+export function enabledFor(enabled: EnabledShops, collection: CollectionId): readonly ShopId[] {
+  return enabled.get(collection) ?? [];
+}
 
 /** What the cells of every card are computed from; gathered by the command, read without I/O. */
 export interface CellContext {
+  /** The collection the cards are of: its shops' results are read from the run. */
+  collection: CollectionId;
   /** The newest readable check run, and whether a newer record could not be read. */
   latest: LatestRun;
-  /** The shops this process checks; any other shop is not enabled. */
+  /**
+   * The shops this process checks for `collection` (`enabledFor(map, collection)`, as every
+   * command builds it); any other shop is not enabled.
+   */
   enabledShops: readonly ShopId[];
-  /** Stored listings carrying the cards asked about (others are ignored). */
+  /** Stored listings of `collection` carrying the cards asked about (others are ignored). */
   listings: StoredListing[];
   /** Current time; an auction whose end is before it counts as ended. */
   now: number;
@@ -46,8 +59,8 @@ export type ShopCell =
       offers: StoredListing[];
     };
 
-export function succeeded(last: RunSummary, shop: ShopId): boolean {
-  const entry = last.shops[shop];
+export function succeeded(last: RunSummary, collection: CollectionId, shop: ShopId): boolean {
+  const entry = shopEntry(last, collection, shop);
   return entry !== undefined && entry.error === undefined;
 }
 
@@ -57,10 +70,11 @@ export function succeeded(last: RunSummary, shop: ShopId): boolean {
  */
 export function needsLastSuccess(
   last: RunSummary | undefined,
+  collection: CollectionId,
   shop: ShopId,
   enabledShops: readonly ShopId[]
 ): boolean {
-  return last !== undefined && enabledShops.includes(shop) && !succeeded(last, shop);
+  return last !== undefined && enabledShops.includes(shop) && !succeeded(last, collection, shop);
 }
 
 /** An auction whose end has passed is gone, even if the last check still saw it running. */
@@ -94,7 +108,7 @@ export function pictureBacked(l: StoredListing): boolean {
 
 /** A listing of a shop whose latest check succeeded, but which that check did not return. */
 function unseen(l: StoredListing, last: RunSummary): boolean {
-  return succeeded(last, l.shop) && l.lastSeenAt < last.startedAt;
+  return succeeded(last, l.collection, l.shop) && l.lastSeenAt < last.startedAt;
 }
 
 const TIER: Record<ListingState, number> = {
@@ -185,12 +199,15 @@ export function shopCells(ctx: CellContext): (card: CardId, shop: ShopId) => Sho
     // Without a readable run there is no telling what any shop lists.
     if (!last) return { kind: 'unknown' };
     const here = index.get(key(shop, card));
-    if (!here) return succeeded(last, shop) ? { kind: 'not_listed' } : { kind: 'unknown' };
+    if (!here) {
+      return succeeded(last, ctx.collection, shop) ? { kind: 'not_listed' } : { kind: 'unknown' };
+    }
     const inStock = here.filter((l) => listingState(l, ctx.now) === 'in_stock');
     const currency = referenceCurrency(inStock.length > 0 ? inStock : here);
     const listing = best(here, last, ctx.now, currency);
     const state = listingState(listing, ctx.now);
-    const stale = unseen(listing, last) || needsLastSuccess(last, shop, ctx.enabledShops);
+    const stale =
+      unseen(listing, last) || needsLastSuccess(last, ctx.collection, shop, ctx.enabledShops);
     const offers =
       state === 'in_stock'
         ? here

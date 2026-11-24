@@ -2,11 +2,26 @@ import { normalizeCardId, type CardId } from '../cards/cardId';
 import { describe, expect, test } from 'bun:test';
 import { COLLECTION_IDS } from './ids';
 import type { CollectionId } from './ids';
-import { COLLECTIONS, collectionById, collectionChoices, collectionName } from './index';
+import {
+  COLLECTIONS,
+  collectionById,
+  collectionChoices,
+  collectionName,
+  notLoadedText,
+} from './index';
+import { SHOP_HOSTS } from '../shops/adapters';
 
 describe('COLLECTIONS', () => {
   test('defines every collection id once, in registry order', () => {
     expect(COLLECTIONS.map((c) => c.id)).toEqual([...COLLECTION_IDS]);
+  });
+
+  test('the registry lists series 1, 2 and 3 in order', () => {
+    expect([...COLLECTION_IDS]).toEqual([
+      'lego-minecraft-1',
+      'lego-minecraft-2',
+      'lego-minecraft-3',
+    ]);
   });
 
   test('only lego-minecraft-3 seeds a starter checklist', () => {
@@ -32,6 +47,8 @@ describe('collectionName', () => {
 describe('collectionChoices', () => {
   test('lists every collection as a slash command choice', () => {
     expect(collectionChoices()).toEqual([
+      { name: 'LEGO Minecraft Serie 1', value: 'lego-minecraft-1' },
+      { name: 'LEGO Minecraft Serie 2 "TNT Boom-Bastic"', value: 'lego-minecraft-2' },
       { name: 'LEGO Minecraft Serie 3 "On Fire"', value: 'lego-minecraft-3' },
     ]);
   });
@@ -44,5 +61,49 @@ describe('collectionChoices', () => {
         expect(a).not.toBe(b);
       }
     }
+  });
+});
+
+describe('definition rules', () => {
+  test('blue-ocean and eBay are read for series 3 only, until their parsers take settings', () => {
+    for (const d of COLLECTIONS) {
+      if (d.id === 'lego-minecraft-3') continue;
+      expect(d.shops['blue-ocean']).toBeUndefined();
+      expect(d.shops.ebay).toBeUndefined();
+    }
+  });
+
+  test('every category is on its shop host and every series label reads "Serie N"', () => {
+    for (const d of COLLECTIONS) {
+      for (const shop of ['sammel-ente', 'collect-it'] as const) {
+        const settings = d.shops[shop];
+        if (!settings) continue;
+        expect(new URL(settings.category).hostname).toBe(SHOP_HOSTS[shop]);
+        expect(settings.series).toMatch(/^Serie \d+$/);
+      }
+    }
+  });
+
+  test('a fallback shop is one the collection reads, and a set without scans has one', () => {
+    for (const d of COLLECTIONS) {
+      if (d.referenceFallbackShop) expect(d.shops[d.referenceFallbackShop]).toBeDefined();
+      if (d.laststicker?.scans === false) expect(d.referenceFallbackShop).toBeDefined();
+    }
+  });
+
+  test('every laststicker alias names a canonical card id', () => {
+    for (const d of COLLECTIONS) {
+      for (const id of Object.values(d.laststicker?.numberAliases ?? {})) {
+        expect(normalizeCardId(id)).toBe(id as CardId);
+      }
+    }
+  });
+});
+
+describe('notLoadedText', () => {
+  test('names the collection and how its card list arrives', () => {
+    expect(notLoadedText('lego-minecraft-2')).toBe(
+      'The card list of LEGO Minecraft Serie 2 "TNT Boom-Bastic" is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).'
+    );
   });
 });

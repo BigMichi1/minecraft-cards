@@ -103,7 +103,9 @@ describe('notification messages', () => {
         expect(m.items.map((x) => x.listing.id)).toEqual([i + 1]);
         expect(m.message.embeds).toHaveLength(1);
         expect(m.message.components).toHaveLength(1);
-        expect(embedJson(m.message).title).toBe('🟢 Card #12 Squid is available');
+        expect(embedJson(m.message).title).toBe(
+          '🟢 LEGO Minecraft Serie 3 "On Fire" · Card #12 Squid is available'
+        );
         const row = (m.message.components![0] as any).toJSON();
         expect(row.components.map((c: { label: string }) => c.label)).toEqual([
           '#12 · blue-ocean',
@@ -144,9 +146,16 @@ describe('notification messages', () => {
     expect(row.components[2].custom_id).toBe('report:1');
   });
 
+  test('the title names the collection: names repeat across series', () => {
+    const e = embedJson(
+      atMsg(buildNotificationMessages([item(1, { collection: 'lego-minecraft-1' })]), 0)
+    );
+    expect(e.title).toStartWith('🟢 LEGO Minecraft Serie 1 · Card #12');
+  });
+
   test('embed title, fields, image and confirmed footer', () => {
     const e = embedJson(atMsg(buildNotificationMessages([item(1)]), 0));
-    expect(e.title).toBe('🟢 Card #12 Squid is available');
+    expect(e.title).toBe('🟢 LEGO Minecraft Serie 3 "On Fire" · Card #12 Squid is available');
     expect(e.image.url).toBe('https://img/1.jpg');
     expect(e.thumbnail).toBeUndefined();
     expect(e.footer.text).toBe('✅ picture matches reference (0.94)');
@@ -160,7 +169,9 @@ describe('notification messages', () => {
       item(1, { cardIds: [cid('45')], matchStatus: 'unconfirmed', similarity: 0.5 }),
       item(2, { matchStatus: 'unconfirmed', similarity: 0.5 }),
     ]);
-    expect(embedJson(at(msgs, 0).message).title).toBe('🟢 Card #45 is available');
+    expect(embedJson(at(msgs, 0).message).title).toBe(
+      '🟢 LEGO Minecraft Serie 3 "On Fire" · Card #45 is available'
+    );
     const e = embedJson(at(msgs, 1).message);
     expect(e.footer.text).toContain('⚠️ number unconfirmed');
     expect(e.thumbnail.url).toBe(referenceUrl);
@@ -204,7 +215,7 @@ describe('notification messages', () => {
         0
       )
     );
-    expect(e.title).toBe('🟢 Bundle with #12, #45 on eBay');
+    expect(e.title).toBe('🟢 LEGO Minecraft Serie 3 "On Fire" · Bundle with #12, #45 on eBay');
     const price = e.fields.find((x: { name: string }) => x.name === 'Price').value;
     expect(price).toBe('12,50 € · Auction · ends <t:1700000000:R>');
   });
@@ -272,7 +283,7 @@ describe('notification messages', () => {
         0
       )
     );
-    expect(e.title).toBe('🟢 Card #12 Squid is available');
+    expect(e.title).toBe('🟢 LEGO Minecraft Serie 3 "On Fire" · Card #12 Squid is available');
     expect(e.footer.text).toBe('🖼️ number from the picture (0.91) — compare with the reference');
     expect(e.thumbnail.url).toBe(referenceUrl);
   });
@@ -291,7 +302,7 @@ describe('notification messages', () => {
         0
       )
     );
-    expect(e.title).toBe('🟢 Card #12 is available');
+    expect(e.title).toBe('🟢 other-set · Card #12 is available');
     expect(e.thumbnail).toBeUndefined();
     const same = embedJson(
       atMsg(
@@ -299,7 +310,7 @@ describe('notification messages', () => {
         0
       )
     );
-    expect(same.title).toBe('🟢 Card #12 Squid is available');
+    expect(same.title).toBe('🟢 LEGO Minecraft Serie 3 "On Fire" · Card #12 Squid is available');
     expect(same.thumbnail.url).toBe(referenceUrl);
   });
 

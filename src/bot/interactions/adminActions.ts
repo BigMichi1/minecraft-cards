@@ -6,6 +6,7 @@
  */
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import type { APIEmbedField, ButtonInteraction, MessageCreateOptions } from 'discord.js';
+import { collectionName } from '../collections/index';
 import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StaleReason, type StoredListing } from '../database/listingManager';
 import { downloadImage } from '../matcher/embedder';
@@ -88,6 +89,8 @@ export function adminListingEmbed(
 ): EmbedBuilder {
   const embed = new EmbedBuilder().setTitle(title).addFields(
     ...lead,
+    // Card names and numbers repeat across collections: say which one.
+    { name: 'Collection', value: collectionName(listing.collection), inline: true },
     {
       name: 'Cards',
       value: clipText(listing.cardIds.map((id) => `#${id}`).join(', ') || 'none', MAX_FIELD),

@@ -1,6 +1,7 @@
 # Shops
 
-Which shops were checked for LEGO Minecraft TCC series 3 ("On Fire") single cards, whether they sell
+Which shops were checked for LEGO Minecraft TCC series 3 ("On Fire") single cards (series 1 and 2:
+see "Per collection", checked 2026-11-24), whether they sell
 them, and whether the bot can read them. Checked 2026-11-17 / 2026-11-18. Re-check when a shop
 changes or a new one is suggested.
 
@@ -12,6 +13,25 @@ changes or a new one is suggested.
 | [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. Card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`); the title's "Nr." is wrong. Only "On Fire" titles count; series 1 and 2 share the category.                                                                       |
 | [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                |
 | eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. Four searches, every page by `offset`. Card ids from series 3 titles only (details below). |
+
+## Per collection (2026-11-24)
+
+| Collection         | sammel-ente                                                                        | collect-it                                                                                                                                | blue-ocean      | eBay         |
+| ------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------------ |
+| `lego-minecraft-1` | [`/Minecraft/Serie-1/`](https://shop-sammel-ente.de/Minecraft/Serie-1/) (13 pages) | [`/sammelwelt/…/serie1/Einzelkarten`](https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten) (256 singles) | not yet (PR 3c) | not yet (3b) |
+| `lego-minecraft-2` | [`/Minecraft/Serie-2/`](https://shop-sammel-ente.de/Minecraft/Serie-2/) (13 pages) | none (no single-card category)                                                                                                            | not yet (PR 3c) | not yet (3b) |
+| `lego-minecraft-3` | as below                                                                           | as below                                                                                                                                  | as below        | as below     |
+
+- sammel-ente's titles name the series (`LEGO Minecraft Serie 1 | #001 Steve`, `#LE008`,
+  `#XXL001`); one parser reads all three categories. A card title naming another series than the
+  category's is skipped and counted; one naming none fails the read. Series 2 also sells LE21
+  and LE22, which laststicker lacks (manual cards).
+- collect-it's series 1 titles end with `- Serie 1` (`1 - Steve - Skin Karte - Serie 1`); an item
+  ending with another series label is skipped and counted, and still counts toward the article
+  total; one without a series label fails the walk, as does a walk with no card of the series.
+  `XXL 1 - …` (with a space) reads as XXL1.
+- blue-ocean sells series 1 and 2 singles in its TCC categories (`Nummer 250 I Schildkröte I LEGO
+Minecraft TCC 1`, the product number in the URL), which need their own parser (PR 3c).
 
 ## eBay details
 
@@ -49,7 +69,7 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   announced, 979 read), a `total` within the tolerance of the items read counts as complete (1021
   announced, 1000 read), and a larger one is a cut search (below; 1022 announced, 1000 read).
 - **Page cap**: a search cut at the cap logs a warning and is reported in `FetchResult.truncated`;
-  the runner sends a throttled admin alert (`shop-truncated:ebay`, at most once a day), and
+  the runner sends a throttled admin alert (`shop-truncated:ebay:lego-minecraft-3`, at most once a day per collection), and
   `/admin status` shows the number of cut searches.
 - **Title forms read** (allow-lists, since a false id sends a false DM):
   - `LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)` and
@@ -148,7 +168,7 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   on each side and a first number below the second, so `Serie 3 - 2026` and
   `107/228 - 1 Stück` are not ranges.
 - **Counters**: titles excluded by the series, pick-list, range or variation rules (and not
-  read by their catalog name) are counted as `skippedExcluded` ("not series 3 single cards" in
+  read by their catalog name) are counted as `skippedExcluded` ("not single cards of this collection" in
   `/admin status`), series 3 titles naming no card as `skippedNoId` ("without card number");
   both are logged with their reason at debug level. A series 3 title naming no card but with no
   count word and no number besides the series and a year (`isPictureCandidate`) is not skipped:

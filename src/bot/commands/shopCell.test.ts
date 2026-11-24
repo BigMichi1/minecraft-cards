@@ -11,12 +11,14 @@ import {
   shopCells,
   type CellContext,
   type ListingState,
+  enabledFor,
 } from './shopCell';
 
 const ALL: readonly ShopId[] = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay'];
 
 function ctx(over: Partial<CellContext> = {}): CellContext {
   return {
+    collection: 'lego-minecraft-3',
     latest: { summary: runOf(ALL), newerUnreadable: false },
     enabledShops: ALL,
     listings: [],
@@ -56,11 +58,11 @@ describe('pictureBacked', () => {
 describe('needsLastSuccess', () => {
   test('only an enabled shop whose latest check failed or did not run', () => {
     const last = runOf(['sammel-ente'], ['blue-ocean']);
-    expect(needsLastSuccess(last, 'sammel-ente', ALL)).toBe(false);
-    expect(needsLastSuccess(last, 'blue-ocean', ALL)).toBe(true);
-    expect(needsLastSuccess(last, 'ebay', ALL)).toBe(true);
-    expect(needsLastSuccess(last, 'ebay', ['sammel-ente'])).toBe(false);
-    expect(needsLastSuccess(undefined, 'ebay', ALL)).toBe(false);
+    expect(needsLastSuccess(last, 'lego-minecraft-3', 'sammel-ente', ALL)).toBe(false);
+    expect(needsLastSuccess(last, 'lego-minecraft-3', 'blue-ocean', ALL)).toBe(true);
+    expect(needsLastSuccess(last, 'lego-minecraft-3', 'ebay', ALL)).toBe(true);
+    expect(needsLastSuccess(last, 'lego-minecraft-3', 'ebay', ['sammel-ente'])).toBe(false);
+    expect(needsLastSuccess(undefined, 'lego-minecraft-3', 'ebay', ALL)).toBe(false);
   });
 });
 
@@ -212,6 +214,28 @@ describe('shopCells', () => {
     expect(at([unseen])).toMatchObject({ listing: unseen, stale: true, offers: [unseen] });
   });
 
+  test("staleness reads the listing's own collection from the run", () => {
+    // Seen by the latest check: fresh, if that check is the series 1 one.
+    const s1 = listing('ebay', ids('12'), {
+      ...euro(10),
+      collection: 'lego-minecraft-1',
+      lastSeenAt: T + 10,
+    });
+    const at = (summary: RunSummary) =>
+      shopCells(
+        ctx({
+          collection: 'lego-minecraft-1',
+          latest: { summary: { ...summary, startedAt: T + 10 }, newerUnreadable: false },
+          listings: [s1],
+        })
+      )(cid('12'), 'ebay');
+    expect(
+      at({ ...runOf([]), collections: { 'lego-minecraft-1': { ebay: { listings: 1 } } } })
+    ).toMatchObject({ stale: false });
+    // Only series 3's eBay ran: series 1's check did not, so the listing may be old.
+    expect(at(runOf(ALL))).toMatchObject({ stale: true });
+  });
+
   test('a stored listing of a shop whose check failed is stale', () => {
     const l = listing('blue-ocean', ids('12'));
     const c = shopCells(
@@ -227,5 +251,13 @@ describe('shopCells', () => {
     const l = listing('ebay', [cid('12'), cid('12')]);
     const c = shopCells(ctx({ listings: [l] }))(cid('12'), 'ebay');
     expect(c.kind === 'listed' && c.offers).toEqual([l]);
+  });
+});
+
+describe('enabledFor', () => {
+  test('the shops checked for the collection, none for one nothing checks', () => {
+    const enabled = new Map([['lego-minecraft-2' as const, ['sammel-ente'] as const]]);
+    expect(enabledFor(enabled, 'lego-minecraft-2')).toEqual(['sammel-ente']);
+    expect(enabledFor(enabled, 'lego-minecraft-1')).toEqual([]);
   });
 });

@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import type { EnabledShops } from './shopCell';
 import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
@@ -14,7 +15,9 @@ import logger from '../utils/logger';
 import { data, execute, handleStockButton } from './stock';
 import { UNKNOWN_COLLECTION } from './collectionOption';
 
-const CTX = { enabledShops: ['sammel-ente', 'blue-ocean'] } as const;
+const CTX: { enabledShops: EnabledShops } = {
+  enabledShops: new Map([['lego-minecraft-3', ['sammel-ente', 'blue-ocean']]]),
+};
 
 type Payload = {
   content?: string;

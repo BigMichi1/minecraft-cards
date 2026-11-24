@@ -22,7 +22,11 @@ describe('collectionOption', () => {
         name: 'collection',
         description: 'Card collection',
         required: true,
-        choices: [{ name: 'LEGO Minecraft Serie 3 "On Fire"', value: 'lego-minecraft-3' }],
+        choices: [
+          { name: 'LEGO Minecraft Serie 1', value: 'lego-minecraft-1' },
+          { name: 'LEGO Minecraft Serie 2 "TNT Boom-Bastic"', value: 'lego-minecraft-2' },
+          { name: 'LEGO Minecraft Serie 3 "On Fire"', value: 'lego-minecraft-3' },
+        ],
       }),
     ]);
   });
@@ -40,7 +44,7 @@ describe('readCollection', () => {
 
   test('the refusal says what to do and names the collections', () => {
     expect(UNKNOWN_COLLECTION).toBe(
-      'Unknown collection. Discord may show an outdated command: reopen Discord and pick one of: LEGO Minecraft Serie 3 "On Fire".'
+      'Unknown collection. Discord may show an outdated command: reopen Discord and pick one of: LEGO Minecraft Serie 1, LEGO Minecraft Serie 2 "TNT Boom-Bastic", LEGO Minecraft Serie 3 "On Fire".'
     );
   });
 

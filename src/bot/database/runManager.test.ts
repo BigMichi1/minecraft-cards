@@ -2,7 +2,14 @@ import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
 import { db, initializeDatabase } from './db';
 import { adminAlerts, runs } from './schema/index';
-import { LAST_SUCCESS_WINDOW_MS, resetWarnings, runManager } from './runManager';
+import {
+  LAST_SUCCESS_WINDOW_MS,
+  resetWarnings,
+  runManager,
+  setShopEntry,
+  shopEntries,
+  shopEntry,
+} from './runManager';
 import type { RunSummary } from '../check/runner';
 
 const NOW = 10_000_000_000;
@@ -37,12 +44,12 @@ describe('runManager', () => {
       startedAt: 300,
       shops: { 'blue-ocean': { listings: 0, error: 'down' } },
     });
-    expect(runManager.lastSuccess('blue-ocean', 300)).toBe(200);
+    expect(runManager.lastSuccess('blue-ocean', 'lego-minecraft-3', 300)).toBe(200);
   });
 
   test('lastSuccess of a shop that never appeared is undefined', () => {
     runManager.record(summary);
-    expect(runManager.lastSuccess('ebay', NOW)).toBeUndefined();
+    expect(runManager.lastSuccess('ebay', 'lego-minecraft-3', NOW)).toBeUndefined();
   });
 
   test('lastSuccess stops at the newest successful run and does not read older rows', () => {
@@ -51,7 +58,7 @@ describe('runManager', () => {
     runManager.record({ ...summary, startedAt: 500 });
     const warn = spyOn(logger, 'warn');
     try {
-      expect(runManager.lastSuccess('blue-ocean', 500)).toBe(500);
+      expect(runManager.lastSuccess('blue-ocean', 'lego-minecraft-3', 500)).toBe(500);
       expect(warn).not.toHaveBeenCalled(); // the 120 unreadable older rows were never parsed
     } finally {
       warn.mockRestore();
@@ -71,7 +78,7 @@ describe('runManager', () => {
     }
     const warn = spyOn(logger, 'warn');
     try {
-      expect(runManager.lastSuccess('blue-ocean', 100)).toBe(1);
+      expect(runManager.lastSuccess('blue-ocean', 'lego-minecraft-3', 100)).toBe(1);
     } finally {
       warn.mockRestore();
     }
@@ -79,8 +86,12 @@ describe('runManager', () => {
 
   test('lastSuccess only looks at runs that started within the last 7 days', () => {
     runManager.record({ ...summary, startedAt: NOW });
-    expect(runManager.lastSuccess('blue-ocean', NOW + LAST_SUCCESS_WINDOW_MS)).toBe(NOW);
-    expect(runManager.lastSuccess('blue-ocean', NOW + LAST_SUCCESS_WINDOW_MS + 1)).toBeUndefined();
+    expect(
+      runManager.lastSuccess('blue-ocean', 'lego-minecraft-3', NOW + LAST_SUCCESS_WINDOW_MS)
+    ).toBe(NOW);
+    expect(
+      runManager.lastSuccess('blue-ocean', 'lego-minecraft-3', NOW + LAST_SUCCESS_WINDOW_MS + 1)
+    ).toBeUndefined();
     expect(LAST_SUCCESS_WINDOW_MS).toBe(7 * 24 * 60 * 60 * 1000);
   });
 
@@ -136,8 +147,8 @@ describe('runManager', () => {
       db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: 'null' }).run();
       db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: '42' }).run();
       runManager.record(summary);
-      expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
-      expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
+      expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBe(3);
+      expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBe(3);
       expect(warn).toHaveBeenCalledTimes(2);
       expect(warn.mock.calls.every((c) => /not an object/.test(String(c[0])))).toBe(true);
     } finally {
@@ -152,12 +163,12 @@ describe('runManager', () => {
   });
 
   test('shopPeakListings skips runs where the shop failed or did not run', () => {
-    expect(runManager.shopPeakListings('blue-ocean', NOW)).toBeUndefined();
+    expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBeUndefined();
     runManager.record(summary);
     runManager.record({ ...summary, shops: { 'blue-ocean': { listings: 0, error: 'down' } } });
     runManager.record({ ...summary, shops: {} });
-    expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
-    expect(runManager.shopPeakListings('ebay', NOW)).toBeUndefined();
+    expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBe(3);
+    expect(runManager.shopPeakListings('ebay', 'lego-minecraft-3', NOW)).toBeUndefined();
   });
 
   test('shopPeakListings is the highest count within the last 3 days, however many runs', () => {
@@ -171,10 +182,16 @@ describe('runManager', () => {
         shops: { 'blue-ocean': { listings: 10 } },
       });
     }
-    expect(runManager.shopPeakListings('blue-ocean', NOW + 40 * hour)).toBe(100);
+    expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW + 40 * hour)).toBe(
+      100
+    );
     // 72 h after the 100 it leaves the window.
-    expect(runManager.shopPeakListings('blue-ocean', NOW + 72 * hour)).toBe(100);
-    expect(runManager.shopPeakListings('blue-ocean', NOW + 72 * hour + 1)).toBe(10);
+    expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW + 72 * hour)).toBe(
+      100
+    );
+    expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW + 72 * hour + 1)).toBe(
+      10
+    );
   });
 
   test('shopPeakListings still sees the peak when more than 500 runs happened in the window', () => {
@@ -188,7 +205,9 @@ describe('runManager', () => {
         shops: { 'blue-ocean': { listings: 10 } },
       });
     }
-    expect(runManager.shopPeakListings('blue-ocean', NOW + 600 * minute)).toBe(100);
+    expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW + 600 * minute)).toBe(
+      100
+    );
   });
 
   test('shopPeakListings ignores a corrupted shop entry and warns about an unreadable row', () => {
@@ -203,7 +222,7 @@ describe('runManager', () => {
         })
         .run();
       db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: 'not json' }).run();
-      expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
+      expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBe(3);
       expect(warn).toHaveBeenCalledTimes(2);
     } finally {
       warn.mockRestore();
@@ -222,8 +241,8 @@ describe('runManager', () => {
           summary: JSON.stringify({ ...summary, shops: bad }),
         })
         .run();
-      expect(runManager.shopPeakListings('blue-ocean', NOW)).toBe(3);
-      expect(runManager.shopPeakListings('ebay', NOW)).toBeUndefined();
+      expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBe(3);
+      expect(runManager.shopPeakListings('ebay', 'lego-minecraft-3', NOW)).toBeUndefined();
       expect(runManager.last()?.shops).toEqual({});
       expect(warn).toHaveBeenCalledTimes(3);
     } finally {
@@ -235,10 +254,124 @@ describe('runManager', () => {
     const warn = spyOn(logger, 'warn');
     try {
       db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: 'not json' }).run();
-      runManager.shopPeakListings('blue-ocean', NOW);
-      runManager.shopPeakListings('blue-ocean', NOW);
+      runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW);
+      runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW);
       runManager.last();
       expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('shopEntry reads series 3 from shops and the other collections from collections', () => {
+    const s: RunSummary = {
+      ...summary,
+      shops: { 'sammel-ente': { listings: 251 } },
+      collections: { 'lego-minecraft-1': { 'sammel-ente': { listings: 283 } } },
+    };
+    expect(shopEntry(s, 'lego-minecraft-3', 'sammel-ente')).toEqual({ listings: 251 });
+    expect(shopEntry(s, 'lego-minecraft-1', 'sammel-ente')).toEqual({ listings: 283 });
+    expect(shopEntry(s, 'lego-minecraft-2', 'sammel-ente')).toBeUndefined();
+    // A row from before collections: only series 3, under shops.
+    expect(shopEntry({ ...summary }, 'lego-minecraft-1', 'blue-ocean')).toBeUndefined();
+    expect(shopEntry({ ...summary }, 'lego-minecraft-3', 'blue-ocean')).toEqual({ listings: 3 });
+  });
+
+  test('setShopEntry files each collection where shopEntry reads it; shopEntries lists them', () => {
+    const s: RunSummary = { ...summary, shops: {} };
+    setShopEntry(s, 'lego-minecraft-3', 'collect-it', { listings: 1 });
+    setShopEntry(s, 'lego-minecraft-1', 'collect-it', { listings: 2 });
+    expect(s.shops).toEqual({ 'collect-it': { listings: 1 } });
+    expect(s.collections).toEqual({ 'lego-minecraft-1': { 'collect-it': { listings: 2 } } });
+    expect(shopEntries(s)).toEqual([
+      { collection: 'lego-minecraft-1', shop: 'collect-it', entry: { listings: 2 } },
+      { collection: 'lego-minecraft-3', shop: 'collect-it', entry: { listings: 1 } },
+    ]);
+  });
+
+  test('the peak and the last success are per shop and collection', () => {
+    runManager.record({
+      ...summary,
+      shops: { 'sammel-ente': { listings: 251 } },
+      collections: { 'lego-minecraft-1': { 'sammel-ente': { listings: 283 } } },
+    });
+    expect(runManager.shopPeakListings('sammel-ente', 'lego-minecraft-1', NOW)).toBe(283);
+    expect(runManager.shopPeakListings('sammel-ente', 'lego-minecraft-3', NOW)).toBe(251);
+    expect(runManager.shopPeakListings('sammel-ente', 'lego-minecraft-2', NOW)).toBeUndefined();
+    expect(runManager.lastSuccess('sammel-ente', 'lego-minecraft-1', NOW)).toBe(NOW);
+    expect(runManager.lastSuccess('sammel-ente', 'lego-minecraft-2', NOW)).toBeUndefined();
+  });
+
+  test('a stored collections map with a malformed entry drops just that entry', () => {
+    db.insert(runs)
+      .values({
+        startedAt: NOW,
+        finishedAt: NOW,
+        summary: JSON.stringify({
+          ...summary,
+          collections: {
+            'lego-minecraft-1': { 'sammel-ente': { listings: 'x' }, 'collect-it': { listings: 4 } },
+          },
+        }),
+      })
+      .run();
+    const read = runManager.last()!;
+    expect(read.collections).toEqual({ 'lego-minecraft-1': { 'collect-it': { listings: 4 } } });
+  });
+
+  test('a stored collections value that is not an object is dropped, warned once per row', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      for (const bad of [5, null, ['x']]) {
+        db.delete(runs).run();
+        db.insert(runs)
+          .values({
+            startedAt: NOW,
+            finishedAt: NOW,
+            summary: JSON.stringify({ ...summary, collections: bad }),
+          })
+          .run();
+        const read = runManager.last()!;
+        expect(read.collections).toBeUndefined();
+        expect(read.shops).toEqual(summary.shops);
+      }
+      runManager.last();
+      const warned = warn.mock.calls.filter((c) =>
+        String(c[0]).includes('stored collections are not an object')
+      );
+      // One row per bad value, each warned once however often it is read.
+      expect(warned).toHaveLength(3);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a stored collection with bad results, an unknown id or series 3 is dropped, warned', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      db.insert(runs)
+        .values({
+          startedAt: NOW,
+          finishedAt: NOW,
+          summary: JSON.stringify({
+            ...summary,
+            collections: {
+              'lego-minecraft-1': 'x',
+              'lego-minecraft-9': { 'sammel-ente': { listings: 1 } },
+              'lego-minecraft-3': { 'sammel-ente': { listings: 1 } },
+              'lego-minecraft-2': { 'sammel-ente': { listings: 2 }, 'shop-x': { listings: 3 } },
+            },
+          }),
+        })
+        .run();
+      expect(runManager.last()!.collections).toEqual({
+        'lego-minecraft-2': { 'sammel-ente': { listings: 2 } },
+      });
+      const warned = warn.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(warned).toContain('stored lego-minecraft-1 results are not an object');
+      expect(warned).toContain('stored collection lego-minecraft-9 is unknown');
+      expect(warned).toContain('stored collection lego-minecraft-3 belongs in shops');
+      expect(warned).toContain('stored lego-minecraft-2 shop-x is no shop');
     } finally {
       warn.mockRestore();
     }

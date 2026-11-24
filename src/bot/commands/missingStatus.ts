@@ -1,6 +1,7 @@
 import { EmbedBuilder } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import type { RunSummary } from '../check/runner';
+import { shopEntry } from '../database/runManager';
 import type { StoredListing } from '../database/listingManager';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { formatPrice, SHOP_NAMES, validUrl } from '../notify/messages';
@@ -81,14 +82,14 @@ function seconds(ms: number): number {
 function shopLine(shop: ShopId, input: StatusInput, last: RunSummary): string {
   const name = SHOP_NAMES[shop];
   if (!input.enabledShops.includes(shop)) return `⚪ ${name}: not enabled`;
-  const entry = last.shops[shop];
+  const entry = shopEntry(last, input.collection, shop);
   const state =
     entry === undefined
       ? `⚠️ ${name}: not checked`
       : entry.error !== undefined
         ? `❌ ${name}: error <t:${seconds(last.startedAt)}:R> – ${entry.error.slice(0, MAX_ERROR)}`
         : `✅ ${name}: ${entry.listings} listings`;
-  if (!needsLastSuccess(last, shop, input.enabledShops)) return state;
+  if (!needsLastSuccess(last, input.collection, shop, input.enabledShops)) return state;
   // buildStatusReply checked that every shop needing it was looked up, so undefined cannot
   // occur here; only null (none in the window) is left.
   const success = input.lastSuccess[shop]!;
@@ -301,7 +302,7 @@ export function buildStatusReply(input: StatusInput): StatusReply {
   if (input.cards.length === 0) return { content: EMPTY_LIST, embeds: [] };
   for (const shop of SHOP_IDS) {
     if (
-      needsLastSuccess(input.latest.summary, shop, input.enabledShops) &&
+      needsLastSuccess(input.latest.summary, input.collection, shop, input.enabledShops) &&
       input.lastSuccess[shop] === undefined
     ) {
       // A missing lookup must not read as "no success": that is a wiring error.

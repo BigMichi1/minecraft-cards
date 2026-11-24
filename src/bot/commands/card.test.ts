@@ -37,7 +37,11 @@ const okDownload: DownloadFn = async (url) => {
 };
 
 function ctx(over: Partial<CardContext> = {}): CardContext {
-  return { enabledShops: ['sammel-ente', 'blue-ocean'], download: okDownload, ...over };
+  return {
+    enabledShops: new Map([['lego-minecraft-3', ['sammel-ente', 'blue-ocean']]]),
+    download: okDownload,
+    ...over,
+  };
 }
 
 function command(
@@ -102,6 +106,13 @@ describe('/card', () => {
     db.delete(cards).run();
     catalogManager.seedIfEmpty();
     runManager.record(runOf(['sammel-ente', 'blue-ocean']));
+  });
+
+  test('a card of a collection whose card list is not loaded yet says so', async () => {
+    await execute(command('12', null, 'lego-minecraft-1'), ctx());
+    expect(last().content).toBe(
+      'The card list of LEGO Minecraft Serie 1 is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).'
+    );
   });
 
   test('declares number (required) and shop with a choice per shop', () => {
@@ -185,6 +196,28 @@ describe('/card', () => {
     expect(last()).toEqual({ content: 'eBay is not enabled.', embeds: [], components: [] });
   });
 
+  test("a shop the card's collection does not use is not enabled there", async () => {
+    catalogManager.syncCollection(
+      'lego-minecraft-2',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Oberwelt Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      1
+    );
+    const enabled = {
+      enabledShops: new Map([['lego-minecraft-2' as const, ['sammel-ente'] as const]]),
+    };
+    await execute(command('12', 'blue-ocean', 'lego-minecraft-2'), ctx(enabled));
+    expect(last()).toEqual({ content: 'blue-ocean is not enabled.', embeds: [], components: [] });
+  });
+
   test('a shop value that is no shop is refused', async () => {
     await execute(command('12', 'amazon'), ctx());
     expect(last()).toEqual({ content: 'Unknown shop: amazon', embeds: [], components: [] });
@@ -234,7 +267,9 @@ describe('/card', () => {
   test('without a download function it uses the bounded picture download', async () => {
     // No reference, so nothing is fetched: only the default wiring is exercised.
     setReference(null);
-    await execute(command('12'), { enabledShops: ['sammel-ente'] });
+    await execute(command('12'), {
+      enabledShops: new Map([['lego-minecraft-3', ['sammel-ente']]]),
+    });
     expect(embed().title).toBe('#12 Squid');
   });
 

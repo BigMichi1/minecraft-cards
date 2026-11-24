@@ -432,6 +432,37 @@ describe('catalogManager', () => {
       });
     });
 
+    test('a set without scans takes the shop picture as its reference from the start', () => {
+      catalogManager.syncCollection(
+        'lego-minecraft-2',
+        [
+          {
+            cardId: cid('12'),
+            name: 'X',
+            kind: 'Oberwelt Karte',
+            variant: 'Basis Karte',
+            puzzle: false,
+            pictureUrl: null,
+          },
+        ],
+        1
+      );
+      catalogManager.updateShopPictures(
+        'lego-minecraft-2',
+        [{ cardId: cid('12'), imageUrl: 'https://se/s2-12.jpg' }],
+        2
+      );
+      expect(catalogManager.referenceCatalog('lego-minecraft-2', 3).usable).toEqual([
+        {
+          cardId: cid('12'),
+          referenceImageUrl: 'https://se/s2-12.jpg',
+          source: 'shop',
+          fallbackUrl: null,
+          puzzle: false,
+        },
+      ]);
+    });
+
     test('a missing scan without a shop picture is no_picture', () => {
       catalogManager.seedIfEmpty();
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('1'), scanUrl: scan('1') }]);
@@ -524,6 +555,31 @@ describe('catalogManager', () => {
       pictureUrl: `https://www.laststicker.com/i/cards/12125/${id.toLowerCase()}.jpg`,
     });
     const starterRows = () => starter.map((id) => row(id, `Card ${id}`));
+
+    test('syncCollection marks Puzzlekarte and Puzzlekarten rows as puzzle cards', () => {
+      catalogManager.seedIfEmpty();
+      const rows = starterRows().map((r) =>
+        r.cardId === '154'
+          ? { ...r, kind: 'Puzzlekarte' }
+          : r.cardId === '155'
+            ? { ...r, kind: 'Puzzlekarten' }
+            : r
+      );
+      catalogManager.syncCollection('lego-minecraft-3', rows, 10);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('154'))?.puzzle).toBe(true);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('155'))?.puzzle).toBe(true);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('156'))?.puzzle).toBe(false);
+    });
+
+    test('a row without a scan stores none', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.syncCollection(
+        'lego-minecraft-3',
+        starterRows().map((r) => ({ ...r, pictureUrl: null })),
+        10
+      );
+      expect(catalogManager.laststickerPicture('lego-minecraft-3', cid('12'))).toBeNull();
+    });
 
     test('a first sync over the starter catalog adds nothing and sets names, kinds and pictures', () => {
       catalogManager.seedIfEmpty();

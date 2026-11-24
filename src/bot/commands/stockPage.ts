@@ -1,7 +1,9 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { CardId } from '../cards/cardId';
+import { notLoadedText } from '../collections/index';
 import { COLLECTION_IDS, LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
 import type { RunSummary } from '../check/runner';
+import { shopEntry } from '../database/runManager';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { SHOP_NAMES } from '../notify/messages';
 import { SHOP_IDS, type ShopId } from '../shops/types';
@@ -67,11 +69,15 @@ const FILTER_LABEL: Record<StockFilter, string> = {
   'in-stock': 'cards in stock',
 };
 
-const EMPTY: Record<StockFilter, string> = {
-  all: 'This collection has no cards.',
+const EMPTY: Record<Exclude<StockFilter, 'all'>, string> = {
   missing: 'You have no missing cards on your list.',
   'in-stock': 'No card is in stock in any enabled shop right now.',
 };
+
+/** The reply for an empty page: a collection's catalog is empty only before its first sync. */
+function emptyText(input: StockInput): string {
+  return input.filter === 'all' ? notLoadedText(input.collection) : EMPTY[input.filter];
+}
 
 /** Collection ids are slugs (checked in `collections/ids.test.ts`): no regex syntax, no `:`. */
 const CUSTOM_ID = new RegExp(
@@ -134,14 +140,14 @@ function cellText(cell: ShopCell): string {
 function shopStatus(shop: ShopId, input: StockInput, last: RunSummary): string {
   const name = SHOP_NAMES[shop];
   if (!input.enabledShops.includes(shop)) return `⚪ ${name} n/a`;
-  const entry = last.shops[shop];
+  const entry = shopEntry(last, input.collection, shop);
   const state =
     entry === undefined
       ? `⚠️ ${name} not checked`
       : entry.error !== undefined
         ? `❌ ${name} failed`
         : `✅ ${name}`;
-  if (!needsLastSuccess(last, shop, input.enabledShops)) return state;
+  if (!needsLastSuccess(last, input.collection, shop, input.enabledShops)) return state;
   const success = input.lastSuccess[shop];
   if (success === undefined) throw new Error(`/stock: last success of ${shop} was not looked up`);
   return success === null
@@ -204,7 +210,7 @@ export function buildStockPage(input: StockInput): StockPage {
     cells: SHOP_IDS.map((shop) => cellText(cellAt(card, shop))),
   }));
   const shown = input.filter === 'in-stock' ? rows.filter((r) => r.cells.includes(IN_STOCK)) : rows;
-  if (shown.length === 0) return { content: EMPTY[input.filter], components: [] };
+  if (shown.length === 0) return { content: emptyText(input), components: [] };
 
   const cardWidth = Math.max('Card'.length, ...shown.map((r) => r.card.length));
   const widths = SHOP_IDS.map((shop) => Math.max(SHORT[shop].length, NOT_ENABLED.length));

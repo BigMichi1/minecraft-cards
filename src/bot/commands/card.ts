@@ -12,12 +12,18 @@ import { replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
 import { clipText } from '../utils/messageLimit';
 import { buildCardReply } from './cardReply';
-import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
+import { enabledFor, type EnabledShops } from './shopCell';
+import {
+  catalogNotLoaded,
+  collectionOption,
+  readCollection,
+  UNKNOWN_COLLECTION,
+} from './collectionOption';
 
 /** What `/card` needs from the bot's wiring. */
 export interface CardContext {
-  /** The shops this process checks (one per adapter built in bot.ts). */
-  enabledShops: readonly ShopId[];
+  /** The shops checked per collection; any other shop is not enabled there. */
+  enabledShops: EnabledShops;
   /** Downloads the reference picture to attach; the bounded matcher download by default. */
   download?: DownloadFn;
 }
@@ -66,7 +72,7 @@ export async function execute(
     const id = normalizeCardId(token);
     const card = id ? catalogManager.getCard(collection, id) : undefined;
     if (!card) {
-      await interaction.editReply(text(`Unknown card: ${token}`));
+      await interaction.editReply(text(catalogNotLoaded(collection) ?? `Unknown card: ${token}`));
       return;
     }
     const shopOption = interaction.options.getString('shop');
@@ -75,7 +81,8 @@ export async function execute(
       await interaction.editReply(text(`Unknown shop: ${clipText(shopOption, 20)}`));
       return;
     }
-    if (shopOption !== null && !ctx.enabledShops.includes(shopOption)) {
+    const enabled = enabledFor(ctx.enabledShops, collection);
+    if (shopOption !== null && !enabled.includes(shopOption)) {
       await interaction.editReply(text(`${SHOP_NAMES[shopOption]} is not enabled.`));
       return;
     }
@@ -84,12 +91,13 @@ export async function execute(
       catalogManager.referenceCatalog(collection).usable.find((r) => r.cardId === card.cardId)
         ?.referenceImageUrl ?? null;
     const reply = buildCardReply({
+      collection,
       card: card.cardId,
       name: card.name,
       reference,
       shop: shopOption,
       latest: runManager.latestReadable(),
-      enabledShops: ctx.enabledShops,
+      enabledShops: enabled,
       listings: listingManager.listingsForCards(collection, [card.cardId]),
       now: Date.now(),
     });

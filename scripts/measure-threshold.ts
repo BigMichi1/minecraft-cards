@@ -30,6 +30,7 @@ const { createSammelEnteFetcher, parseSammelEntePage } =
   await import('../src/bot/shops/sammelEnte');
 const { createBlueOceanFetcher, parseBlueOceanPage } = await import('../src/bot/shops/blueOcean');
 const { fetchText } = await import('../src/bot/utils/http');
+const { legoMinecraft3 } = await import('../src/bot/collections/legoMinecraft3');
 type Listing = import('../src/bot/shops/types').Listing;
 
 const MODELS = ['Xenova/clip-vit-base-patch32', 'Xenova/dinov2-small'];
@@ -49,13 +50,14 @@ const cacheDir = process.env.MODEL_CACHE_DIR || path.join(process.cwd(), 'models
 async function loadListings(): Promise<{ sammel: Listing[]; blue: Listing[] }> {
   if (pagesArg === '1') {
     return {
-      sammel: parseSammelEntePage(await fetchText(SAMMEL_ENTE_P1)).listings,
+      sammel: parseSammelEntePage(await fetchText(SAMMEL_ENTE_P1), null).listings,
       blue: parseBlueOceanPage(await fetchText(BLUE_OCEAN_P1)).listings,
     };
   }
   if (pagesArg !== 'all') throw new Error(`--pages takes 1 or all, got "${pagesArg}"`);
   return {
-    sammel: (await createSammelEnteFetcher().fetchListings()).listings,
+    sammel: (await createSammelEnteFetcher(legoMinecraft3.shops['sammel-ente']!).fetchListings())
+      .listings,
     blue: (await createBlueOceanFetcher().fetchListings()).listings,
   };
 }

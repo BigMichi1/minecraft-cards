@@ -64,7 +64,8 @@ export interface FetchResult {
   /**
    * eBay items whose title cannot offer a series 3 single card: series 1 or 2, no series word
    * (unless its catalog name confirms its number, see nameMatchedCardIds), a pick list, a number
-   * range, or a listing with variations. Not "without card number".
+   * range, or a listing with variations. Not "without card number". sammel-ente and collect-it:
+   * card titles of another series than the category's.
    */
   skippedExcluded?: number;
   /** Product boxes or items without a usable link or title. */
@@ -77,8 +78,8 @@ export interface FetchResult {
 }
 
 /**
- * One shop's fetch, not yet bound to a collection (`shops/adapters.ts` binds it). The parsers
- * still read series 3 rules, so only `lego-minecraft-3` is bound for now.
+ * One shop's fetch for one collection's settings, not yet bound to it (`shops/adapters.ts` binds
+ * one per (collection, shop) the definition lists).
  */
 export interface ShopFetcher {
   readonly id: ShopId;
@@ -114,4 +115,16 @@ export class ShopLayoutError extends Error {
 export interface AdapterOptions {
   sleep?: (ms: number) => Promise<void>;
   delayMs?: number;
+}
+
+/** The shops this process checks, per collection (from the adapters). */
+export type EnabledShops = ReadonlyMap<CollectionId, readonly ShopId[]>;
+
+/**
+ * Whether two series labels name one series (`Serie 1`, `Serie 01`, `1`): their numbers are
+ * compared as numbers, so a zero-padded label is no other series.
+ */
+export function sameSeries(a: string, b: string): boolean {
+  const number = (label: string) => Number(/(\d+)/.exec(label)?.[1] ?? Number.NaN);
+  return number(a) === number(b);
 }

@@ -1,4 +1,6 @@
 import { COLLECTION_IDS, type CollectionDefinition, type CollectionId } from './ids';
+import { legoMinecraft1 } from './legoMinecraft1';
+import { legoMinecraft2 } from './legoMinecraft2';
 import { legoMinecraft3 } from './legoMinecraft3';
 
 /**
@@ -6,6 +8,8 @@ import { legoMinecraft3 } from './legoMinecraft3';
  * under another id, is a compile error.
  */
 const DEFINITIONS: { readonly [K in CollectionId]: CollectionDefinition<K> } = {
+  'lego-minecraft-1': legoMinecraft1,
+  'lego-minecraft-2': legoMinecraft2,
   'lego-minecraft-3': legoMinecraft3,
 };
 
@@ -30,4 +34,9 @@ export function collectionName(id: CollectionId): string {
 /** Slash command choices for the `collection` option. */
 export function collectionChoices(): { name: string; value: CollectionId }[] {
   return COLLECTIONS.map((c) => ({ name: c.name, value: c.id }));
+}
+
+/** The reply for a collection whose card list has not been synced from laststicker yet. */
+export function notLoadedText(collection: CollectionId): string {
+  return `The card list of ${collectionName(collection)} is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).`;
 }

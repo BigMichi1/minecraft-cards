@@ -1,69 +1,157 @@
 import type { CardId } from '../cards/cardId';
-import type { CollectionId } from '../collections/ids';
-import { legoMinecraft3 } from '../collections/legoMinecraft3';
+import {
+  LEGACY_COLLECTION,
+  type CollectionDefinition,
+  type CollectionId,
+} from '../collections/ids';
+import { COLLECTIONS } from '../collections/index';
 import type { Config } from '../config';
 import logger from '../utils/logger';
+import { createPacedFetch } from '../utils/pacedFetch';
 import { createBlueOceanFetcher } from './blueOcean';
 import { createCollectItFetcher } from './collectIt';
 import { createEbayFetcher } from './ebay';
 import { createSammelEnteFetcher } from './sammelEnte';
-import { SHOP_IDS, type ShopAdapter, type ShopFetcher, type ShopId } from './types';
+import {
+  SHOP_IDS,
+  type EnabledShops,
+  type FetchFn,
+  type ShopAdapter,
+  type ShopFetcher,
+  type ShopId,
+} from './types';
 
 /**
- * One factory per shop that needs no credentials. A `ShopId` without an entry here is a
- * compile error, so a new shop cannot be left out of the checks by accident.
+ * Between two page requests to one shop, also across collections (CLAUDE.md, shop requests).
+ * The fetchers keep their own 1500 ms sleep between their pages too; the pacer adds the wait
+ * between one collection's last page and the next one's first (it waits only what is left).
  */
-const SHOP_FACTORIES: Record<Exclude<ShopId, 'ebay'>, () => ShopFetcher> = {
-  'sammel-ente': () => createSammelEnteFetcher(),
-  'blue-ocean': () => createBlueOceanFetcher(),
-  'collect-it': () => createCollectItFetcher(),
+const SHOP_DELAY_MS = 1500;
+
+/** Each shop's host: every fetcher of one shop shares one pacer for it. */
+export const SHOP_HOSTS: Readonly<Record<Exclude<ShopId, 'ebay'>, string>> = {
+  'sammel-ente': 'shop-sammel-ente.de',
+  'blue-ocean': 'www.blue-ocean.de',
+  'collect-it': 'www.collect-it.de',
 };
 
+/** Test seams: the definitions, the fetch the pacers wrap, and their clock. */
+export interface AdapterDeps {
+  readonly collections?: readonly CollectionDefinition[];
+  readonly fetchFn?: FetchFn;
+  readonly now?: () => number;
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
 /**
- * The collection every shop is checked for. The shop parsers still read series 3 rules only
- * (blue-ocean "On Fire" titles, eBay series words, sammel-ente's series 3 category), so binding a
- * fetcher to another collection would store series 3 listings under it; per-collection shop
- * settings come with the next collections.
+ * Throws for settings a run would get wrong: a category on another host than its shop (it would
+ * skip the shop's pacer), or blue-ocean or eBay for a collection their series 3 parsers do not
+ * read (they would store series 3 listings under it).
  */
-const COLLECTION: CollectionId = legoMinecraft3.id;
+function checkSettings(definition: CollectionDefinition): void {
+  for (const shop of ['sammel-ente', 'collect-it'] as const) {
+    const settings = definition.shops[shop];
+    if (!settings) continue;
+    const host = new URL(settings.category).hostname;
+    if (host !== SHOP_HOSTS[shop]) {
+      throw new Error(`${definition.id}: ${shop} category is on ${host}, not ${SHOP_HOSTS[shop]}`);
+    }
+  }
+  for (const shop of ['blue-ocean', 'ebay'] as const) {
+    if (definition.shops[shop] && definition.id !== LEGACY_COLLECTION) {
+      throw new Error(`${definition.id}: ${shop} is read for ${LEGACY_COLLECTION} only`);
+    }
+  }
+}
+
+/** The shops checked per collection, from the adapters (`/missing status`, `/stock`, `/card`). */
+export function enabledShopsOf(adapters: readonly ShopAdapter[]): EnabledShops {
+  const enabled = new Map<CollectionId, ShopId[]>();
+  for (const a of adapters) enabled.set(a.collection, [...(enabled.get(a.collection) ?? []), a.id]);
+  return enabled;
+}
+
+/**
+ * The fetcher of `shop` for `definition`, or null when the collection does not list the shop.
+ * A `ShopId` missing here is a compile error, so a new shop cannot be left out by accident.
+ */
+function fetcherFor(
+  shop: Exclude<ShopId, 'ebay'>,
+  definition: CollectionDefinition,
+  fetchFn: FetchFn
+): ShopFetcher | null {
+  switch (shop) {
+    case 'sammel-ente': {
+      const settings = definition.shops['sammel-ente'];
+      return settings ? createSammelEnteFetcher(settings, fetchFn) : null;
+    }
+    case 'collect-it': {
+      const settings = definition.shops['collect-it'];
+      return settings ? createCollectItFetcher(settings, fetchFn) : null;
+    }
+    case 'blue-ocean':
+      return definition.shops['blue-ocean'] ? createBlueOceanFetcher(fetchFn) : null;
+  }
+}
 
 function forCollection(fetcher: ShopFetcher, collection: CollectionId): ShopAdapter {
   return { id: fetcher.id, collection, fetchListings: () => fetcher.fetchListings() };
 }
 
 /**
- * Throws when a shop has two adapters. The run summary, a shop's recent peak and the shop
- * alert keys (`shop-error:<shop>`, ...) are keyed per shop, so a second adapter of one shop
- * (another collection) would overwrite or throttle the first one's; key them per collection
- * before allowing it.
+ * Throws when a shop has two adapters for one collection: the run summary, a shop's recent peak
+ * and the shop alert keys are keyed per (shop, collection).
  */
-export function checkOneAdapterPerShop(adapters: ShopAdapter[]): ShopAdapter[] {
-  const seen = new Set<ShopId>();
+export function checkOneAdapterPerShopAndCollection(adapters: ShopAdapter[]): ShopAdapter[] {
+  const seen = new Set<string>();
   for (const a of adapters) {
-    if (seen.has(a.id)) throw new Error(`two adapters for shop ${a.id}`);
-    seen.add(a.id);
+    const key = `${a.id}:${a.collection}`;
+    if (seen.has(key)) throw new Error(`two adapters for shop ${a.id} in ${a.collection}`);
+    seen.add(key);
   }
   return adapters;
 }
 
 /**
- * The shops this process checks, in SHOP_IDS order: every shop, plus eBay when its credentials
- * are set, each for `lego-minecraft-3`. `/missing status` shows the shops left out as not
- * enabled. `cardNames(collection)` gives eBay that collection's catalog names for titles
- * without a series word (read at the start of each eBay fetch, so after sammel-ente has updated
- * them in the same round).
+ * The shops this process checks: per collection (COLLECTIONS order), the shops its definition
+ * lists (SHOP_IDS order), eBay only when its credentials are set. The fetchers of one shop share
+ * one paced fetch, so its pages stay SHOP_DELAY_MS apart across collections too.
+ * `cardNames(collection)` gives eBay that collection's catalog names for titles without a series
+ * word (read at the start of each eBay fetch, after the catalog sync of the same round).
  */
 export function createShopAdapters(
   ebay: Config['ebay'],
-  cardNames?: (collection: CollectionId) => ReadonlyMap<CardId, string>
+  cardNames?: (collection: CollectionId) => ReadonlyMap<CardId, string>,
+  deps: AdapterDeps = {}
 ): ShopAdapter[] {
   if (!ebay) logger.warn('eBay disabled: EBAY_CLIENT_ID/EBAY_CLIENT_SECRET not set');
-  return checkOneAdapterPerShop(
-    SHOP_IDS.flatMap((id): ShopAdapter[] => {
-      if (id !== 'ebay') return [forCollection(SHOP_FACTORIES[id](), COLLECTION)];
-      if (!ebay) return [];
-      const names = cardNames ? { cardNames: () => cardNames(COLLECTION) } : {};
-      return [forCollection(createEbayFetcher({ ...ebay, ...names }), COLLECTION)];
-    })
+  const base: FetchFn = deps.fetchFn ?? ((url, init) => fetch(url, init));
+  const pacers = new Map<string, FetchFn>();
+  const pacedFor = (shop: Exclude<ShopId, 'ebay'>): FetchFn => {
+    let paced = pacers.get(shop);
+    if (!paced) {
+      paced = createPacedFetch(base, new Set([SHOP_HOSTS[shop]]), SHOP_DELAY_MS, {
+        ...(deps.now ? { now: deps.now } : {}),
+        ...(deps.sleep ? { sleep: deps.sleep } : {}),
+      });
+      pacers.set(shop, paced);
+    }
+    return paced;
+  };
+  const definitions = deps.collections ?? COLLECTIONS;
+  for (const definition of definitions) checkSettings(definition);
+  return checkOneAdapterPerShopAndCollection(
+    definitions.flatMap((definition) =>
+      SHOP_IDS.flatMap((shop): ShopAdapter[] => {
+        if (shop === 'ebay') {
+          if (!ebay || !definition.shops.ebay) return [];
+          const collection = definition.id;
+          const names = cardNames ? { cardNames: () => cardNames(collection) } : {};
+          return [forCollection(createEbayFetcher({ ...ebay, ...names }), collection)];
+        }
+        const fetcher = fetcherFor(shop, definition, pacedFor(shop));
+        return fetcher ? [forCollection(fetcher, definition.id)] : [];
+      })
+    )
   );
 }

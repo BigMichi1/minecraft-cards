@@ -2,17 +2,22 @@ import * as cheerio from 'cheerio';
 import { normalizeCardId } from '../cards/cardId';
 import { sleep as realSleep } from '../utils/async';
 import { fetchText } from '../utils/http';
+import { clipText } from '../utils/messageLimit';
 import logger, { logError } from '../utils/logger';
+import type { CategoryShopSettings } from '../collections/ids';
 import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher } from './types';
-import { ShopLayoutError } from './types';
+import { sameSeries, ShopLayoutError } from './types';
 
-const BASE_URL = 'https://shop-sammel-ente.de/Minecraft/Serie-3/';
+const ORIGIN = 'https://shop-sammel-ente.de/';
 const PAGE_DELAY_MS = 1500;
 const MAX_PAGES = 60;
 
 // "LEGO Minecraft Serie 3 | #012 Squid" -> id "12" (canonical, normalizeCardId), name "Squid". Puzzle packs
 // ("... Puzzle-Paket #1 (154 - 162)") have no pipe, boosters and starter packs no "#".
 const TITLE_PATTERN = /\|\s*#((?:LE|XXL)?\d+)\s+(\S.*)$/i;
+// The series a card title names before its pipe ("LEGO Minecraft Serie 1 | #001 Steve"; also
+// "Serie1" or more words before the pipe).
+const SERIES_PATTERN = /\bSerie\s*(\d+)\b[^|]*\|/i;
 
 function parsePrice(text: string): Listing['price'] {
   const match = /(\d+(?:\.\d{3})*),(\d{2})\s*€/.exec(text.replace(/\s+/g, ' '));
@@ -21,20 +26,29 @@ function parsePrice(text: string): Listing['price'] {
   return { cents: euros * 100 + Number.parseInt(match[2] ?? '0', 10), currency: 'EUR' };
 }
 
+/** One parsed category page; see `parseSammelEntePage`. */
+export interface SammelEntePage {
+  listings: Listing[];
+  lastPage: number;
+  productCount: number;
+  skippedNoId: number;
+  /** Card titles of another series than `series`: no card of this category. */
+  skippedExcluded: number;
+  /** Card titles naming no series (with `series`): the title format changed; the fetch fails. */
+  noSeries: string[];
+  skippedInvalid: number;
+}
+
 /**
  * Parse one category page. `productCount` counts every product box, cards or not; of the boxes
  * that are not card listings, `skippedNoId` had a title naming a card number ("|#" or "| #")
  * that could not be read (other products such as boosters and puzzle packs are not counted) and
  * `skippedInvalid` no link or title. `lastPage` is the highest `?p=N` in the pagination (1 when
- * none).
+ * none). With `series`, a card title naming another series before its pipe is skipped and
+ * counted in `skippedExcluded` (its picture would otherwise become this collection's reference),
+ * and one naming none goes to `noSeries` (the fetch fails); null reads every title.
  */
-export function parseSammelEntePage(html: string): {
-  listings: Listing[];
-  lastPage: number;
-  productCount: number;
-  skippedNoId: number;
-  skippedInvalid: number;
-} {
+export function parseSammelEntePage(html: string, series: string | null): SammelEntePage {
   const $ = cheerio.load(html);
 
   let lastPage = 1;
@@ -45,6 +59,8 @@ export function parseSammelEntePage(html: string): {
 
   const listings: Listing[] = [];
   let skippedNoId = 0;
+  let skippedExcluded = 0;
+  const noSeries: string[] = [];
   let skippedInvalid = 0;
   const boxes = $('.card.product-box');
   boxes.each((_, el) => {
@@ -65,10 +81,24 @@ export function parseSammelEntePage(html: string): {
       if (/\|\s*#/.test(title)) skippedNoId++;
       return;
     }
+    if (series !== null) {
+      const titleSeries = SERIES_PATTERN.exec(title)?.[1];
+      if (titleSeries === undefined) {
+        // Not this category's title form any more: the fetch fails rather than drop the card
+        // (its stored listing would read as sold out).
+        noSeries.push(title);
+        return;
+      }
+      if (!sameSeries(titleSeries, series)) {
+        // Another series' card: its number is no card here, and its picture no reference.
+        skippedExcluded++;
+        return;
+      }
+    }
 
     listings.push({
       shop: 'sammel-ente',
-      url: new URL(href, BASE_URL).toString(),
+      url: new URL(href, ORIGIN).toString(),
       title,
       cardIds: [cardId],
       cardName: (match[2] ?? '').trim(),
@@ -80,21 +110,33 @@ export function parseSammelEntePage(html: string): {
       idConflict: false,
     });
   });
-  return { listings, lastPage, productCount: boxes.length, skippedNoId, skippedInvalid };
+  return {
+    listings,
+    lastPage,
+    productCount: boxes.length,
+    skippedNoId,
+    skippedExcluded,
+    noSeries,
+    skippedInvalid,
+  };
 }
 
+/** One collection's category (CollectionDefinition.shops). */
 export function createSammelEnteFetcher(
+  settings: CategoryShopSettings,
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
 ): ShopFetcher {
+  const { category, series } = settings;
   const sleep = options.sleep ?? realSleep;
   const delayMs = options.delayMs ?? PAGE_DELAY_MS;
   return {
     id: 'sammel-ente',
     async fetchListings(): Promise<FetchResult> {
-      const first = parseSammelEntePage(await fetchText(`${BASE_URL}?p=1`, fetchFn));
+      const first = parseSammelEntePage(await fetchText(`${category}?p=1`, fetchFn), series);
       const byUrl = new Map(first.listings.map((l) => [l.url, l]));
-      let { skippedNoId, skippedInvalid } = first;
+      let { skippedNoId, skippedExcluded, skippedInvalid } = first;
+      const noSeries = [...first.noSeries];
       if (first.lastPage > MAX_PAGES) {
         logger.warn(`sammel-ente: ${first.lastPage} pages, reading only the first ${MAX_PAGES}`);
       }
@@ -102,23 +144,38 @@ export function createSammelEnteFetcher(
       for (let page = 2; page <= lastPage; page++) {
         await sleep(delayMs);
         try {
-          const parsed = parseSammelEntePage(await fetchText(`${BASE_URL}?p=${page}`, fetchFn));
+          const parsed = parseSammelEntePage(
+            await fetchText(`${category}?p=${page}`, fetchFn),
+            series
+          );
           if (parsed.productCount === 0) {
             // A real category page always has product boxes up to lastPage.
             throw new ShopLayoutError(`sammel-ente: page ${page} of ${lastPage} has no products`);
           }
           for (const listing of parsed.listings) byUrl.set(listing.url, listing);
           skippedNoId += parsed.skippedNoId;
+          skippedExcluded += parsed.skippedExcluded;
+          noSeries.push(...parsed.noSeries);
           skippedInvalid += parsed.skippedInvalid;
         } catch (error) {
           logError(`sammel-ente page ${page} failed`, error);
           throw error;
         }
       }
+      if (noSeries.length > 0) {
+        throw new ShopLayoutError(
+          `sammel-ente: a card title names no series: ${JSON.stringify(clipText(noSeries[0]!, 200))}${noSeries.length > 1 ? ` and ${noSeries.length - 1} more` : ''}`
+        );
+      }
       if (byUrl.size === 0) {
         throw new ShopLayoutError('sammel-ente: no card listings found on any page');
       }
-      return { listings: [...byUrl.values()], skippedNoId, skippedInvalid };
+      return {
+        listings: [...byUrl.values()],
+        skippedNoId,
+        skippedExcluded,
+        skippedInvalid,
+      };
     },
   };
 }

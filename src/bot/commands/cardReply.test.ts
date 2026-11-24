@@ -17,6 +17,7 @@ const KLEINANZEIGEN_12 = 'https://www.kleinanzeigen.de/s-lego-minecraft-karte-12
 
 function input(over: Partial<CardInput> = {}): CardInput {
   return {
+    collection: 'lego-minecraft-3',
     card: cid('12'),
     name: 'Squid',
     reference: null,

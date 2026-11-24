@@ -5,6 +5,7 @@ import { listingManager } from '../database/listingManager';
 import { cards, catalogSyncs, users, wantedCards } from '../database/schema/index';
 import type { AlertFn } from '../check/adminAlert';
 import type { CollectionDefinition, CollectionId } from '../collections/ids';
+import { legoMinecraft2 } from '../collections/legoMinecraft2';
 import { legoMinecraft3 } from '../collections/legoMinecraft3';
 import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
 import { HttpError } from '../utils/http';
@@ -48,7 +49,16 @@ describe('syncCatalogs', () => {
     sleeps.push(ms);
   };
   const run = (now: number, over: Partial<Parameters<typeof syncCatalogs>[0]> = {}) =>
-    syncCatalogs({ now: () => now, alert, fetchSet, sleep, gate, ...over });
+    // Series 3 only unless a test names others: the fake page is the series 3 checklist.
+    syncCatalogs({
+      now: () => now,
+      alert,
+      fetchSet,
+      sleep,
+      gate,
+      collections: [legoMinecraft3],
+      ...over,
+    });
 
   beforeAll(() => initializeDatabase());
   beforeEach(() => {
@@ -87,6 +97,23 @@ describe('syncCatalogs', () => {
     } finally {
       spy.mockRestore();
     }
+  });
+
+  test("a collection's laststicker options reach the page read", async () => {
+    const seen: unknown[] = [];
+    await run(10, {
+      collections: [legoMinecraft2],
+      fetchSet: async (set, options) => {
+        seen.push([set, options]);
+        return { setId: 12126, rows: [] };
+      },
+    });
+    expect(seen).toEqual([
+      [
+        'blue_ocean_lego_minecraft_tnt_boom_bastic',
+        { scans: false, numberAliases: { XXL: 'XXL1' } },
+      ],
+    ]);
   });
 
   test('a collection never synced is due; a day later (less the slack) again, not before', async () => {
@@ -307,6 +334,7 @@ describe('syncCatalogs', () => {
     const other: CollectionDefinition = {
       id: 'other-set' as CollectionId,
       name: 'Other',
+      shops: {},
       laststicker: { set: 'other_set' },
     };
     await run(10, { collections: [legoMinecraft3, other], only: 'lego-minecraft-3', force: true });
@@ -342,6 +370,7 @@ describe('syncCatalogs', () => {
     const other: CollectionDefinition = {
       id: 'other-set' as CollectionId,
       name: 'Other',
+      shops: {},
       laststicker: { set: 'other_set' },
     };
     const outcomes = await run(10, { collections: [legoMinecraft3, other] });
@@ -352,7 +381,11 @@ describe('syncCatalogs', () => {
   });
 
   test('a collection without a laststicker set is skipped', async () => {
-    const plain: CollectionDefinition = { id: 'other-set' as CollectionId, name: 'Other' };
+    const plain: CollectionDefinition = {
+      id: 'other-set' as CollectionId,
+      name: 'Other',
+      shops: {},
+    };
     expect(await run(10, { collections: [plain] })).toEqual([]);
     expect(fetched).toEqual([]);
   });

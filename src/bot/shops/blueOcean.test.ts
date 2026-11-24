@@ -342,11 +342,29 @@ describe('parseBlueOceanPage across collections', () => {
       box(
         '/lego-minecraft-on-fire-blister-2dd00123',
         'LEGO Minecraft "On Fire" Blister',
-        'https://x.test/a/LMC_TCG3_.Blister.jpg'
+        'https://x.test/a/LMC_TCG3_.Pack.jpg'
       )
     );
     expect(pack).toMatchObject({ listings: [], skippedNoId: 0 });
     expect(pack.unreadable.size).toBe(0);
+  });
+
+  test('a renamed single in a series category is unreadable, not a pack', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const parsed = parseBlueOceanPage(
+        box(
+          `${S1}/karte-250-schildkroete`,
+          'Karte 250 | Schildkröte I LEGO Minecraft TCC 1',
+          'https://x.test/250_lego_minecraft_tcc-01_de.jpg'
+        )
+      );
+      expect(parsed).toMatchObject({ listings: [], skippedNoId: 1, skippedExcluded: 0 });
+      expect([...parsed.unreadable]).toEqual(['lego-minecraft-1']);
+      expect(parsed.unreadableUrls).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   test('a pack in a series category is no card and not counted', () => {
@@ -426,7 +444,7 @@ describe('createBlueOceanFetcher', () => {
     expect(listings.some((l) => l.cardIds[0] === '93')).toBe(true);
   });
 
-  test('the live probe pages pass the walk-total check as they are', async () => {
+  test('a single live probe page fails the walk-total check against its real total of 734', async () => {
     // tcc-p31 is the last page of the 2026-11-24 walk; its own total (734) is not met by one page.
     const { fetchFn } = fakeFetch({
       '?p=1': readFixture('blue-ocean-tcc-p31.html'),
@@ -448,6 +466,64 @@ describe('createBlueOceanFetcher', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
     expect((error as Error).message).toContain('read 24 products, the category names 48');
+  });
+
+  test('a walk reading more products than the total, or one product twice, is a layout error', async () => {
+    const p1 = readFixture('blue-ocean-p1.html');
+    const more = await createBlueOceanFetcher(walkOf([p1], 23).fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect((more as Error).message).toContain('read 24 products, the category names 23');
+    // Page 2 repeats one product of page 1 (products shifting between pages).
+    const repeated = page(
+      box(
+        '/nr.-9-squid-uncommonlego-minecraft-tcc-on-fire-2dd00088-12',
+        'Nr. 9 Squid LEGO Minecraft TCC "On Fire"',
+        'x.jpg'
+      )
+    );
+    const twice = await createBlueOceanFetcher(walkOf([p1, repeated], 25).fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(twice).toBeInstanceOf(ShopLayoutError);
+    expect((twice as Error).message).toContain('read 24 products, the category names 25');
+  });
+
+  test('a box without a link counts toward the walk total', async () => {
+    const noLink = page(box('', 'Nummer 012 I Steve', 'x.jpg').replace(' href=""', ''));
+    const p1 = readFixture('blue-ocean-p1.html');
+    const result = await createBlueOceanFetcher(walkOf([p1, noLink], 25).fetchFn, {
+      delayMs: 0,
+    }).fetchListings();
+    expect(result.skippedInvalid).toBe(1);
+    const short = await createBlueOceanFetcher(walkOf([p1, noLink], 24).fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(short).toBeInstanceOf(ShopLayoutError);
+  });
+
+  test('a total with a thousands separator is read', () => {
+    const html = withTotal(readFixture('blue-ocean-p1.html'), 0).replace(
+      '>0 Produkte<',
+      '>1.034 Produkte<'
+    );
+    expect(parseBlueOceanPage(html).total).toBe(1034);
+  });
+
+  test('an empty page 1 is a layout error naming it', async () => {
+    const { fetchFn } = fakeFetch({ '?p=1': readFixture('blue-ocean-p99.html') });
+    const error = await createBlueOceanFetcher(fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toBe('blue-ocean: page 1 shows no product boxes');
+  });
+
+  test('unreadable products name their collections', async () => {
+    const retitled = readFixture('blue-ocean-p1.html').replace(/On Fire/g, 'Off');
+    const { fetchFn } = walkOf([readFixture('blue-ocean-tcc-p2.html'), retitled]);
+    const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
+    expect(result.unreadableCollections).toEqual(['lego-minecraft-3']);
   });
 
   test('a page 1 without a product total is a layout error', async () => {

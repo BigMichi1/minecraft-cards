@@ -65,8 +65,8 @@ export interface FetchResult {
    * not parse, eBay titles naming no card (but not the picture candidates, which are listings
    * with `idSource` `picture`). Other sammel-ente products (boosters, puzzle packs) are not
    * counted. blue-ocean: series 1 and 2 singles whose `Nummer` is missing or differs from the
-   * URL's number, a category URL without a card number, and a single's picture at a URL of no
-   * known form.
+   * URL's number, a category URL without a card number but with a `Nummer` title or a single's
+   * picture, and a single's picture at a URL of no known form.
    */
   skippedNoId?: number;
   /**
@@ -107,9 +107,15 @@ export interface FetchResult {
   /**
    * blue-ocean: the URLs of products the walk saw but could not read (excluded, without a card
    * id, a single's picture at an unknown URL form). The runner neither refreshes nor marks their
-   * stored listings gone, and alerts the admin (`shop-unreadable:<shop>`).
+   * stored listings gone (`seenUrls`), and alerts the admin (`shop-unreadable:<shop>`).
    */
   unreadableUrls?: readonly string[];
+  /**
+   * blue-ocean: the collections those unreadable products belong to. The runner marks none of
+   * their listings gone this run: a product whose URL changed form leaves its stored listing's
+   * old URL unseen.
+   */
+  unreadableCollections?: readonly CollectionId[];
 }
 
 /**

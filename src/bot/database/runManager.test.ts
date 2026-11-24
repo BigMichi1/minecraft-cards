@@ -232,6 +232,9 @@ describe('runManager', () => {
     try {
       row({ 'lego-minecraft-1': { 'blue-ocean': { listings: 2 } } });
       expect(strict()).toBe(2);
+      // A readable collection without the shop's entry does not matter.
+      row({ 'lego-minecraft-1': { 'sammel-ente': { listings: 1 } } });
+      expect(strict()).toBe(2);
       row({ 'lego-minecraft-1': 'x' });
       expect(strict()).toBeUndefined();
     } finally {

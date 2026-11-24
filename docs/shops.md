@@ -49,12 +49,16 @@ changes or a new one is suggested.
     `LMC_TCG3_.P16.jpg`), or a series 1 or 3 title without its own marker.
   - **Ids:** series 1 and 2 the title's `Nummer NNN` (`Nummer 266 I Never trust this chef`),
     which must equal the URL's number; a picture number other than the id is an id conflict.
-    Otherwise `skippedNoId`, as are a URL with a card number but a title without `Nummer`, and
-    a single's picture (series part and card number) at a URL of no known form.
+    Otherwise `skippedNoId`, as are a URL with a card number but a title without `Nummer`, a
+    category product with a single's picture but neither number (a renamed single), and a
+    single's picture (series part and card number) at a URL of no known form.
   - **Unreadable products** (excluded or without id) keep their stored listings (neither
-    refreshed nor marked gone) and raise a throttled `shop-unreadable:blue-ocean` alert.
+    refreshed nor marked gone), no listing of their collection is marked gone that run (a
+    product whose URL changed form leaves its old URL unseen), and they raise a throttled
+    `shop-unreadable:blue-ocean` alert.
   - **The walk must read exactly the total** page 1 names (unique product URLs plus boxes
-    without a link); a missing total, a different count (an empty page in the middle, products
+    without a link; `1.034 Produkte` reads as 1034); page 1 without product boxes or a total, a
+    different count (an empty page in the middle, products
     shifting between pages) or reaching the 60-page cap is a `ShopLayoutError`, as is a walk
     without any card.
   - **An empty collection** (no card in the whole walk) is a shop error of that collection
@@ -63,7 +67,9 @@ changes or a new one is suggested.
     nothing is placed in it, and it had fewer than 5 listings at its recent peak (3 days), it
     sold out there (series 3 had 3 singles left on 2026-11-24): its listings are marked gone,
     with a throttled sold-out alert while the window still holds a run with listings. No recent
-    successful run, an unreadable run row or entry, or a failed lookup keep it a shop error.
+    successful run, an unreadable run row or entry, or a failed lookup keep it a shop error (the
+    alert says so); it clears once a check reads a card of it, or once no listing of it is
+    available any more (then it is stored empty, and its peak of 0 is readable from then on).
     eBay's empty searches are never read as a sell-out.
 
 ## eBay details

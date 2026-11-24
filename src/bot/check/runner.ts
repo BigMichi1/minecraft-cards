@@ -614,7 +614,8 @@ function toShopListing(source: Listing, l: StoredListing): Listing {
 /**
  * The recent peak, the baseline for the drop and the sold-out checks; undefined when there is none
  * or a lookup fails (logged, naming `outcome`: what the check does without it). `strict`: also
- * undefined when a run row in the window is unreadable (it may have held the peak).
+ * undefined when a run row in the window, or that shop and collection's entry in one, is
+ * unreadable (it may have held the peak).
  */
 function recentPeak(
   shop: ShopId,
@@ -631,6 +632,16 @@ function recentPeak(
       error
     );
     return undefined;
+  }
+}
+
+/** True when `shop` has no available listing in `collection`; a failed lookup is logged, false. */
+function availableNone(shop: ShopId, collection: CollectionId): boolean {
+  try {
+    return listingManager.availableCount(shop, collection) === 0;
+  } catch (error) {
+    logError(`shop ${shop} (${collection}): counting the available listings failed`, error);
+    return false;
   }
 }
 
@@ -651,7 +662,8 @@ function runCounts(result: FetchResult): Partial<ShopSummary> {
  * admin put it), and every covered collection is stored, so its gone listings are marked
  * unavailable as for a shop of one collection. A failed fetch, or a failure placing its
  * listings, is alerted once under the shop alone (`shop-error:<shop>`) and touches none of its
- * collections; admin mappings outside the covered collections (`shop-outside:<shop>`), and on
+ * collections; admin mappings outside the covered collections (`shop-outside:<shop>`), products
+ * it could not read (`shop-unreadable:<shop>`: their collections mark no listing gone), and on
  * eBay cut searches and unloaded card lists (`shop-truncated:ebay`,
  * `shop-names:ebay:<collections>`), are alerted once too and the run goes on. A collection the
  * run found nothing of (`emptyCollections`) is not stored, a shop error of that collection,
@@ -725,18 +737,20 @@ async function checkShop(
       `shop ${adapter.id}: empty collection(s) ${[...new Set(strays)].join(', ')} reported outside the run's collections, ignored`
     );
   }
-  // Products the shop still lists but the fetcher could not read: never marked gone.
+  // Products the shop still lists but the fetcher could not read: their collection's listings
+  // are not marked gone this run (a moved URL leaves the old one unseen), nor is their own URL.
   const unreadableUrls = result.unreadableUrls ?? [];
+  const unreadableCollections = new Set(result.unreadableCollections ?? []);
   if (unreadableUrls.length > 0) {
     await alert(
       `shop-unreadable:${runKey}`,
       clipText(
-        `Shop ${runShop}: ${unreadableUrls.length} product(s) could not be read (their stored listings are kept as they are): ${unreadableUrls.slice(0, MAX_NAMED).join(', ')}`,
+        `Shop ${runShop}: ${unreadableUrls.length} product(s) could not be read; no listing of ${[...unreadableCollections].map(collectionName).join(', ') || 'their collections'} is marked gone while they cannot: ${unreadableUrls.slice(0, MAX_NAMED).join(', ')}`,
         DISCORD_MESSAGE_LIMIT
       )
     );
   }
-  const seenUrls = placement ? new Set([...placement.seenUrls, ...unreadableUrls]) : undefined;
+  const seenUrls = new Set([...(placement?.seenUrls ?? []), ...unreadableUrls]);
   for (const collection of covered) {
     const found = placement
       ? result.listings.filter((l) => placement.homes.get(l.url) === collection)
@@ -748,7 +762,12 @@ async function checkShop(
     const peak = soldOutPossible
       ? recentPeak(adapter.id, collection, deps.now(), 'kept as a shop error', true)
       : undefined;
-    const soldOut = soldOutPossible && peak !== undefined && peak < EMPTY_COLLECTION_FLOOR;
+    // Without readable recent counts, a collection with no available listing left has nothing to
+    // lose: it is stored empty, so its peak (0) is readable again from the next run on.
+    const nothingAvailable =
+      soldOutPossible && peak === undefined && availableNone(adapter.id, collection);
+    const soldOut =
+      soldOutPossible && (peak !== undefined ? peak < EMPTY_COLLECTION_FLOOR : nothingAvailable);
     if (empty.has(collection) && !soldOut) {
       // Taken as a query, API or layout problem, not a sell-out (see EMPTY_COLLECTION_FLOOR).
       const message =
@@ -756,7 +775,7 @@ async function checkShop(
           ? `all searches of ${collectionName(collection)} returned no usable items`
           : `no card of ${collectionName(collection)} on any page`) +
         (soldOutPossible && peak === undefined
-          ? ' (no readable recent listing counts to tell a sell-out)'
+          ? ' (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or no listing of it is available)'
           : '');
       const homes = [...(placement?.homes.values() ?? [])];
       const dropped = homes.filter((c) => c === collection).length;
@@ -776,15 +795,15 @@ async function checkShop(
       continue;
     }
     if (soldOut) {
-      const message = `no card of ${collectionName(collection)} on any page, at most ${peak} listing(s) in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)}: read as sold out, its listings are marked gone`;
-      if (peak > 0) {
+      const message = `no card of ${collectionName(collection)} on any page, at most ${peak ?? 0} listing(s) in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)}: read as sold out, its listings are marked gone`;
+      if (peak !== undefined && peak > 0) {
         logger.warn(`shop ${adapter.id}: ${message}`);
         await alert(
           `shop-soldout:${adapter.id}:${collection}`,
           `Shop ${adapter.id} (${collectionName(collection)}): ${message}. If the shop still sells them, check its URL and title forms (docs/shops.md).`
         );
       } else {
-        // Sold out for the whole window: told already, nothing left to mark gone.
+        // Sold out for the whole window (told already) or nothing available: nothing to mark gone.
         logger.info(`shop ${adapter.id}: ${collectionName(collection)} still sold out`);
       }
     }
@@ -800,7 +819,8 @@ async function checkShop(
       stored,
       fetched,
       seenUrls,
-      soldOut
+      soldOut,
+      !unreadableCollections.has(collection)
     );
   }
 }
@@ -868,7 +888,8 @@ async function storeShopResult(
   stored: StoredListing[],
   fetched: Map<string, Listing>,
   seenUrls?: ReadonlySet<string>,
-  soldOut = false
+  soldOut = false,
+  markGone = true
 ): Promise<void> {
   const key = `${adapter.id}:${collection}`;
   const shop = `${adapter.id} (${collectionName(collection)})`;
@@ -881,6 +902,7 @@ async function storeShopResult(
     const ours = listingManager.upsertFromRun(adapter.id, collection, found, deps.now(), {
       moveFromOtherCollections: shared,
       ...(seenUrls ? { seenUrls } : {}),
+      markGone,
     });
     stored.push(...ours);
     // Only listings stored under this collection count here: a URL another collection holds is

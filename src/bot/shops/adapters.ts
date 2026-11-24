@@ -45,13 +45,13 @@ export interface AdapterDeps {
 
 /**
  * Throws for settings a run would get wrong: a category on another host than its shop (it would
- * skip the shop's pacer), blue-ocean settings without a product code (its root-URL cards would never be placed, all
- * of series 3's), with one that is not lowercase letters and digits (it is put into a regular
- * expression and compared with lowercased URLs), with an empty picture part (in every file name),
- * an empty category path or one holding `/` (never matched, yet it makes the collection read titles
- * by `Nummer`), or with a `g`/`y` title or exclusion marker, or eBay settings without a search (the
- * collection's listings would be marked gone, never searched) or with a `g`/`y` marker (`test`
- * would keep state between titles).
+ * skip the shop's pacer), blue-ocean settings without a product code (its root-URL cards would
+ * never be placed, all of series 3's), with one that is not lowercase letters and digits (it is put
+ * into a regular expression and compared with lowercased URLs), with an empty picture part (in
+ * every file name), an empty category path or one holding `/` (never matched, yet it makes the
+ * collection read titles by `Nummer`), or with a `g`/`y` title or exclusion marker, or eBay
+ * settings without a search (the collection's listings would be marked gone, never searched) or
+ * with a `g`/`y` marker (`test` would keep state between titles).
  */
 function checkSettings(definition: CollectionDefinition): void {
   for (const shop of ['sammel-ente', 'collect-it'] as const) {

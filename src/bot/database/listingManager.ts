@@ -199,7 +199,9 @@ export const listingManager = {
   /**
    * Insert or update by url; listings of `shop` in `collection` missing from `found` become
    * unavailable (eBay: once unseen for EBAY_MISSING_GRACE_MS), unless the run saw them
-   * elsewhere (`seenUrls`: a shared run's other collections). Ended auctions are unavailable.
+   * (`seenUrls`: a shared run's other collections, and products the shop still lists but the run
+   * could not read), or `markGone` is false (the run could not read every product of the
+   * collection). Ended auctions are unavailable.
    * A URL already stored under another collection (stored there first) is left as it is, not
    * returned, not marked unavailable by this run, and logged; with `moveFromOtherCollections`
    * (eBay, whose titles name their collection) an unmapped listing of the same shop moves to
@@ -215,6 +217,7 @@ export const listingManager = {
     options: {
       readonly moveFromOtherCollections?: boolean;
       readonly seenUrls?: ReadonlySet<string>;
+      readonly markGone?: boolean;
     } = {}
   ): StoredListing[] {
     const foreign: string[] = [];
@@ -356,7 +359,7 @@ export const listingManager = {
               : undefined
           )
         );
-      gone.run();
+      if (options.markGone !== false) gone.run();
       return load(
         tx,
         ids.length === 0 ? [] : tx.select().from(listings).where(inArray(listings.id, ids)).all()
@@ -560,6 +563,21 @@ export const listingManager = {
       .values({ discordId, listingId, availableSince })
       .onConflictDoNothing()
       .run();
+  },
+
+  /** How many listings of `shop` in `collection` are available now. */
+  availableCount(shop: ShopId, collection: CollectionId): number {
+    return db
+      .select({ id: listings.id })
+      .from(listings)
+      .where(
+        and(
+          eq(listings.shop, shop),
+          eq(listings.collection, collection),
+          eq(listings.available, true)
+        )
+      )
+      .all().length;
   },
 
   getByUrl(url: string): StoredListing | undefined {

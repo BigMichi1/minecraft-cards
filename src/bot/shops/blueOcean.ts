@@ -121,6 +121,18 @@ function idFromNumberedPicture(file: string): CardId | null {
   return match ? normalizeCardId(match[1] ?? '') : null;
 }
 
+/** True when `picture` is a single of `collection`: its series part and a card number. */
+function isSinglePicture(collection: BlueOceanCollection, picture: string): boolean {
+  if (collection.picture === undefined || !picture.includes(collection.picture.toLowerCase())) {
+    return false;
+  }
+  const id =
+    collection.categoryPath !== undefined
+      ? idFromNumberedPicture(picture)
+      : idFromSeries3Picture(picture);
+  return id !== null;
+}
+
 /** One parsed listing page (`parseBlueOceanPage`). */
 export interface BlueOceanPage {
   readonly listings: readonly Listing[];
@@ -145,21 +157,21 @@ export interface BlueOceanPage {
 }
 
 /** The category's product total above the grid: `<div …>734 Produkte</div>`. */
-const PRODUCT_TOTAL = />\s*(\d+) Produkte\s*</;
+const PRODUCT_TOTAL = />\s*(\d{1,3}(?:\.\d{3})+|\d+) Produkte\s*</;
 
 /**
  * Parse one listing page. `productCount` counts every product box of the listing grid, cards or
  * not, so the caller can tell an exhausted pagination from a page of non-card products. Each
- * product is placed in a collection by its URL (`placeByUrl`). Ignored (in `productCount` only,
- * in no skipped count): products no collection's URL names and whose picture is no collection's
- * single picture (a series part and a card number; stickers, packs, other brands), and products
- * in a series 1 or 2 category without a `Nummer` title nor a card number in the URL (packs
- * there). `skippedExcluded` counts products whose title or picture contradicts their URL's
- * collection; `skippedNoId` series 1 and 2 singles whose title number is missing or differs from
- * the URL's number, a category URL without a card number, and products at an unknown URL with a
- * single's picture (`012_…_tcc-01_de.jpg`: a changed URL form); `skippedInvalid` boxes without a
- * link. Every skipped product's URL is in `unreadableUrls`. `collections` are the ones read; the others of the registry still exclude by title and
- * picture.
+ * product is placed in a collection by its URL (`placeByUrl`). Ignored (in `productCount` only, in
+ * no skipped count): products no collection's URL names and whose picture is no collection's single
+ * picture (a series part and a card number; stickers, packs, other brands), and products in a
+ * series 1 or 2 category without a `Nummer` title nor a card number in the URL (packs there).
+ * `skippedExcluded` counts products whose title or picture contradicts their URL's collection;
+ * `skippedNoId` series 1 and 2 singles whose title number is missing or differs from the URL's
+ * number, a category URL without a card number, and products at an unknown URL with a single's
+ * picture (`012_…_tcc-01_de.jpg`: a changed URL form); `skippedInvalid` boxes without a link. Every
+ * excluded or id-less product's URL is in `unreadableUrls`. `collections` are the ones read; the
+ * others of the registry still exclude by title and picture.
  */
 export function parseBlueOceanPage(
   html: string,
@@ -200,14 +212,7 @@ export function parseBlueOceanPage(
     if (!placement) {
       // A single's picture (a series part and a card number, `250_…_tcc-01_de.jpg`) at a URL of
       // no known form: count it, so a changed URL form is seen. Pack pictures carry no number.
-      const named = collections.filter(
-        (c) =>
-          c.picture !== undefined &&
-          picture.includes(c.picture.toLowerCase()) &&
-          (c.categoryPath !== undefined
-            ? idFromNumberedPicture(picture)
-            : idFromSeries3Picture(picture)) !== null
-      );
+      const named = collections.filter((c) => isSinglePicture(c, picture));
       if (named.length > 0) {
         logger.warn(
           `blue-ocean: "${title}" (${href}) has a card picture but no known URL form, skipping`
@@ -222,8 +227,18 @@ export function parseBlueOceanPage(
     // A collection with a category path numbers its singles in the title (`Nummer NNN`).
     const numbered = collection.categoryPath !== undefined;
     const titleNumber = TITLE_NUMBER.exec(title);
-    // A pack in the series' category: no `Nummer` title and no card number in its URL.
-    if (numbered && !titleNumber && urlNumber === null) return;
+    // A pack in the series' category: no `Nummer` title and no card number in its URL, nor a
+    // single's picture (a renamed single is unreadable, not a pack).
+    if (numbered && !titleNumber && urlNumber === null) {
+      if (!isSinglePicture(collection, picture)) return;
+      logger.warn(
+        `blue-ocean: "${title}" (${href}) has a card picture but no card number, skipping`
+      );
+      unreadable.add(collection.id);
+      unreadableUrls.push(url);
+      skippedNoId++;
+      return;
+    }
 
     if (contradicts(collection, title, picture, known)) {
       logger.warn(`blue-ocean: "${title}" (${href}) names another series than its URL's, skipping`);
@@ -281,7 +296,10 @@ export function parseBlueOceanPage(
     unreadable,
     unreadableUrls,
     productUrls,
-    total: ((m) => (m ? Number.parseInt(m[1] ?? '', 10) : null))(PRODUCT_TOTAL.exec(html)),
+    // German thousands: `1.034 Produkte`.
+    total: ((m) => (m ? Number.parseInt((m[1] ?? '').replaceAll('.', ''), 10) : null))(
+      PRODUCT_TOTAL.exec(html)
+    ),
   };
 }
 
@@ -320,6 +338,7 @@ export function createBlueOceanFetcher(
           if (!parsed.isCategoryPage) {
             throw new ShopLayoutError(`blue-ocean: page ${page} is not a category page`);
           }
+          if (page === 1) throw new ShopLayoutError('blue-ocean: page 1 shows no product boxes');
           exhausted = true;
           break;
         }
@@ -367,6 +386,13 @@ export function createBlueOceanFetcher(
         ...(emptyCollections.length > 0 ? { emptyCollections } : {}),
         ...(mayHaveSoldOut.length > 0 ? { mayHaveSoldOut } : {}),
         ...(unreadableUrls.size > 0 ? { unreadableUrls: [...unreadableUrls] } : {}),
+        ...(unreadable.size > 0
+          ? {
+              unreadableCollections: collections
+                .filter((c) => unreadable.has(c.id))
+                .map((c) => c.id),
+            }
+          : {}),
       };
     },
   };

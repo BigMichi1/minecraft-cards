@@ -473,8 +473,9 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   `Boom-Bastic`, `On Fire`, or picture part `_tcc-01`, `_tcc-02`, `tcg3_.p`, or a missing own
   marker) is skipped and counted (`skippedExcluded`). Series 1 and 2 ids are the title's
   `Nummer NNN`, which must equal the URL's number (else `skippedNoId`); series 3's stay the URL
-  suffix. A skipped product's stored listing is neither refreshed nor marked gone
-  (`unreadableUrls`).
+  suffix. An excluded or id-less product's stored listing is neither refreshed nor marked gone
+  (`unreadableUrls`), and its collection marks no listing gone that run
+  (`unreadableCollections`).
 - The walk must read exactly the product total page 1 names; another count, no total or the
   page cap is a `ShopLayoutError`.
 - `FetchResult.emptySearches` is now `emptyCollections`: a shared run's collections it found
@@ -482,7 +483,8 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   shop error of that collection whose listings stay untouched, unless blue-ocean says it may have
   sold out (`mayHaveSoldOut`: no product of it seen but unreadable), nothing is placed in it and
   its recent peak was below 5 listings (`EMPTY_COLLECTION_FLOOR`; no recent successful run, an
-  unreadable run row or entry, or a failed lookup keep it an error): then it sold out, is stored
+  unreadable run row or entry, or a failed lookup keep it an error, unless no listing of it is
+  available any more): then it sold out, is stored
   empty and the admin is told (`shop-soldout`). eBay never reports a sell-out.
 
 ## Left to the builder

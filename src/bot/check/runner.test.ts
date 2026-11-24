@@ -515,7 +515,7 @@ describe('runCheck', () => {
         const s = await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
         expect(listingManager.getByUrl(last.url)!.available).toBe(true);
         expect(s.shops['blue-ocean']?.error).toBe(
-          'no card of LEGO Minecraft Serie 3 "On Fire" on any page (no readable recent listing counts to tell a sell-out)'
+          'no card of LEGO Minecraft Serie 3 "On Fire" on any page (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or no listing of it is available)'
         );
 
         const again = card('4', 'lego-minecraft-3');
@@ -536,13 +536,76 @@ describe('runCheck', () => {
         const kept = card('8', 'lego-minecraft-3');
         const other = card('9', 'lego-minecraft-3');
         await runCheck(depsWith([walk([s1, kept, other])]));
+        const before = listingManager.getByUrl(kept.url)!.lastSeenAt;
         clock += 60 * 60 * 1000;
-        await runCheck(depsWith([walk([s1, other], { unreadableUrls: [kept.url] })]));
-        expect(listingManager.getByUrl(kept.url)!.available).toBe(true);
+        await runCheck(
+          depsWith([
+            walk([s1, other], {
+              unreadableUrls: [kept.url],
+              unreadableCollections: ['lego-minecraft-3'],
+            }),
+          ])
+        );
+        expect(listingManager.getByUrl(kept.url)).toMatchObject({
+          available: true,
+          lastSeenAt: before,
+        });
         const unreadable = alerts.filter((a) => a.includes('could not be read'));
         expect(unreadable).toHaveLength(1);
         expect(unreadable[0]).toContain(kept.url);
         expect(runManager.lastAlertAt('shop-unreadable:blue-ocean')).toBeDefined();
+        expect(unreadable[0]).toContain('no listing of LEGO Minecraft Serie 3');
+      });
+
+      test('a collection with an unreadable product marks none of its listings gone (a moved URL)', async () => {
+        const moved = card('8', 'lego-minecraft-3');
+        const stays = card('9', 'lego-minecraft-3');
+        const s1gone = card('101', 'lego-minecraft-1');
+        await runCheck(depsWith([walk([s1, s1gone, moved, stays])]));
+        clock += 60 * 60 * 1000;
+        await runCheck(
+          depsWith([
+            walk([s1, stays], {
+              unreadableUrls: ['https://www.blue-ocean.de/p/new-form/8'],
+              unreadableCollections: ['lego-minecraft-3'],
+            }),
+          ])
+        );
+        expect(listingManager.getByUrl(moved.url)!.available).toBe(true);
+        // Another collection's gone listings are still marked gone.
+        expect(listingManager.getByUrl(s1gone.url)!.available).toBe(false);
+      });
+
+      test('without recent counts but with no available listing left, it is stored empty and readable again', async () => {
+        const last = card('3', 'lego-minecraft-3');
+        await runCheck(depsWith([walk([s1, last])]));
+        clock += 60 * 60 * 1000;
+        await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
+        expect(listingManager.getByUrl(last.url)!.available).toBe(false);
+        clock += 4 * 24 * 60 * 60 * 1000;
+        const s = await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
+        expect(s.shops['blue-ocean']).toEqual({ listings: 0 });
+        expect(runManager.lastAlertAt('shop-error:blue-ocean:lego-minecraft-3')).toBeUndefined();
+        expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', clock)).toBe(0);
+      });
+
+      test('a failing available-listing count keeps it a shop error', async () => {
+        const count = spyOn(listingManager, 'availableCount').mockImplementation(() => {
+          throw new Error('database is locked');
+        });
+        const logged = spyOn(logger, 'log').mockImplementation(() => logger);
+        try {
+          const s = await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
+          expect(s.shops['blue-ocean']?.error).toContain('no readable recent listing counts');
+          expect(
+            logged.mock.calls.some((c) =>
+              String(c[1]).includes('counting the available listings failed')
+            )
+          ).toBe(true);
+        } finally {
+          count.mockRestore();
+          logged.mockRestore();
+        }
       });
 
       test('with 5 recent listings, or not marked as maybe sold out, it stays a shop error', async () => {

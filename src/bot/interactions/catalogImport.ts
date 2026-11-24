@@ -1,6 +1,7 @@
 import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction } from 'discord.js';
 import type { CardId } from '../cards/cardId';
+import type { CollectionId } from '../collections/ids';
 import { catalogManager, type ImportPreview } from '../database/catalogManager';
 import { replyWithError } from '../utils/interactionReply';
 import { errorMessage } from '../utils/async';
@@ -11,33 +12,41 @@ import { joinWithinLimit } from '../utils/messageLimit';
 const TTL_MS = 10 * 60_000;
 const EXPIRED = 'This import expired, run the command again.';
 
+/** A previewed import: the collection and the card ids to save. */
+export interface PendingImport {
+  collection: CollectionId;
+  ids: CardId[];
+}
+
 export interface ImportStore {
-  put(ids: CardId[]): string;
-  /** The pending ids, without consuming the token; undefined when unknown or expired. */
-  peek(token: string): CardId[] | undefined;
-  /** Returns the pending ids once; the token is consumed. */
-  take(token: string): CardId[] | undefined;
+  put(collection: CollectionId, ids: CardId[]): string;
+  /** The pending import, without consuming the token; undefined when unknown or expired. */
+  peek(token: string): PendingImport | undefined;
+  /** Returns the pending import once; the token is consumed. */
+  take(token: string): PendingImport | undefined;
 }
 
 export function createImportStore(now: () => number): ImportStore {
-  const pending = new Map<string, { ids: CardId[]; expiresAt: number }>();
+  const pending = new Map<string, PendingImport & { expiresAt: number }>();
+  const unexpired = (entry: PendingImport & { expiresAt: number }): PendingImport | undefined =>
+    entry.expiresAt > now() ? { collection: entry.collection, ids: entry.ids } : undefined;
   return {
-    put(ids) {
+    put(collection, ids) {
       const t = now();
       for (const [key, entry] of pending) if (entry.expiresAt <= t) pending.delete(key);
       const token = crypto.randomUUID();
-      pending.set(token, { ids, expiresAt: t + TTL_MS });
+      pending.set(token, { collection, ids, expiresAt: t + TTL_MS });
       return token;
     },
     peek(token) {
       const entry = pending.get(token);
-      return entry && entry.expiresAt > now() ? entry.ids : undefined;
+      return entry ? unexpired(entry) : undefined;
     },
     take(token) {
       const entry = pending.get(token);
       if (!entry) return undefined;
       pending.delete(token);
-      return entry.expiresAt > now() ? entry.ids : undefined;
+      return unexpired(entry);
     },
   };
 }
@@ -79,15 +88,15 @@ export async function handleCatalogButton(
     const sep = i.customId.indexOf(':');
     const action = i.customId.slice(0, sep);
     const token = i.customId.slice(sep + 1);
-    const ids = store.peek(token);
-    if (!ids) {
+    const entry = store.peek(token);
+    if (!entry) {
       store.take(token);
       await i.update({ content: EXPIRED, components: [] });
       return;
     }
     if (action === 'catalog-save') {
       try {
-        catalogManager.applyImport(ids);
+        catalogManager.applyImport(entry.collection, entry.ids);
       } catch (err) {
         // The token stays: the buttons still work for another try.
         logError('[CATALOG IMPORT] saving failed', err);

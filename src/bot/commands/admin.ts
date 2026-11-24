@@ -20,6 +20,8 @@ import { errorMessage } from '../utils/async';
 import { ephemeral, replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
 import { DISCORD_MESSAGE_LIMIT, joinWithinLimit } from '../utils/messageLimit';
+import type { CollectionId } from '../collections/ids';
+import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
 
 const LIST_OPTION_MAX_LENGTH = 6000;
 
@@ -35,7 +37,8 @@ export const data = new SlashCommandBuilder()
   .addSubcommand((sub) =>
     sub
       .setName('map')
-      .setDescription('Set the cards of a stored listing')
+      .setDescription('Set the collection and cards of a stored listing')
+      .addStringOption(collectionOption)
       .addStringOption((o) => o.setName('url').setDescription('Listing URL').setRequired(true))
       .addStringOption((o) =>
         o.setName('cards').setDescription('Card numbers, e.g. 12, LE8').setRequired(true)
@@ -59,6 +62,7 @@ export const data = new SlashCommandBuilder()
         sub
           .setName('import')
           .setDescription('Import a pasted laststicker checklist')
+          .addStringOption(collectionOption)
           .addStringOption((o) =>
             o
               .setName('list')
@@ -134,19 +138,22 @@ function statusText(): string {
   return `${head}\n\n${holdsText(held, DISCORD_MESSAGE_LIMIT - head.length - 2)}`;
 }
 
-function mapCards(url: string, cardsInput: string): string {
-  const parsed = parseKnownCardList(cardsInput);
+function mapCards(url: string, collection: CollectionId, cardsInput: string): string {
+  const parsed = parseKnownCardList(collection, cardsInput);
   if (!parsed.ok) {
     return parsed.reason === 'empty'
       ? 'No card numbers found. Example: 12, LE8'
       : joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(parsed.invalid)]);
   }
-  const listing = listingManager.overrideCards(url, parsed.ids, Date.now());
+  const listing = listingManager.overrideCards(url, collection, parsed.ids, Date.now());
   if (!listing) return 'No stored listing with that URL.';
   return joinWithinLimit('Listing now maps to: ', formatCardList(listing.cardIds).split(', '));
 }
 
-async function importCatalog(interaction: ChatInputCommandInteraction): Promise<void> {
+async function importCatalog(
+  interaction: ChatInputCommandInteraction,
+  collection: CollectionId
+): Promise<void> {
   const { ids, invalid } = parseChecklist(interaction.options.getString('list', true));
   if (invalid.length > 0) {
     await interaction.reply(
@@ -158,7 +165,7 @@ async function importCatalog(interaction: ChatInputCommandInteraction): Promise<
     await interaction.reply(ephemeral('No card ids found. Nothing changed.'));
     return;
   }
-  const token = importStore.put(ids);
+  const token = importStore.put(collection, ids);
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`catalog-save:${token}`)
@@ -170,7 +177,7 @@ async function importCatalog(interaction: ChatInputCommandInteraction): Promise<
       .setStyle(ButtonStyle.Secondary)
   );
   await interaction.reply({
-    content: buildPreviewText(catalogManager.previewImport(ids)),
+    content: buildPreviewText(catalogManager.previewImport(collection, ids)),
     components: [row],
     flags: MessageFlags.Ephemeral,
   });
@@ -188,20 +195,27 @@ export async function execute(
     const group = interaction.options.getSubcommandGroup(false);
     const sub = interaction.options.getSubcommand();
     if (group === 'catalog' && sub === 'import') {
-      await importCatalog(interaction);
+      const collection = readCollection(interaction);
+      if (!collection) await interaction.reply(ephemeral(UNKNOWN_COLLECTION));
+      else await importCatalog(interaction, collection);
       return;
     }
     switch (sub) {
-      case 'map':
+      case 'map': {
+        const collection = readCollection(interaction);
         await interaction.reply(
           ephemeral(
-            mapCards(
-              interaction.options.getString('url', true),
-              interaction.options.getString('cards', true)
-            )
+            collection
+              ? mapCards(
+                  interaction.options.getString('url', true),
+                  collection,
+                  interaction.options.getString('cards', true)
+                )
+              : UNKNOWN_COLLECTION
           )
         );
         return;
+      }
       case 'clear': {
         const listing = listingManager.clearHold(interaction.options.getString('url', true));
         await interaction.reply(

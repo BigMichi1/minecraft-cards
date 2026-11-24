@@ -68,7 +68,8 @@ function fake(
     options: {
       getSubcommandGroup: () => group ?? null,
       getSubcommand: () => sub,
-      getString: (name: string) => opts[name] ?? null,
+      getString: (name: string) =>
+        opts[name] ?? (name === 'collection' ? 'lego-minecraft-3' : null),
     },
     reply: async (p: any) => {
       replies.push(p);
@@ -155,14 +156,51 @@ describe('/admin', () => {
   });
 
   test('map overrides the cards of a listing', async () => {
-    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
     await adminExecute(fakeAdmin(undefined, 'map', { url: blue12.url, cards: '8' }), ctx);
     expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual([cid('8')]);
     expect(lastReply().flags).toBe(MessageFlags.Ephemeral);
   });
 
+  test('map takes the collection first and passes it on', async () => {
+    const map = (data.toJSON().options as unknown as { name: string; options: unknown[] }[]).find(
+      (o) => o.name === 'map'
+    )!;
+    expect(map.options[0]).toMatchObject({ name: 'collection', required: true });
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+    const spy = spyOn(listingManager, 'overrideCards');
+    try {
+      await adminExecute(
+        fakeAdmin(undefined, 'map', {
+          url: blue12.url,
+          cards: '8',
+          collection: 'lego-minecraft-3',
+        }),
+        ctx
+      );
+      expect(spy.mock.calls[0]!.slice(0, 3)).toEqual([blue12.url, 'lego-minecraft-3', ids('8')]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('map and catalog import with an unknown collection change nothing', async () => {
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+    await adminExecute(
+      fakeAdmin(undefined, 'map', { url: blue12.url, cards: '8', collection: 'lego-minecraft-9' }),
+      ctx
+    );
+    expect(lastReply()).toEqual({ content: 'Unknown collection.', flags: MessageFlags.Ephemeral });
+    expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual([cid('12')]);
+    await adminExecute(
+      fakeAdmin('catalog', 'import', { list: '1, 2', collection: 'lego-minecraft-9' }),
+      ctx
+    );
+    expect(lastReply()).toEqual({ content: 'Unknown collection.', flags: MessageFlags.Ephemeral });
+  });
+
   test('map with an unknown card or URL changes nothing', async () => {
-    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
     await adminExecute(fakeAdmin(undefined, 'map', { url: blue12.url, cards: '8, 9999' }), ctx);
     expect(lastReply().content).toBe('Nothing changed. Unknown or invalid: 9999');
     expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual([cid('12')]);
@@ -171,7 +209,7 @@ describe('/admin', () => {
   });
 
   test('clear lifts the hold', async () => {
-    const [stored] = listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    const [stored] = listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
     listingManager.setOnHold(stored!.id);
     await adminExecute(fakeAdmin(undefined, 'clear', { url: blue12.url }), ctx);
     expect(listingManager.getByUrl(blue12.url)!.onHold).toBe(false);
@@ -221,6 +259,7 @@ describe('/admin', () => {
     expect(lastReply().content).not.toContain('On hold');
     const stored = listingManager.upsertFromRun(
       'blue-ocean',
+      'lego-minecraft-3',
       Array.from({ length: 12 }, (_, i) => ({
         ...blue12,
         url: `https://www.blue-ocean.de/p/${i + 1}`,
@@ -243,6 +282,7 @@ describe('/admin', () => {
     runManager.record(summary);
     const stored = listingManager.upsertFromRun(
       'blue-ocean',
+      'lego-minecraft-3',
       Array.from({ length: 10 }, (_, i) => ({
         ...blue12,
         url: `https://www.blue-ocean.de/${String(i).repeat(400)}`,
@@ -320,11 +360,11 @@ describe('/admin', () => {
       expect(lastReply().content).toContain('Added: LE23');
       expect(lastReply().content).toContain('Removed: none');
       expect(lastReply().components).toHaveLength(1);
-      expect(catalogManager.knownIds().has(cid('LE23'))).toBe(false);
+      expect(catalogManager.knownIds('lego-minecraft-3').has(cid('LE23'))).toBe(false);
     });
 
     test('lists what is still wanted when ids are removed', async () => {
-      userManager.setList('u1', 'LE22');
+      userManager.setList('u1', 'lego-minecraft-3', 'LE22');
       const without = STARTER_CHECKLIST.replace(/LE22,?\s*/, '').replace(/,\s*$/, '');
       await adminExecute(fakeAdmin('catalog', 'import', { list: without }), ctx);
       expect(lastReply().content).toContain('Removed: LE22');
@@ -342,7 +382,7 @@ describe('/admin', () => {
       expect(lastReply().content).toBe('No card ids found. Nothing changed.');
       await adminExecute(fakeAdmin('catalog', 'import', { list: header.trim() }), ctx);
       expect(lastReply().content).toBe('No card ids found. Nothing changed.');
-      expect(catalogManager.knownIds().size).toBeGreaterThan(200);
+      expect(catalogManager.knownIds('lego-minecraft-3').size).toBeGreaterThan(200);
     });
 
     test('an oversized preview stays within 2000 characters', async () => {

@@ -8,6 +8,8 @@ import { userManager } from '../database/userManager';
 import { SHOP_IDS, type ShopId } from '../shops/types';
 import { replyWithError } from '../utils/interactionReply';
 import logger, { logError } from '../utils/logger';
+import type { CollectionId } from '../collections/ids';
+import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
 import { needsLastSuccess } from './shopCell';
 import {
   buildStockPage,
@@ -26,6 +28,7 @@ export interface StockContext {
 export const data = new SlashCommandBuilder()
   .setName('stock')
   .setDescription('Every card and which shops have it in stock, page by page')
+  .addStringOption(collectionOption)
   .addStringOption((o) =>
     o
       .setName('only')
@@ -36,12 +39,18 @@ export const data = new SlashCommandBuilder()
 const LOAD_ERROR = 'Could not load the stock table. Please try again later.';
 
 /** Gather one page (all reads, for the user `userId`) and format it. */
-function page(userId: string, filter: StockFilter, pageNo: number, ctx: StockContext): StockPage {
+function page(
+  userId: string,
+  collection: CollectionId,
+  filter: StockFilter,
+  pageNo: number,
+  ctx: StockContext
+): StockPage {
   const now = Date.now();
   const cards =
     filter === 'missing'
-      ? userManager.getList(userId)
-      : [...catalogManager.knownIds()].sort(compareCardIds);
+      ? userManager.getList(userId, collection)
+      : [...catalogManager.knownIds(collection)].sort(compareCardIds);
   const latest = runManager.latestReadable();
   const lastSuccess: Partial<Record<ShopId, number | null>> = {};
   for (const shop of SHOP_IDS) {
@@ -50,13 +59,14 @@ function page(userId: string, filter: StockFilter, pageNo: number, ctx: StockCon
     }
   }
   return buildStockPage({
+    collection,
     cards,
     filter,
     page: pageNo,
     latest,
     enabledShops: ctx.enabledShops,
     lastSuccess,
-    listings: listingManager.listingsForCards(cards),
+    listings: listingManager.listingsForCards(collection, cards),
     now,
   });
 }
@@ -66,11 +76,16 @@ export async function execute(
   ctx: StockContext
 ): Promise<void> {
   try {
+    const collection = readCollection(interaction);
+    if (!collection) {
+      await interaction.reply({ content: UNKNOWN_COLLECTION, flags: MessageFlags.Ephemeral });
+      return;
+    }
     // Discord only sends one of the declared choices; anything else falls back to all.
     const only = interaction.options.getString('only');
     const filter = STOCK_FILTERS.find((f) => f === only) ?? 'all';
     await interaction.reply({
-      ...page(interaction.user.id, filter, 1, ctx),
+      ...page(interaction.user.id, collection, filter, 1, ctx),
       flags: MessageFlags.Ephemeral,
     });
   } catch (error) {
@@ -97,7 +112,9 @@ export async function handleStockButton(
       });
       return;
     }
-    await interaction.update(page(interaction.user.id, parsed.filter, parsed.page, ctx));
+    await interaction.update(
+      page(interaction.user.id, parsed.collection, parsed.filter, parsed.page, ctx)
+    );
   } catch (error) {
     logError(`[STOCK BUTTON] ${interaction.customId} failed`, error);
     await replyWithError(interaction, 'Error', LOAD_ERROR);

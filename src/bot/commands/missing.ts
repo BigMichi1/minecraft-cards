@@ -7,6 +7,8 @@ import { runManager } from '../database/runManager';
 import { userManager, type ListChange } from '../database/userManager';
 import { SHOP_IDS, type ShopId } from '../shops/types';
 import type { CardId } from '../cards/cardId';
+import type { CollectionId } from '../collections/ids';
+import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
 import { buildStatusReply, needsLastSuccess, type StatusReply } from './missingStatus';
 import { joinWithinLimit } from '../utils/messageLimit';
 import { replyWithError } from '../utils/interactionReply';
@@ -21,6 +23,7 @@ export const data = new SlashCommandBuilder()
     sub
       .setName('set')
       .setDescription('Replace your missing list')
+      .addStringOption(collectionOption)
       .addStringOption((o) =>
         o
           .setName('list')
@@ -33,6 +36,7 @@ export const data = new SlashCommandBuilder()
     sub
       .setName('add')
       .setDescription('Add cards to your missing list')
+      .addStringOption(collectionOption)
       .addStringOption((o) =>
         o
           .setName('list')
@@ -45,6 +49,7 @@ export const data = new SlashCommandBuilder()
     sub
       .setName('remove')
       .setDescription('Remove cards from your missing list')
+      .addStringOption(collectionOption)
       .addStringOption((o) =>
         o
           .setName('list')
@@ -53,12 +58,17 @@ export const data = new SlashCommandBuilder()
           .setMaxLength(LIST_OPTION_MAX_LENGTH)
       )
   )
-  .addSubcommand((sub) => sub.setName('list').setDescription('Show your missing list'))
-  .addSubcommand((sub) => sub.setName('clear').setDescription('Empty your missing list'))
+  .addSubcommand((sub) =>
+    sub.setName('list').setDescription('Show your missing list').addStringOption(collectionOption)
+  )
+  .addSubcommand((sub) =>
+    sub.setName('clear').setDescription('Empty your missing list').addStringOption(collectionOption)
+  )
   .addSubcommand((sub) =>
     sub
       .setName('status')
       .setDescription('Your missing cards with what each shop last showed, and how fresh that is')
+      .addStringOption(collectionOption)
   );
 
 function describeChange(change: ListChange): string {
@@ -79,8 +89,13 @@ export interface MissingContext {
 }
 
 /** Gather what `/missing status` shows (all reads) and format it. */
-function status(userId: string, now: number, ctx: MissingContext): StatusReply {
-  const cards = userManager.getList(userId);
+function status(
+  userId: string,
+  collection: CollectionId,
+  now: number,
+  ctx: MissingContext
+): StatusReply {
+  const cards = userManager.getList(userId, collection);
   const latest = runManager.latestReadable();
   // Only enabled shops whose latest check failed or did not run need their last success; before
   // the first readable run nothing is shown per shop, so nothing is looked up. null records
@@ -93,7 +108,7 @@ function status(userId: string, now: number, ctx: MissingContext): StatusReply {
   }
   const names = new Map<CardId, string>();
   for (const card of cards) {
-    const name = catalogManager.getCard(card)?.name;
+    const name = catalogManager.getCard(collection, card)?.name;
     if (name) names.set(card, name);
   }
   return buildStatusReply({
@@ -101,7 +116,7 @@ function status(userId: string, now: number, ctx: MissingContext): StatusReply {
     latest,
     enabledShops: ctx.enabledShops,
     lastSuccess,
-    listings: listingManager.listingsForCards(cards),
+    listings: listingManager.listingsForCards(collection, cards),
     names,
     now,
   });
@@ -113,33 +128,39 @@ function run(
   sub: string,
   ctx: MissingContext
 ): StatusReply {
-  if (sub === 'status') return status(interaction.user.id, Date.now(), ctx);
-  return { content: runListChange(interaction, sub), embeds: [] };
+  const collection = readCollection(interaction);
+  if (!collection) return { content: UNKNOWN_COLLECTION, embeds: [] };
+  if (sub === 'status') return status(interaction.user.id, collection, Date.now(), ctx);
+  return { content: runListChange(interaction, collection, sub), embeds: [] };
 }
 
-function runListChange(interaction: ChatInputCommandInteraction, sub: string): string {
+function runListChange(
+  interaction: ChatInputCommandInteraction,
+  collection: CollectionId,
+  sub: string
+): string {
   const userId = interaction.user.id;
   switch (sub) {
     case 'set':
       return describeChange(
-        userManager.setList(userId, interaction.options.getString('list', true))
+        userManager.setList(userId, collection, interaction.options.getString('list', true))
       );
     case 'add':
       return describeChange(
-        userManager.addToList(userId, interaction.options.getString('list', true))
+        userManager.addToList(userId, collection, interaction.options.getString('list', true))
       );
     case 'remove':
       return describeChange(
-        userManager.removeFromList(userId, interaction.options.getString('list', true))
+        userManager.removeFromList(userId, collection, interaction.options.getString('list', true))
       );
     case 'list': {
-      const ids = userManager.getList(userId);
+      const ids = userManager.getList(userId, collection);
       return ids.length === 0
         ? 'You have no missing cards on your list.'
         : describeChange({ ok: true, ids });
     }
     case 'clear':
-      userManager.clearList(userId);
+      userManager.clearList(userId, collection);
       return 'Your missing list is now empty.';
     default:
       throw new Error(`Unknown /missing subcommand: ${sub}`);

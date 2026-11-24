@@ -16,7 +16,12 @@ const ALL_SHOPS = { enabledShops: ['sammel-ente', 'blue-ocean', 'ebay'] } as con
 const execute = (i: ChatInputCommandInteraction) =>
   executeWith(i, { enabledShops: ['sammel-ente', 'blue-ocean'] });
 
-function fakeInteraction(userId: string, sub: string, list?: string) {
+function fakeInteraction(
+  userId: string,
+  sub: string,
+  list?: string,
+  collection: string = 'lego-minecraft-3'
+) {
   return {
     user: { id: userId },
     deferred: false,
@@ -25,7 +30,7 @@ function fakeInteraction(userId: string, sub: string, list?: string) {
     isChatInputCommand: () => true,
     options: {
       getSubcommand: () => sub,
-      getString: (_name: string) => list ?? null,
+      getString: (name: string) => (name === 'collection' ? collection : (list ?? null)),
     },
     reply: async (payload: { content?: string; flags?: unknown; embeds?: unknown[] }) => {
       replies.push(payload);
@@ -61,8 +66,31 @@ describe('/missing', () => {
       'clear',
       'status',
     ]);
-    const set = json.options![0] as { options: Array<{ max_length?: number }> };
-    expect(set.options[0]!.max_length).toBe(6000);
+    const set = json.options![0] as { options: Array<{ name: string; max_length?: number }> };
+    expect(set.options[1]).toMatchObject({ name: 'list', max_length: 6000 });
+  });
+
+  test('every subcommand takes the collection first, required, one choice per collection', () => {
+    const json = data.toJSON();
+    for (const sub of json.options as unknown as Array<{ options: unknown[] }>) {
+      expect(sub.options[0]).toMatchObject({
+        name: 'collection',
+        required: true,
+        choices: [{ name: 'LEGO Minecraft Serie 3 "On Fire"', value: 'lego-minecraft-3' }],
+      });
+    }
+  });
+
+  test('an unknown collection is refused and changes nothing', async () => {
+    for (const sub of ['set', 'add', 'remove', 'list', 'clear', 'status']) {
+      await execute(fakeInteraction('u1', sub, '12', 'lego-minecraft-9'));
+      expect(lastReply()).toMatchObject({
+        content: 'Unknown collection.',
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+    expect(db.select().from(users).all()).toEqual([]);
+    expect(db.select().from(wantedCards).all()).toEqual([]);
   });
 
   test('set replies with the new list, ephemeral', async () => {
@@ -173,6 +201,7 @@ describe('/missing', () => {
     await execute(fakeInteraction('u1', 'set', '12'));
     listingManager.upsertFromRun(
       'sammel-ente',
+      'lego-minecraft-3',
       [
         {
           shop: 'sammel-ente',
@@ -216,10 +245,13 @@ describe('/missing', () => {
     const now = Date.now();
     const older = now - 3 * 60 * 60 * 1000;
     const newer = now - 60 * 60 * 1000;
-    catalogManager.updateNamesAndReferences([{ cardId: cid('12'), name: 'Squid', imageUrl: null }]);
+    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      { cardId: cid('12'), name: 'Squid', imageUrl: null },
+    ]);
     await execute(fakeInteraction('u1', 'set', '12'));
     listingManager.upsertFromRun(
       'blue-ocean',
+      'lego-minecraft-3',
       [
         {
           shop: 'blue-ocean',

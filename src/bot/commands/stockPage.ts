@@ -1,5 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { CardId } from '../cards/cardId';
+import { COLLECTION_IDS, DEFAULT_COLLECTION, type CollectionId } from '../collections/ids';
 import type { RunSummary } from '../check/runner';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { SHOP_NAMES } from '../notify/messages';
@@ -12,6 +13,8 @@ export type StockFilter = (typeof STOCK_FILTERS)[number];
 
 /** Everything one `/stock` page shows; gathered by the command, formatted here without I/O. */
 export interface StockInput extends CellContext {
+  /** The collection shown; the paging buttons carry it. */
+  collection: CollectionId;
   /** The cards of the filter, in display order: the catalog, or the user's missing list. */
   cards: CardId[];
   filter: StockFilter;
@@ -67,23 +70,32 @@ const EMPTY: Record<StockFilter, string> = {
   'in-stock': 'No card is in stock in any enabled shop right now.',
 };
 
+/** Collection ids are slugs, so they hold no regex syntax and no `:`. */
 const CUSTOM_ID = new RegExp(
-  `^stock:([1-9]\\d{0,${MAX_PAGE_DIGITS - 1}}):(${STOCK_FILTERS.join('|')})$`
+  `^stock:(?:(${COLLECTION_IDS.join('|')}):)?([1-9]\\d{0,${MAX_PAGE_DIGITS - 1}}):(${STOCK_FILTERS.join('|')})$`
 );
 
-/** The custom id of a paging button: `stock:<page>:<filter>`. */
-export function stockCustomId(page: number, filter: StockFilter): string {
-  return `stock:${page}:${filter}`;
+/** The custom id of a paging button: `stock:<collection>:<page>:<filter>`. */
+export function stockCustomId(collection: CollectionId, page: number, filter: StockFilter): string {
+  return `stock:${collection}:${page}:${filter}`;
 }
 
 /**
- * The page and filter of a paging button, or null for anything this bot did not build: the
- * custom id comes back from Discord, so it is matched exactly (page 1-9999, a known filter).
+ * The collection, page and filter of a paging button, or null for anything this bot did not
+ * build: the custom id comes back from Discord, so it is matched exactly (a registered
+ * collection, page 1-9999, a known filter). A button sent before collections
+ * (`stock:<page>:<filter>`) is one of DEFAULT_COLLECTION.
  */
-export function parseStockCustomId(customId: string): { page: number; filter: StockFilter } | null {
+export function parseStockCustomId(
+  customId: string
+): { collection: CollectionId; page: number; filter: StockFilter } | null {
   const match = CUSTOM_ID.exec(customId);
   if (!match) return null;
-  return { page: Number(match[1]), filter: match[2] as StockFilter };
+  return {
+    collection: (match[1] as CollectionId | undefined) ?? DEFAULT_COLLECTION,
+    page: Number(match[2]),
+    filter: match[3] as StockFilter,
+  };
 }
 
 function seconds(ms: number): number {
@@ -147,16 +159,16 @@ function statusLines(input: StockInput): string[] {
   return lines;
 }
 
-function pagingRow(page: number, pages: number, filter: StockFilter) {
+function pagingRow(collection: CollectionId, page: number, pages: number, filter: StockFilter) {
   // At the ends the disabled button keeps a distinct id: Discord rejects duplicate custom ids.
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(stockCustomId(Math.max(1, page - 1), filter))
+      .setCustomId(stockCustomId(collection, Math.max(1, page - 1), filter))
       .setLabel('◀')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === 1),
     new ButtonBuilder()
-      .setCustomId(stockCustomId(Math.min(pages, page + 1), filter))
+      .setCustomId(stockCustomId(collection, Math.min(pages, page + 1), filter))
       .setLabel('▶')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === pages)
@@ -220,6 +232,6 @@ export function buildStockPage(input: StockInput): StockPage {
     .map((r) => line([r.card, ...r.cells]));
   return {
     content: render(`${page}/${pages}`, body),
-    components: pages > 1 ? [pagingRow(page, pages, input.filter)] : [],
+    components: pages > 1 ? [pagingRow(input.collection, page, pages, input.filter)] : [],
   };
 }

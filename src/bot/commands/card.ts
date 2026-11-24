@@ -12,6 +12,7 @@ import { replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
 import { clipText } from '../utils/messageLimit';
 import { buildCardReply } from './cardReply';
+import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
 
 /** What `/card` needs from the bot's wiring. */
 export interface CardContext {
@@ -27,6 +28,7 @@ const NUMBER_MAX_LENGTH = 10;
 export const data = new SlashCommandBuilder()
   .setName('card')
   .setDescription('One card in every shop, with links to the cheapest offers')
+  .addStringOption(collectionOption)
   .addStringOption((o) =>
     o
       .setName('number')
@@ -56,8 +58,13 @@ export async function execute(
   try {
     // Downloading the reference picture can take longer than Discord's 3 s to answer.
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const collection = readCollection(interaction);
+    if (!collection) {
+      await interaction.editReply(text(UNKNOWN_COLLECTION));
+      return;
+    }
     const id = normalizeCardId(token);
-    const card = id ? catalogManager.getCard(id) : undefined;
+    const card = id ? catalogManager.getCard(collection, id) : undefined;
     if (!card) {
       await interaction.editReply(text(`Unknown card: ${token}`));
       return;
@@ -74,7 +81,7 @@ export async function execute(
     }
     // Only a usable reference: never a placeholder, never one shared by several cards.
     const reference =
-      catalogManager.referenceCatalog().usable.find((r) => r.cardId === card.cardId)
+      catalogManager.referenceCatalog(collection).usable.find((r) => r.cardId === card.cardId)
         ?.referenceImageUrl ?? null;
     const reply = buildCardReply({
       card: card.cardId,
@@ -83,7 +90,7 @@ export async function execute(
       shop: shopOption,
       latest: runManager.latestReadable(),
       enabledShops: ctx.enabledShops,
-      listings: listingManager.listingsForCards([card.cardId]),
+      listings: listingManager.listingsForCards(collection, [card.cardId]),
       now: Date.now(),
     });
     const download: DownloadFn =

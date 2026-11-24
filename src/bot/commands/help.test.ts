@@ -24,10 +24,12 @@ describe('/help', () => {
     const text = JSON.stringify(payload.embeds[0].toJSON());
     for (const s of [
       '/missing',
-      '/missing status',
+      '/missing status collection:<c>',
       '/stock',
       'only:missing',
-      '/card number:<id>',
+      '/card collection:<c> number:<id>',
+      '/missing set collection:<c> list:<cards>',
+      'LEGO Minecraft Serie 3 \\"On Fire\\"',
       'shop:',
       '12, 45, LE8',
       '20-25',

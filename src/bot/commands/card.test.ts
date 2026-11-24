@@ -39,7 +39,11 @@ function ctx(over: Partial<CardContext> = {}): CardContext {
   return { enabledShops: ['sammel-ente', 'blue-ocean'], download: okDownload, ...over };
 }
 
-function command(number: string, shop: string | null = null) {
+function command(
+  number: string,
+  shop: string | null = null,
+  collection: string = 'lego-minecraft-3'
+) {
   const interaction = {
     user: { id: 'u1' },
     deferred: false,
@@ -47,7 +51,14 @@ function command(number: string, shop: string | null = null) {
     commandName: 'card',
     isChatInputCommand: () => true,
     options: {
-      getString: (name: string) => (name === 'number' ? number : name === 'shop' ? shop : null),
+      getString: (name: string) =>
+        name === 'number'
+          ? number
+          : name === 'shop'
+            ? shop
+            : name === 'collection'
+              ? collection
+              : null,
     },
     deferReply: async (p: Payload) => {
       deferred.push(p);
@@ -95,11 +106,12 @@ describe('/card', () => {
   test('declares number (required) and shop with a choice per shop', () => {
     const json = data.toJSON();
     expect(json.name).toBe('card');
-    const [number, shop] = json.options as unknown as {
+    const [collection, number, shop] = json.options as unknown as {
       name: string;
       required?: boolean;
       choices?: { name: string; value: string }[];
     }[];
+    expect(collection).toMatchObject({ name: 'collection', required: true });
     expect(number!.name).toBe('number');
     expect(number!.required).toBe(true);
     expect(shop!.name).toBe('shop');
@@ -113,13 +125,24 @@ describe('/card', () => {
     ]);
   });
 
+  test('an unknown collection is refused before any card is read', async () => {
+    const read = spyOn(catalogManager, 'getCard');
+    try {
+      await execute(command('12', null, 'lego-minecraft-9'), ctx());
+      expect(read).not.toHaveBeenCalled();
+      expect(edits).toEqual([{ content: 'Unknown collection.', embeds: [], components: [] }]);
+    } finally {
+      read.mockRestore();
+    }
+  });
+
   test('defers ephemeral and answers with the card embed and its buttons', async () => {
     setReference(null);
     const stored = listing('sammel-ente', [cid('12')], { url: 'https://se.example/12' });
     const read = spyOn(listingManager, 'listingsForCards').mockImplementation(() => [stored]);
     try {
       await execute(command('#012'), ctx());
-      expect(read).toHaveBeenCalledWith([cid('12')]);
+      expect(read).toHaveBeenCalledWith('lego-minecraft-3', [cid('12')]);
     } finally {
       read.mockRestore();
     }

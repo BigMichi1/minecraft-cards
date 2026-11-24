@@ -140,19 +140,20 @@ function statusText(): string {
 }
 
 function mapCards(url: string, collection: CollectionId, cardsInput: string): string {
+  const stored = listingManager.getByUrl(url);
+  // A listing moved to a collection its shop is not checked for would never be updated again
+  // (listingManager.overrideCards), so moves wait for per-collection shops. Checked before the
+  // cards, which are read in the chosen collection and would give the wrong reason.
+  if (stored && stored.collection !== collection) {
+    return `Nothing changed: the listing is in collection ${collectionName(stored.collection)}; moving a listing to another collection is not supported yet.`;
+  }
   const parsed = parseKnownCardList(collection, cardsInput);
   if (!parsed.ok) {
     return parsed.reason === 'empty'
       ? 'No card numbers found. Example: 12, LE8'
       : joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(parsed.invalid)]);
   }
-  const stored = listingManager.getByUrl(url);
   if (!stored) return 'No stored listing with that URL.';
-  // A listing moved to a collection its shop is not checked for would never be updated again
-  // (listingManager.overrideCards), so moves wait for per-collection shops.
-  if (stored.collection !== collection) {
-    return `Nothing changed: the listing is in collection ${stored.collection}; moving a listing to another collection is not supported yet.`;
-  }
   const listing = listingManager.overrideCards(url, { collection, ids: parsed.ids }, Date.now());
   if (!listing) return 'No stored listing with that URL.';
   return joinWithinLimit(

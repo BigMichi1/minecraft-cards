@@ -16,6 +16,7 @@ import { listingCards, listings, notifications, reports } from './schema/index';
 import type { Listing as ListingRow } from './schema/index';
 import { userManager } from './userManager';
 import logger from '../utils/logger';
+import { clipText } from '../utils/messageLimit';
 
 /** A stored listing as read; read-only, as several modules pass the same object around. */
 export type StoredListing = Readonly<{
@@ -80,6 +81,9 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * eBay listing stays available this long after it was last seen, so it is not re-notified.
  */
 export const EBAY_MISSING_GRACE_MS = 24 * 60 * 60 * 1000;
+
+/** Shop-controlled URLs are clipped to this many characters in log lines. */
+const MAX_LOGGED_URL = 200;
 
 export interface PendingOptions {
   /** Auctions that ended before this are not notified. Defaults to `Date.now()`. */
@@ -195,7 +199,7 @@ export const listingManager = {
           : scraped;
         const existing = tx.select().from(listings).where(eq(listings.url, item.url)).get();
         if (existing && existing.collection !== collection) {
-          foreign.push(`${item.url} (${existing.collection})`);
+          foreign.push(`${clipText(item.url, MAX_LOGGED_URL)} (${existing.collection})`);
           continue;
         }
         const fields = {

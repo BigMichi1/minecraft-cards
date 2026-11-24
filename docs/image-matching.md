@@ -145,8 +145,8 @@ one picture) leaves the set incomplete for the run. A listing that would then en
 but `confirmed` gets `image_unavailable` (or `model_unavailable` when the model fails on every
 reference) instead, so it is compared again with the full set: never a final `unconfirmed`,
 `mismatch` or picture-only card. The bot tries a failed reference again at most once a day
-(`referenceFailures`, kept for the process), and sends one throttled admin alert
-(`reference-unavailable`) naming the cards, reasons and picture URLs. References load four at a
+(`referenceFailures`, kept for the process), and sends one throttled admin alert per collection
+(`reference-unavailable:<collection>`) naming the collection, cards, reasons and picture URLs. References load four at a
 time.
 
 ### Rules

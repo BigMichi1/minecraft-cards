@@ -99,6 +99,20 @@ describe('listingManager', () => {
       expect(listingManager.getByUrl(blue12.url)!.available).toBe(false);
     });
 
+    test('the warning about another collection clips shop-controlled URLs', () => {
+      const long = { ...blue12, url: `https://www.blue-ocean.de/p/${'x'.repeat(400)}` };
+      listingManager.upsertFromRun('blue-ocean', OTHER, [long], 1000);
+      const warn = spyOn(logger, 'warn');
+      try {
+        listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [long], 2000);
+        const [line] = warn.mock.calls.map((c: unknown[]) => String(c[0]));
+        expect(line).not.toContain(long.url);
+        expect(line!.length).toBeLessThan(400);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     test('a URL stored under another collection keeps its row, cards and collection', () => {
       listingManager.upsertFromRun('blue-ocean', OTHER, [blue12], 1000);
       const warn = spyOn(logger, 'warn');
@@ -118,7 +132,12 @@ describe('listingManager', () => {
       }
       expect(found).toEqual([]);
       const kept = listingManager.getByUrl(blue12.url)!;
-      expect(kept).toMatchObject({ collection: OTHER, title: blue12.title, lastSeenAt: 1000 });
+      expect(kept).toMatchObject({
+        collection: OTHER,
+        title: blue12.title,
+        lastSeenAt: 1000,
+        available: true,
+      });
       expect(kept.cardIds).toEqual(ids('12'));
     });
 

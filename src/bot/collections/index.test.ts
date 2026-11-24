@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { COLLECTION_IDS } from './ids';
-import { COLLECTIONS, collectionById, collectionChoices } from './index';
+import type { CollectionId } from './ids';
+import { COLLECTIONS, collectionById, collectionChoices, collectionName } from './index';
 
 describe('COLLECTIONS', () => {
   test('defines every collection id once, in registry order', () => {
@@ -17,6 +18,13 @@ describe('COLLECTIONS', () => {
 describe('collectionById', () => {
   test('finds the definition', () => {
     expect(collectionById('lego-minecraft-3').name).toBe('LEGO Minecraft Serie 3 "On Fire"');
+  });
+});
+
+describe('collectionName', () => {
+  test('is the display name, or the id of a collection without definition', () => {
+    expect(collectionName('lego-minecraft-3')).toBe('LEGO Minecraft Serie 3 "On Fire"');
+    expect(collectionName('other-set' as CollectionId)).toBe('other-set');
   });
 });
 

@@ -49,8 +49,11 @@ describe('readCollection', () => {
     try {
       const i = { ...withCollection('lego-minecraft-9'), commandName: 'stock' };
       expect(readCollection(i as unknown as ChatInputCommandInteraction)).toBeNull();
+      const missing = { ...withCollection(null), commandName: 'card' };
+      expect(readCollection(missing as unknown as ChatInputCommandInteraction)).toBeNull();
       expect(warn.mock.calls.map((c: unknown[]) => String(c[0]))).toEqual([
         '[COLLECTION] /stock: unknown collection "lego-minecraft-9" (an outdated command?)',
+        '[COLLECTION] /card: no collection (an outdated command?)',
       ]);
     } finally {
       warn.mockRestore();

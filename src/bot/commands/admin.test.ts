@@ -204,6 +204,14 @@ describe('/admin', () => {
     });
   });
 
+  test('the collection refusal comes before the card check', async () => {
+    listingManager.upsertFromRun('blue-ocean', 'other-set' as CollectionId, [blue12], 1000);
+    await adminExecute(fakeAdmin(undefined, 'map', { url: blue12.url, cards: '9999' }), ctx);
+    expect(lastReply().content).toStartWith(
+      'Nothing changed: the listing is in collection other-set;'
+    );
+  });
+
   test('catalog import previews and stores the chosen collection', async () => {
     const put = spyOn(importStore, 'put');
     const preview = spyOn(catalogManager, 'previewImport');

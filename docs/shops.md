@@ -7,20 +7,20 @@ changes or a new one is suggested.
 
 ## Used by the bot
 
-| Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                                                                                                     |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the fallback reference when laststicker has no scan of a card; its listings are compared like every shop's.                                                              |
-| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. Card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`); the title's "Nr." is wrong. Only "On Fire" titles count; series 1 and 2 share the category.                                                                       |
-| [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                |
-| eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. Four searches, every page by `offset`. Card ids from series 3 titles only (details below). |
+| Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the fallback reference when laststicker has no scan of a card; its listings are compared like every shop's.                                                                                                                                                 |
+| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. Card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`); the title's "Nr." is wrong. Only "On Fire" titles count; series 1 and 2 share the category.                                                                                                                                                          |
+| [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                                                                                                   |
+| eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. One run for every collection: each collection's searches (eight in all), every page by `offset`; card ids from titles naming exactly one collection's series (details below). |
 
 ## Per collection (2026-11-24)
 
-| Collection         | sammel-ente                                                                        | collect-it                                                                                                                                | blue-ocean      | eBay         |
-| ------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------------ |
-| `lego-minecraft-1` | [`/Minecraft/Serie-1/`](https://shop-sammel-ente.de/Minecraft/Serie-1/) (13 pages) | [`/sammelwelt/…/serie1/Einzelkarten`](https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten) (256 singles) | not yet (PR 3c) | not yet (3b) |
-| `lego-minecraft-2` | [`/Minecraft/Serie-2/`](https://shop-sammel-ente.de/Minecraft/Serie-2/) (13 pages) | none (no single-card category)                                                                                                            | not yet (PR 3c) | not yet (3b) |
-| `lego-minecraft-3` | as below                                                                           | as below                                                                                                                                  | as below        | as below     |
+| Collection         | sammel-ente                                                                        | collect-it                                                                                                                                | blue-ocean      | eBay     |
+| ------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------- | -------- |
+| `lego-minecraft-1` | [`/Minecraft/Serie-1/`](https://shop-sammel-ente.de/Minecraft/Serie-1/) (13 pages) | [`/sammelwelt/…/serie1/Einzelkarten`](https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten) (256 singles) | not yet (PR 3c) | yes      |
+| `lego-minecraft-2` | [`/Minecraft/Serie-2/`](https://shop-sammel-ente.de/Minecraft/Serie-2/) (13 pages) | none (no single-card category)                                                                                                            | not yet (PR 3c) | yes      |
+| `lego-minecraft-3` | as below                                                                           | as below                                                                                                                                  | as below        | as below |
 
 - sammel-ente's titles name the series (`LEGO Minecraft Serie 1 | #001 Steve`, `#LE008`,
   `#XXL001`); one parser reads all three categories. A card title naming another series than the
@@ -35,10 +35,30 @@ Minecraft TCC 1`, the product number in the URL), which need their own parser (P
 
 ## eBay details
 
+**Every collection in one run (2026-11-24).** Each collection's definition names its searches
+(`lego minecraft karten serie 1`, `lego minecraft tcc serie 1`; `lego minecraft karten serie 2`,
+`lego minecraft boom bastic karte`; the series 3 ones below) and its series marker. The run
+searches all of them once, places each title by marker (exactly one collection; several or none
+give no ids, series 3's name check apart) and tags each listing with its collection. A
+collection whose own searches all return no usable item (one without a link or a title counts
+as none) is a shop error of that collection (its stored
+listings are left alone); the others are stored as usual. A probe of
+the series 1 and 2 searches (536 items; 40 of them, without seller data, in
+`src/test/fixtures/ebay-search-series-1-2.json`) found:
+
+- series 1 singles in one form, read by the `Card N` prefix: `LEGO Minecraft Serie 1 Trading Card
+134 - Neon Lohe - Mob Karte - Neon` (the trailing `Neon`/`Holo`/`Ultra` is the card's variant,
+  #134 is "Neon Lohe");
+- series 2 mostly as category lots without a number (`Lego Minecraft Sammelkarten Serie
+2"NETHER"`), which give no id, and a few `Sammelkarte 216 … Boom-Bastic` titles, which no title
+  form reads (no id, nothing wrong);
+- titles naming two series (`Serie 1-2 … Boom Bastic`, `Boom Bastic One Fire Serie 3`), which
+  give no ids.
+
 Checked against a live probe of 2026-11-18 (234 unique items over six queries; 38 of them, without
 seller data, are in `src/test/fixtures/ebay-search.json`):
 
-- **Queries** (`EBAY_QUERIES`): `lego minecraft on fire karte`, `lego minecraft tcc serie 3`,
+- **Queries** (series 3's; `EBAY_QUERIES` is every collection's, see above): `lego minecraft on fire karte`, `lego minecraft tcc serie 3`,
   `lego minecraft trading card on fire` and `lego minecraft karten serie 3`. The last one finds the
   single cards (295 results on 2026-11-18; the other three found 2 to 30 each, almost all of them
   packs, limited cards and pick lists). `tcc serie 3` found nothing usable that day but is kept: it
@@ -58,7 +78,8 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   0, a first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty result),
   and an answer of the wrong shape (not an object, `itemSummaries` not a list of items,
   `total` not a number) are `ShopLayoutError`s naming the query and the offset. All searches
-  together returning no item is a `ShopLayoutError` as before.
+  together returning no item, or no usable item (one without a link or a title counts as none),
+  is a `ShopLayoutError` as before.
 - **Total tolerance**: eBay's `total` is an estimate and its pages may be short, so a walk may end
   up to max(5, ceil(2 % of the total)) items short of it (455 announced, 450 delivered; 448 of 450
   in pages of 199); an empty first page with a `total` above 0 is always an error. That gap is
@@ -69,7 +90,7 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   announced, 979 read), a `total` within the tolerance of the items read counts as complete (1021
   announced, 1000 read), and a larger one is a cut search (below; 1022 announced, 1000 read).
 - **Page cap**: a search cut at the cap logs a warning and is reported in `FetchResult.truncated`;
-  the runner sends a throttled admin alert (`shop-truncated:ebay:lego-minecraft-3`, at most once a day per collection), and
+  the runner sends a throttled admin alert (`shop-truncated:ebay`, at most once a day: one eBay run serves every collection), and
   `/admin status` shows the number of cut searches.
 - **Title forms read** (allow-lists, since a false id sends a false DM):
   - `LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)` and
@@ -118,10 +139,24 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   add the real title to `src/test/fixtures/ebay-search.json` (without seller data) with its
   reviewed ids in `FIXTURE_IDS`.
 
-- **Series 3 only**: ids come only from a title that names series 3 (`Serie 3`, `Series 3`,
-  `Serie3`, `On Fire`) and no other series. A title naming series 1 or 2 gives no ids even when it
-  also names series 3: a mixed lot is ambiguous. A title with no series word gives no ids either,
-  even in the clear `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms
+- **One collection per title**: ids come only from a title that names exactly one collection's
+  series (series 3: `Serie 3`, `Series 3`, `Serie3`, `Staffel 3`, `TCC 3`, `On Fire`), and are
+  that collection's. A title naming several series gives no ids, as does a series list with one
+  series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 1 bis 3`, `Serie 2/3`, and the
+  unclear `Serie 1 - 2 - Steve`): a mixed lot is ambiguous. The series numbers 1 to 3
+  after the series word are read pair by pair: joined by a separator holding a list word
+  (`und`, `oder`, `bis`, `bzw.`, `sowie`, `plus`, …) or one of `/ & + , ( [` (`Serie 3 und 1`,
+  `Serie 1 (2)`) they are a list in any order; joined only by spaces, dashes and title signs
+  (`| · • ; : ~ . _`, as in `Serie 3 | 2 - Alex - Charakterkarte`, card #2) only going upward. Any
+  list pair makes the title a list (`Serie 3 - 1 & 2`). A number followed by `/NN` is a card
+  fraction, no series. A number that is no series number
+  (`Serie 3 - 12 - Steve - Charakterkarte`, `Serie 3 - 5 - …`), or one not higher than the
+  series after spaces, dashes or title signs (`Serie 3 - 1 - Steve - Charakterkarte`), is a
+  card number, and so is one after a closing bracket (`(Serie 3) 2 - Alex - Charakterkarte`), unless a
+  list sign or word follows it (`(Serie 1) & 2`).
+  An admin mapping into a collection eBay does not search is left alone and alerted
+  (`shop-outside:ebay`). A title with no series word gives no ids either, even in the clear
+  `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms
   (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
   single in the probe named its series.
 - **No series word, but the catalog name** (`nameMatchedCardIds`): a title without any series
@@ -153,13 +188,11 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     read by name.
   - A name several series 3 cards share counts beside each of their numbers: Ghast is #15, #102,
     #104 and #131 (laststicker and sammel-ente, 2026-11-24), so `LEGO Minecraft Karte 104 - Ghast`
-    (2026-11-19) is read as #104. A series 1 or 2 card with the same number and name, and
-    nothing else in its title, passes too; it starts `pending` and its picture is compared as for
-    any title, so a clearly other series 3 card becomes a `mismatch`, and an unclear picture an
-    alert marked "number unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with
-    the series 1 and 2 catalogs loaded, is to place such a title by name only when no other
-    series has that name at that number
-    (`docs/superpowers/specs/2026-11-19-multi-collection-design.md`).
+    (2026-11-19) is read as #104, unless series 1 or 2 has the same name at that number: such a
+    title cannot be placed and gives no id. The series 1 and 2 catalogs are read at the start of
+    each eBay run; while one is not loaded yet (no laststicker sync so far), no title is read by
+    name at all, and the admin gets a throttled alert (`shop-names:ebay:<collections>`). The
+    other series' names are checked whether the run reads those series or not.
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
   `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
   `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,

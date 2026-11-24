@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
+import type { CollectionId } from '../collections/ids';
 import {
   CARD_NAME_WORDS,
   COUNT_WORDS,
@@ -8,9 +9,22 @@ import {
   isPictureCandidate,
   NAME_TITLE_WORDS,
   nameMatchedCardIds,
+  classifyTitle,
+  EBAY_COLLECTIONS,
   titleExclusion,
   EBAY_QUERIES,
 } from './ebay';
+
+/** The fetcher tests read the series 3 fixture: series 3's searches and markers only. */
+const SERIES_3_ONLY = EBAY_COLLECTIONS.filter((c) => c.id === 'lego-minecraft-3');
+const S3_QUERIES = SERIES_3_ONLY[0]!.queries;
+/** Series 1's and 2's card lists, loaded, with no name series 3 has at the same number. */
+const OTHER_SERIES_NAMES = new Map([[cid('250'), 'Platzhalter']]);
+/** Catalog names: `names` for series 3, OTHER_SERIES_NAMES for the other series. */
+const s3Names =
+  (names: ReadonlyMap<CardId, string>) =>
+  (c: CollectionId): ReadonlyMap<CardId, string> =>
+    c === 'lego-minecraft-3' ? names : OTHER_SERIES_NAMES;
 import type { CardId } from '../cards/cardId';
 import { HttpError } from '../utils/http';
 import { parseSammelEntePage } from './sammelEnte';
@@ -539,7 +553,11 @@ describe('extractCardIdsFromTitle', () => {
   test('titleExclusion names the reason a title gives no ids', () => {
     expect(titleExclusion('LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3')).toBeNull();
     expect(titleExclusion('LEGO Minecraft Serie 1 Karte 3')).toBe('other series');
-    expect(titleExclusion('LEGO Minecraft Karte 3')).toBe('no series 3');
+    expect(titleExclusion('LEGO Minecraft Karte 3')).toBe('no series');
+    expect(titleExclusion('Lego Minecraft Serie 2 und Serie 3 Karte #12')).toBe(
+      'several collections'
+    );
+    expect(titleExclusion('LEGO Minecraft Serie 1 Karte 3', 'lego-minecraft-1')).toBeNull();
     expect(titleExclusion('On Fire Karte 3 zum aussuchen')).toBe('pick list');
     expect(titleExclusion('On Fire Karten 1 - 228')).toBe('range');
   });
@@ -874,8 +892,8 @@ function makeFetch(
     /** Token answer body; defaults to the fixture. */
     tokenBody?: string;
     searchStatus?: number;
-    /** Body of the n-th search request (0-based); defaults to the fixture. */
-    searchBody?: (n: number) => string;
+    /** Body of the n-th search request (0-based), and its URL; defaults to the fixture. */
+    searchBody?: (n: number, url: string) => string;
   } = {}
 ): {
   fetchFn: FetchFn;
@@ -892,7 +910,8 @@ function makeFetch(
         status: options.tokenStatus ?? 200,
       });
     }
-    const body = options.searchBody?.(state.searchUrls.length) ?? readFixture('ebay-search.json');
+    const body =
+      options.searchBody?.(state.searchUrls.length, url) ?? readFixture('ebay-search.json');
     state.searchUrls.push(url);
     return new Response(body, { status: options.searchStatus ?? 200 });
   };
@@ -912,6 +931,7 @@ describe('createEbayFetcher', () => {
   test('maps listings, skips items without ids and caches the token', async () => {
     const fake = makeFetch();
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 'secret',
       fetchFn: fake.fetchFn,
@@ -927,7 +947,7 @@ describe('createEbayFetcher', () => {
     expect(skippedNoId).toBe(5);
     expect(skippedInvalid).toBe(0);
     expect(fake.tokenCalls).toBe(1);
-    expect(fake.searchUrls).toHaveLength(EBAY_QUERIES.length);
+    expect(fake.searchUrls).toHaveLength(S3_QUERIES.length);
 
     expect(listings.find((l) => l.format === 'auction')).toMatchObject({
       shop: 'ebay',
@@ -974,7 +994,7 @@ describe('createEbayFetcher', () => {
   });
 
   test('searches every query once, in order, the broad series 3 query included', async () => {
-    expect(EBAY_QUERIES).toEqual([
+    expect(S3_QUERIES).toEqual([
       'lego minecraft on fire karte',
       'lego minecraft tcc serie 3',
       'lego minecraft trading card on fire',
@@ -982,15 +1002,16 @@ describe('createEbayFetcher', () => {
     ]);
     const fake = makeFetch();
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
       sleep: noSleep,
     });
     await adapter.fetchListings();
-    expect(fake.searchUrls.map((u) => new URL(u).searchParams.get('q'))).toEqual(EBAY_QUERIES);
+    expect(fake.searchUrls.map((u) => new URL(u).searchParams.get('q'))).toEqual([...S3_QUERIES]);
     expect(fake.searchUrls.map((u) => new URL(u).searchParams.get('offset'))).toEqual(
-      EBAY_QUERIES.map(() => '0')
+      SERIES_3_ONLY[0]!.queries.map(() => '0')
     );
   });
 
@@ -1014,6 +1035,7 @@ describe('createEbayFetcher', () => {
           ),
       });
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -1071,11 +1093,13 @@ describe('createEbayFetcher', () => {
       });
       let reads = 0;
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
         sleep: noSleep,
-        cardNames: () => {
+        cardNames: (c) => {
+          if (c !== 'lego-minecraft-3') return OTHER_SERIES_NAMES;
           reads++;
           return new Map([
             [cid('131'), 'Ghast'],
@@ -1106,6 +1130,7 @@ describe('createEbayFetcher', () => {
   test('a failing catalog name read fails the fetch, so stored listings are kept', async () => {
     const fake = makeFetch();
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1126,8 +1151,9 @@ describe('createEbayFetcher', () => {
       }
     }
     expect(names.size).toBeGreaterThan(20);
-    const run = async (cardNames?: () => ReadonlyMap<CardId, string>) =>
+    const run = async (cardNames?: (c: CollectionId) => ReadonlyMap<CardId, string>) =>
       createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 's',
         fetchFn: makeFetch().fetchFn,
@@ -1136,7 +1162,7 @@ describe('createEbayFetcher', () => {
       }).fetchListings();
     // The fixture's three titles without a series word are a promo pack, a Panini pick list and
     // a 2021 "Trading Cards" title: none is read by name.
-    expect(await run(() => names)).toEqual(await run());
+    expect(await run(s3Names(names))).toEqual(await run(s3Names(new Map())));
   });
 
   test('without catalog names, a title without a series word stays excluded', async () => {
@@ -1144,6 +1170,7 @@ describe('createEbayFetcher', () => {
       searchBody: () => body(item({ title: 'LEGO Minecraft Karte 131 - Ghast' })),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1165,6 +1192,7 @@ describe('createEbayFetcher', () => {
         ),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1211,6 +1239,7 @@ describe('createEbayFetcher', () => {
         return new Response(answer(url));
       };
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 's',
         fetchFn,
@@ -1228,10 +1257,8 @@ describe('createEbayFetcher', () => {
 
     test('reads every page by offset and stops at the total', async () => {
       const { result, urls } = await run(paged(450));
-      expect(offsets(urls).slice(0, 3)).toEqual(
-        [0, 200, 400].map((o) => `${EBAY_QUERIES[0]}@${o}`)
-      );
-      expect(urls).toHaveLength(3 * EBAY_QUERIES.length);
+      expect(offsets(urls).slice(0, 3)).toEqual([0, 200, 400].map((o) => `${S3_QUERIES[0]}@${o}`));
+      expect(urls).toHaveLength(3 * S3_QUERIES.length);
       for (const u of urls) expect(u).toContain('limit=200');
       // Every query answers the same 450 items.
       expect(result.listings).toHaveLength(450);
@@ -1239,7 +1266,7 @@ describe('createEbayFetcher', () => {
 
     test('one page when the total fits', async () => {
       const { urls } = await run(paged(200));
-      expect(urls).toHaveLength(EBAY_QUERIES.length);
+      expect(urls).toHaveLength(S3_QUERIES.length);
     });
 
     const runError = async (answer: (url: string) => string) =>
@@ -1260,7 +1287,7 @@ describe('createEbayFetcher', () => {
           new URL(url).searchParams.get('offset') === '0' ? paged(450)(url) : later
         );
         expect(error).toBeInstanceOf(ShopLayoutError);
-        expect(error.message).toContain(EBAY_QUERIES[0]!);
+        expect(error.message).toContain(S3_QUERIES[0]!);
         expect(error.message).toContain('offset 200');
         expect(error.message).toContain('450');
       }
@@ -1268,13 +1295,13 @@ describe('createEbayFetcher', () => {
 
     test('a first page without itemSummaries and without total is a layout error (P1)', async () => {
       const error = await runError((url) =>
-        new URL(url).searchParams.get('q') === EBAY_QUERIES[1] ? '{}' : paged(10)(url)
+        new URL(url).searchParams.get('q') === S3_QUERIES[1] ? '{}' : paged(10)(url)
       );
       expect(error).toBeInstanceOf(ShopLayoutError);
-      expect(error.message).toContain(EBAY_QUERIES[1]!);
+      expect(error.message).toContain(S3_QUERIES[1]!);
       // {"total":0} is a valid empty result.
       const { result } = await run((url) =>
-        new URL(url).searchParams.get('q') === EBAY_QUERIES[1]
+        new URL(url).searchParams.get('q') === S3_QUERIES[1]
           ? JSON.stringify({ total: 0 })
           : paged(10)(url)
       );
@@ -1288,14 +1315,14 @@ describe('createEbayFetcher', () => {
         JSON.stringify({ total: 1, itemSummaries: [] }),
       ]) {
         const error = await runError((url) =>
-          new URL(url).searchParams.get('q') === EBAY_QUERIES[1] ? first : paged(10)(url)
+          new URL(url).searchParams.get('q') === S3_QUERIES[1] ? first : paged(10)(url)
         );
         expect({ first, type: error.constructor.name }).toEqual({ first, type: 'ShopLayoutError' });
         expect(error.message).toContain('offset 0');
       }
       // A page-1 {"total":0} with an empty list stays a valid empty result.
       const { result } = await run((url) =>
-        new URL(url).searchParams.get('q') === EBAY_QUERIES[1]
+        new URL(url).searchParams.get('q') === S3_QUERIES[1]
           ? JSON.stringify({ total: 0, itemSummaries: [] })
           : paged(10)(url)
       );
@@ -1317,7 +1344,7 @@ describe('createEbayFetcher', () => {
           type: 'ShopLayoutError',
         });
         expect(error.message).toContain('unexpected answer shape');
-        expect(error.message).toContain(EBAY_QUERIES[0]!);
+        expect(error.message).toContain(S3_QUERIES[0]!);
         expect(error.message).toContain('offset 0');
       }
     });
@@ -1327,7 +1354,7 @@ describe('createEbayFetcher', () => {
         const offset = new URL(url).searchParams.get('offset');
         return offset === '0' ? paged(450)(url) : paged(250)(url);
       });
-      expect(urls).toHaveLength(2 * EBAY_QUERIES.length);
+      expect(urls).toHaveLength(2 * S3_QUERIES.length);
       expect(result.listings).toHaveLength(250);
     });
 
@@ -1351,7 +1378,7 @@ describe('createEbayFetcher', () => {
         if (new URL(url).searchParams.get('offset') !== '0') delete answer.total;
         return JSON.stringify(answer);
       });
-      expect(urls).toHaveLength(2 * EBAY_QUERIES.length);
+      expect(urls).toHaveLength(2 * S3_QUERIES.length);
     });
 
     test('without any total, short pages continue and an empty page stops (P4)', async () => {
@@ -1362,19 +1389,17 @@ describe('createEbayFetcher', () => {
       });
       // 199, 199, 50, then the empty page at 600 ends the walk.
       expect(offsets(urls).slice(0, 4)).toEqual(
-        [0, 200, 400, 600].map((o) => `${EBAY_QUERIES[0]}@${o}`)
+        [0, 200, 400, 600].map((o) => `${S3_QUERIES[0]}@${o}`)
       );
-      expect(urls).toHaveLength(4 * EBAY_QUERIES.length);
+      expect(urls).toHaveLength(4 * S3_QUERIES.length);
       expect(result.listings).toHaveLength(448);
     });
 
     test('short pages with a total: the offset stays a multiple of the limit (P4)', async () => {
       // eBay answered 199 of 200 on 2026-11-19; asking for offset 199 next was a 400.
       const { urls, result } = await run(paged(450, 199));
-      expect(offsets(urls).slice(0, 3)).toEqual(
-        [0, 200, 400].map((o) => `${EBAY_QUERIES[0]}@${o}`)
-      );
-      expect(urls).toHaveLength(3 * EBAY_QUERIES.length);
+      expect(offsets(urls).slice(0, 3)).toEqual([0, 200, 400].map((o) => `${S3_QUERIES[0]}@${o}`));
+      expect(urls).toHaveLength(3 * S3_QUERIES.length);
       // 199 + 199 + 50 of 450: within the tolerance.
       expect(result.listings).toHaveLength(448);
     });
@@ -1390,7 +1415,7 @@ describe('createEbayFetcher', () => {
 
     test('a failure on a later query after the first returned items rejects (P4)', async () => {
       const error = await runError((url) => {
-        if (new URL(url).searchParams.get('q') === EBAY_QUERIES[2]) return 'null';
+        if (new URL(url).searchParams.get('q') === S3_QUERIES[2]) return 'null';
         return paged(10)(url);
       });
       expect(error).toBeInstanceOf(ShopLayoutError);
@@ -1400,18 +1425,18 @@ describe('createEbayFetcher', () => {
       const warn = spyOn(logger, 'warn');
       try {
         const { urls, result } = await run(paged(5000));
-        expect(urls).toHaveLength(5 * EBAY_QUERIES.length);
+        expect(urls).toHaveLength(5 * S3_QUERIES.length);
         expect(offsets(urls).slice(0, 5)).toEqual(
-          [0, 200, 400, 600, 800].map((o) => `${EBAY_QUERIES[0]}@${o}`)
+          [0, 200, 400, 600, 800].map((o) => `${S3_QUERIES[0]}@${o}`)
         );
         const lines = warn.mock.calls.map((c) => String(c[0]));
-        for (const q of EBAY_QUERIES) {
+        for (const q of S3_QUERIES) {
           expect(lines.some((l) => l.includes(q) && l.includes('5000') && l.includes('1000'))).toBe(
             true
           );
         }
-        expect(result.truncated).toHaveLength(EBAY_QUERIES.length);
-        expect(result.truncated![0]).toContain(EBAY_QUERIES[0]!);
+        expect(result.truncated).toHaveLength(S3_QUERIES.length);
+        expect(result.truncated![0]).toContain(S3_QUERIES[0]!);
         expect(result.truncated![0]).toContain('5000');
       } finally {
         warn.mockRestore();
@@ -1443,12 +1468,12 @@ describe('createEbayFetcher', () => {
           answer.total = 455;
           return JSON.stringify(answer);
         });
-        expect(urls).toHaveLength(3 * EBAY_QUERIES.length);
+        expect(urls).toHaveLength(3 * S3_QUERIES.length);
         expect(result.listings).toHaveLength(450);
         expect(result.truncated).toBeUndefined();
         const lines = warn.mock.calls.map((c) => String(c[0]));
         expect(
-          lines.some((l) => l.includes(EBAY_QUERIES[0]!) && l.includes('455') && l.includes('450'))
+          lines.some((l) => l.includes(S3_QUERIES[0]!) && l.includes('455') && l.includes('450'))
         ).toBe(true);
         // 2 % of 1000 is 20: 1000 announced, 980 delivered is accepted too.
         const big = await run((url) => {
@@ -1473,7 +1498,7 @@ describe('createEbayFetcher', () => {
           answer.total = 1002;
           return JSON.stringify(answer);
         });
-        expect(cut.result.truncated).toHaveLength(EBAY_QUERIES.length);
+        expect(cut.result.truncated).toHaveLength(S3_QUERIES.length);
         // 979 of 1001: 21 missing below 1000 is beyond tolerance(1000) = 20, though within
         // tolerance(1001) = 21: a layout error.
         const partial = await runError((url) => {
@@ -1539,7 +1564,7 @@ describe('createEbayFetcher', () => {
           answer.total = 1022;
           return JSON.stringify(answer);
         });
-        expect(cut.result.truncated).toHaveLength(EBAY_QUERIES.length);
+        expect(cut.result.truncated).toHaveLength(S3_QUERIES.length);
       } finally {
         warn.mockRestore();
       }
@@ -1551,7 +1576,7 @@ describe('createEbayFetcher', () => {
         for (const total of [450, 1000]) {
           const { urls, result } = await run(paged(total));
           expect(result.truncated).toBeUndefined();
-          expect(urls).toHaveLength(Math.ceil(total / 200) * EBAY_QUERIES.length);
+          expect(urls).toHaveLength(Math.ceil(total / 200) * S3_QUERIES.length);
         }
         expect(warn).not.toHaveBeenCalled();
       } finally {
@@ -1573,6 +1598,7 @@ describe('createEbayFetcher', () => {
         return new Response(paged(450)(url));
       };
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 's',
         fetchFn,
@@ -1605,6 +1631,7 @@ describe('createEbayFetcher', () => {
         ),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1628,6 +1655,7 @@ describe('createEbayFetcher', () => {
         ),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1641,6 +1669,7 @@ describe('createEbayFetcher', () => {
   test('every search returning zero items is a layout error', async () => {
     const fake = makeFetch({ searchBody: () => JSON.stringify({ total: 0 }) });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1668,6 +1697,7 @@ describe('createEbayFetcher', () => {
         ),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1687,6 +1717,7 @@ describe('createEbayFetcher', () => {
   test('a titled listing carries no picture id source', async () => {
     const fake = makeFetch({ searchBody: () => body(item({})) });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1702,6 +1733,7 @@ describe('createEbayFetcher', () => {
       searchBody: (n) => (n === 1 ? body(item({ title: 'LEGO Minecraft Booster' })) : body()),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1719,6 +1751,7 @@ describe('createEbayFetcher', () => {
   test('sends marketplace, auth and user agent headers', async () => {
     const fake = makeFetch();
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 'secret',
       fetchFn: fake.fetchFn,
@@ -1737,6 +1770,7 @@ describe('createEbayFetcher', () => {
   test('a token failure throws HttpError without leaking the secret', async () => {
     const fake = makeFetch({ tokenStatus: 401 });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 'topsecret',
       fetchFn: fake.fetchFn,
@@ -1758,6 +1792,7 @@ describe('createEbayFetcher', () => {
       }),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 'topsecret',
       fetchFn: fake.fetchFn,
@@ -1777,6 +1812,7 @@ describe('createEbayFetcher', () => {
       tokenBody: JSON.stringify({ error: 'invalid_client', error_description: `bad ${basic}` }),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 'topsecret',
       fetchFn: fake.fetchFn,
@@ -1794,6 +1830,7 @@ describe('createEbayFetcher', () => {
       tokenBody: JSON.stringify({ error: 'invalid_client' }),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: '',
       fetchFn: fake.fetchFn,
@@ -1811,6 +1848,7 @@ describe('createEbayFetcher', () => {
         tokenBody: JSON.stringify({ ...body, access_token: 'v^1.1#leaked' }),
       });
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 'topsecret',
         fetchFn: fake.fetchFn,
@@ -1831,6 +1869,7 @@ describe('createEbayFetcher', () => {
     const failRaw = async (tokenBody: string) => {
       const fake = makeFetch({ tokenStatus: 503, tokenBody });
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 'topsecret',
         fetchFn: fake.fetchFn,
@@ -1864,6 +1903,7 @@ describe('createEbayFetcher', () => {
         JSON.stringify({ errors: [{ longMessage: `bad query ${'x'.repeat(500)}` }] }),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1879,6 +1919,7 @@ describe('createEbayFetcher', () => {
   test('an answer that is not JSON names the URL', async () => {
     const fake = makeFetch({ searchBody: () => '<html>maintenance</html>' });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1894,6 +1935,7 @@ describe('createEbayFetcher', () => {
       searchBody: () => JSON.stringify({ errors: [{ message: 'Invalid category' }] }),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1911,6 +1953,7 @@ describe('createEbayFetcher', () => {
         searchBody: () => JSON.stringify({ total, itemSummaries: [item({})] }),
       });
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -1930,6 +1973,7 @@ describe('createEbayFetcher', () => {
         ),
     });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1954,6 +1998,7 @@ describe('createEbayFetcher', () => {
         tokenBody: JSON.stringify({ access_token: 't', expires_in: 7200 }),
       });
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -1974,6 +2019,7 @@ describe('createEbayFetcher', () => {
     const priceOf = async (over: Record<string, unknown>) => {
       const fake = makeFetch({ searchBody: () => body(item(over)) });
       const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -2006,11 +2052,567 @@ describe('createEbayFetcher', () => {
   test('a search failure throws HttpError', async () => {
     const fake = makeFetch({ searchStatus: 500 });
     const adapter = createEbayFetcher({
+      collections: SERIES_3_ONLY,
       clientId: 'id',
       clientSecret: 'secret',
       fetchFn: fake.fetchFn,
       sleep: noSleep,
     });
     await expect(adapter.fetchListings()).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+describe('series markers (2026-11-24 probe)', () => {
+  test('a series 1 title belongs to series 1, with its ids', () => {
+    const title = 'LEGO Minecraft Serie 1 Trading Card 134 - Neon Lohe - Mob Karte - Neon';
+    expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-1' });
+    expect(extractCardIdsFromTitle(title, 'lego-minecraft-1')).toEqual(ids('134'));
+    // Never a series 3 id.
+    expect(extractCardIdsFromTitle(title)).toEqual([]);
+  });
+
+  test('a card number after "Serie N -" is no series list', () => {
+    const s3 = 'LEGO Minecraft Serie 3 - 12 - Steve - Charakterkarte';
+    expect(classifyTitle(s3)).toEqual({ collection: 'lego-minecraft-3' });
+    expect(extractCardIdsFromTitle(s3)).toEqual(ids('12'));
+    expect(classifyTitle('LEGO Minecraft Serie 1 - 68 - Yeti - Skin Karte')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+    for (const title of [
+      'LEGO Minecraft Serie 3 - 12 Karte Steve',
+      'LEGO Minecraft Serie 3 - 7 Karte',
+      'LEGO Minecraft Serie 3 / 45 Steve Karte',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
+    }
+    // A smaller number after a dash is a card number: a list joined by a dash goes upward.
+    expect(extractCardIdsFromTitle('LEGO Minecraft Serie 3 - 1 - Steve - Charakterkarte')).toEqual(
+      ids('1')
+    );
+    expect(extractCardIdsFromTitle('LEGO Minecraft TCC 3 - 2 - Zombie - Charakterkarte')).toEqual(
+      ids('2')
+    );
+    expect(classifyTitle('LEGO Minecraft Serie 2 - 1 - Steve - Karte')).toEqual({
+      collection: 'lego-minecraft-2',
+    });
+    // A later number of two digits is a card number, not series 2; an equal one is no list.
+    expect(classifyTitle('LEGO Minecraft Serie 1 - 23 - Steve - Charakterkarte')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+    expect(
+      extractCardIdsFromTitle(
+        'LEGO Minecraft Serie 1 - 23 - Steve - Charakterkarte',
+        'lego-minecraft-1'
+      )
+    ).toEqual(ids('23'));
+    expect(extractCardIdsFromTitle('LEGO Minecraft Serie 3 - 3 - Steve - Charakterkarte')).toEqual(
+      ids('3')
+    );
+    // An en dash, an em dash and a space are dashes too; a number above the series bound is a
+    // card number; a fraction after the series is no series number.
+    expect(extractCardIdsFromTitle('LEGO Minecraft Serie 3 – 1 – Steve – Charakterkarte')).toEqual(
+      ids('1')
+    );
+    expect(classifyTitle('LEGO Minecraft Serie 3 — 2 — Alex — Charakterkarte')).toEqual({
+      collection: 'lego-minecraft-3',
+    });
+    expect(classifyTitle('LEGO Minecraft Serie 3 1 Steve Charakterkarte')).toEqual({
+      collection: 'lego-minecraft-3',
+    });
+    expect(extractCardIdsFromTitle('LEGO Minecraft Serie 3 - 4 - Steve - Charakterkarte')).toEqual(
+      ids('4')
+    );
+    expect(classifyTitle('LEGO Minecraft Serie 1 2/150 Alex')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+    // Every dash, a double one too, joins only going upward; a fraction is no series number.
+    for (const title of [
+      'LEGO Minecraft Serie 3 ‑ 1 ‑ Steve ‑ Charakterkarte',
+      'LEGO Minecraft Serie 3 − 1 − Steve − Charakterkarte',
+      'LEGO Minecraft Serie 3 -- 1 Karte 5',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
+    }
+    // A closing bracket ends the series; a word that is no list word ends the separator.
+    for (const [title, collection, id] of [
+      ['LEGO Minecraft (Serie 3) 2 - Alex - Charakterkarte', 'lego-minecraft-3', '2'],
+      ['LEGO Minecraft Sammelkarte (Serie 3) 1 - Steve - Charakterkarte', 'lego-minecraft-3', '1'],
+      ['LEGO Minecraft (TCC 3) 2 - Alex - Charakterkarte', 'lego-minecraft-3', '2'],
+      ['LEGO Minecraft (Serie 1) 2 - Alex - Charakterkarte', 'lego-minecraft-1', '2'],
+    ] as const) {
+      expect(classifyTitle(title)).toEqual({ collection });
+      expect(extractCardIdsFromTitle(title, collection)).toEqual(ids(id));
+    }
+    for (const title of [
+      'LEGO Minecraft Serie 3 • 1 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 3: 1 - Steve - Charakterkarte',
+    ]) {
+      expect(extractCardIdsFromTitle(title)).toEqual(ids('1'));
+    }
+    expect(classifyTitle('LEGO Minecraft Serie 3 Toto 1 Karte 5')).toEqual({
+      collection: 'lego-minecraft-3',
+    });
+    expect(classifyTitle('LEGO Minecraft Serie 3 ― 1 ― Steve ― Charakterkarte')).toEqual({
+      collection: 'lego-minecraft-3',
+    });
+    expect(classifyTitle('LEGO Minecraft Serie 1 2/50 Alex')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+    // A title sign between the series and the card number is no list: only going upward.
+    for (const [title, id] of [
+      ['LEGO Minecraft Serie 3 | 2 - Alex - Charakterkarte', '2'],
+      ['LEGO Minecraft TCC 3 | 1 - Steve - Charakterkarte', '1'],
+      ['LEGO Minecraft Serie 3 · 2 - Alex - Charakterkarte', '2'],
+      ['LEGO Minecraft Serie 3 ; 2 - Alex - Charakterkarte', '2'],
+    ] as const) {
+      expect(extractCardIdsFromTitle(title)).toEqual(ids(id));
+    }
+    // The series number after TCC is no card number.
+    expect(extractCardIdsFromTitle('LEGO Minecraft TCC 3 - Steve - Charakterkarte')).toEqual([]);
+    // A series list stays one, also before "Karte" and before a dash and a word; "Serie 1 - 2 -
+    // Steve" may be series 1 #2 or a list: unclear, so no ids.
+    for (const title of [
+      'LEGO Minecraft Serie 1 - 2 Karte 45',
+      'LEGO Minecraft Serie 1 & 2 - Karte 45',
+      'LEGO Minecraft Serie 1-2 - Karte 45',
+      'LEGO Minecraft Serie 1 und 2 - Trading Card 45',
+      'LEGO Minecraft Serie 1, 2 - Karte 45',
+      'LEGO Minecraft TCC 1 & 2 - Karte 45',
+      'LEGO Minecraft Serie 2 & 3 - Karte 12',
+      'LEGO Minecraft Serie 1 - 2 - Steve - Skin Karte',
+      'LEGO Minecraft Serie 1 bis 3 Karte 5',
+      'LEGO Minecraft Serie 1 oder 2 Karte 5',
+      'LEGO Minecraft Serie 1 2 3 Karte 5',
+      'LEGO Minecraft Serie 2 to 3 Karte 5',
+      'LEGO Minecraft Serie 1 or 2 Karte 5',
+      // Any sign or list word joins series; a later list after a card number counts too.
+      'LEGO Minecraft Serie 1—2 Karte 9',
+      'LEGO Minecraft Serie 1 — 2 Karte 45',
+      'LEGO Minecraft Serie 1 bzw. 2 Karte 9',
+      'LEGO Minecraft Serie 1 o. 2 Karte 9',
+      'LEGO Minecraft Serie 1 u 2 Karte 45',
+      'LEGO Minecraft Serie 1 sowie 2 Karte 45',
+      'LEGO Minecraft Serie 1 plus 2 Karte 45',
+      'LEGO Minecraft Serie 1 | 2 Karte 45',
+      'LEGO Minecraft Serie 1 ; 2 Karte 45',
+      'LEGO Minecraft Serie 1 und/oder 2 Karte 45',
+      'LEGO Minecraft Serie 1. & 2. Karte 45',
+      'LEGO Minecraft Serie 3 - 1 & 2 Karte 45',
+      'LEGO Minecraft Serie 1/2/3 Karte 5',
+      // Signs and list words mixed, brackets, every kind of dash.
+      'LEGO Minecraft Serie 1, und 2 Karte 45',
+      'LEGO Minecraft Serie 1 (und 2) Karte 45',
+      'LEGO Minecraft Serie 1 (2) Karte 45',
+      'LEGO Minecraft Serie 1 & auch 2 Karte 45',
+      'LEGO Minecraft Serie 1 ‐ 2 Karte 45',
+      'LEGO Minecraft Serie 1 ‒ 2 Karte 45',
+      'LEGO Minecraft Serie 1 － 2 Karte 45',
+      'LEGO Minecraft Serie 1 and 2 Karte 45',
+      'LEGO Minecraft Serie 1 bzw 2 Karte 9',
+      'LEGO Minecraft Serie 1–2 Karte 45',
+      'LEGO Minecraft Serie 1‑2 Karte 45',
+      'LEGO Minecraft Serie 1−2 Karte 45',
+      'LEGO Minecraft Serie 1 · 2 Karte 45',
+      'LEGO Minecraft Serie 1 ~ 2 Karte 45',
+      'LEGO Minecraft Serie 3 - 1 - 2 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 1 UND 2 Karte 45',
+      'LEGO Minecraft Serie 3 UND 1 Karte 5',
+      'LEGO Minecraft Serie 3 (1) Karte 5',
+      'LEGO Minecraft Serie 1 ― 2 Karte 45',
+      'LEGO Minecraft Serie 1 ＆ 2 Karte 45',
+      'LEGO Minecraft Serie 1 ／ 2 Karte 45',
+      'LEGO Minecraft Serie 1 [2] Karte 45',
+      // A list after the series word's closing bracket.
+      'LEGO Minecraft (Serie 1) & 2 Karte 45',
+      'LEGO Minecraft (Serie 1) + (2) Karte 45',
+      'LEGO Minecraft (Serie 1) und 2 Karte 45',
+      'LEGO Minecraft Serie 1) & 2 Karte 45',
+      // More signs.
+      'LEGO Minecraft Serie 1 • 2 Karte 45',
+      'LEGO Minecraft Serie 1: 2 Karte 45',
+      'LEGO Minecraft Serie 1 ＋ 2 Karte 45',
+      'LEGO Minecraft Serie 1，2 Karte 45',
+      'LEGO Minecraft Serie 1（2）Karte 45',
+      'LEGO Minecraft Serie 1 ［2］ Karte 45',
+      'LEGO Minecraft Serie 1\u00a0&\u00a02 Karte 45',
+      'LEGO Minecraft Serie 1\t2 Karte 45',
+      'LEGO Minecraft Serie 1 ｜ 2 Karte 45',
+      'LEGO Minecraft Serie 1、2 Karte 45',
+      'LEGO Minecraft Serie 1 ﹠ 2 Karte 45',
+      'LEGO Minecraft Serie 1⁄2 Karte 45',
+      'LEGO Minecraft Serie 1\u200b-\u200b2 Karte 45',
+      // A card number after the list does not hide it.
+      'LEGO Minecraft Serie 1 und 2 1 Karte 5',
+      'LEGO Minecraft Serie 1 & 2 - 1 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 2 & 3 - 1 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 1-2 - 1 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 2 & 3 - 2 - Creeper - Charakterkarte',
+      'LEGO Minecraft Serie 2 und 3 - 2 - Creeper - Charakterkarte',
+      'LEGO Minecraft Serie 2 & 3 2 Karte 5',
+      'LEGO Minecraft Serie 2 3 2 - Creeper - Charakterkarte',
+      // Joined by a word or a sign, a list in any order.
+      'LEGO Minecraft Serie 3 und 1 Karte 5',
+      'LEGO Minecraft Serie 3 & 2 Karte 5',
+      'LEGO Minecraft Serie 3 bis 1 Karte 5',
+      'LEGO Minecraft Serie 3 oder 1 Karte 5',
+      'LEGO Minecraft Serie 3 / 1 Karte 5',
+      'LEGO Minecraft Serie 2/1 Karte 5',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ exclusion: 'several collections' });
+    }
+  });
+
+  test('Staffel 3 and TCC 3 name series 3', () => {
+    for (const title of ['LEGO Minecraft Staffel 3 Karte 12', 'LEGO Minecraft TCC 3 Karte 12']) {
+      expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
+    }
+    expect(classifyTitle('LEGO Minecraft TCC 30 Karte 12')).toEqual({ exclusion: 'no series' });
+  });
+
+  test('Boom-Bastic, TNT Boom and Staffel 2 name series 2', () => {
+    for (const title of [
+      'Blue Ocean LEGO Minecraft 2025 Sammelkarte 216 Trading Cards Boom-Bastic TNT',
+      'LEGO Minecraft Boom Bastic Karte 12',
+      'LEGO Minecraft Staffel 2 Karte 131 - Ghast',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-2' });
+    }
+  });
+
+  test('a title naming two series is excluded', () => {
+    expect(classifyTitle('Lego Minecraft Karten Serie 1 und Serie 3 Lot')).toEqual({
+      exclusion: 'several collections',
+    });
+    expect(
+      classifyTitle('LEGO Minecraft Boom Bastic One Fire Serie 3 98 Verschiedene Karten Neu')
+    ).toEqual({
+      exclusion: 'several collections',
+    });
+  });
+
+  test('a series list with one series word names several collections', () => {
+    for (const title of [
+      'LEGO Minecraft Serie 1-2 Karte 45',
+      'LEGO Minecraft Serie 1 und 2 Karte 45',
+      'LEGO Minecraft Serie 1 & 2 Karte 45',
+      'LEGO Minecraft Serie 1+2 Karte 45',
+      'LEGO Minecraft Serie 1/2 Karte 45',
+      'LEGO Minecraft Serie 1, 2, 3 Karte 45',
+      'LEGO Minecraft Serie 2 und 3 Karte 45',
+      'LEGO Minecraft Serie 2/3 Karte 45',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ exclusion: 'several collections' });
+    }
+    // One series and a year, or a card number, stay one series.
+    expect(classifyTitle('LEGO Minecraft Serie 3 - 2026 Karte 12')).toEqual({
+      collection: 'lego-minecraft-3',
+    });
+    expect(classifyTitle('LEGO Minecraft Serie 1 Karte 45')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+  });
+
+  test('a title naming no series is "no series"', () => {
+    expect(classifyTitle('LEGO Minecraft Sammelkarte / Trading Card Nr. 242')).toEqual({
+      exclusion: 'no series',
+    });
+  });
+
+  test('every fixture item gets its reviewed collection and ids', () => {
+    const items = (
+      JSON.parse(readFixture('ebay-search-series-1-2.json')) as {
+        itemSummaries: { title: string }[];
+      }
+    ).itemSummaries;
+    const read = items.map(({ title }) => {
+      const c = classifyTitle(title);
+      if ('exclusion' in c) return `${c.exclusion} | ${title}`;
+      const why = titleExclusion(title, c.collection);
+      if (why) return `${why} | ${title}`;
+      return `${c.collection} ${extractCardIdsFromTitle(title, c.collection).join(',') || '-'} | ${title}`;
+    });
+    expect(read).toMatchSnapshot();
+  });
+});
+
+describe('the name rule across series', () => {
+  const s3 = new Map([[cid('104'), 'Ghast']]);
+
+  test('a series 3 name another series has at that number gives no id', () => {
+    expect(
+      nameMatchedCardIds('LEGO Minecraft Karte 104 - Ghast', s3, [new Map([[cid('104'), 'Ghast']])])
+    ).toEqual([]);
+    // However it is spelled there.
+    expect(
+      nameMatchedCardIds('LEGO Minecraft Karte 104 - Ghast', s3, [new Map([[cid('104'), 'GHAST']])])
+    ).toEqual([]);
+  });
+
+  test('a name only series 3 has at that number still counts', () => {
+    expect(
+      nameMatchedCardIds('LEGO Minecraft Karte 104 - Ghast', s3, [new Map([[cid('104'), 'Blaze']])])
+    ).toEqual(ids('104'));
+  });
+
+  test('another catalog not synced yet changes nothing', () => {
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 104 - Ghast', s3, [new Map()])).toEqual(
+      ids('104')
+    );
+  });
+});
+
+describe('one eBay run for every collection', () => {
+  /** A one-item search answer. */
+  const oneItem = (title: string) =>
+    JSON.stringify({
+      total: 1,
+      itemSummaries: [
+        {
+          itemId: 'v1|250000000001|0',
+          legacyItemId: '250000000001',
+          title,
+          itemWebUrl: 'https://www.ebay.de/itm/250000000001',
+          price: { value: '1.00', currency: 'EUR' },
+          buyingOptions: ['FIXED_PRICE'],
+        },
+      ],
+    });
+
+  test("the default run searches every collection's queries once, in registry order", () => {
+    expect([...EBAY_QUERIES]).toEqual([
+      'lego minecraft karten serie 1',
+      'lego minecraft tcc serie 1',
+      'lego minecraft karten serie 2',
+      'lego minecraft boom bastic karte',
+      'lego minecraft on fire karte',
+      'lego minecraft tcc serie 3',
+      'lego minecraft trading card on fire',
+      'lego minecraft karten serie 3',
+    ]);
+  });
+
+  test("no name is read while another series' catalog is not loaded yet", async () => {
+    const ghast = {
+      itemId: 'v1|230000000001|0',
+      legacyItemId: '230000000001',
+      title: 'LEGO Minecraft Karte 104 - Ghast',
+      itemWebUrl: 'https://www.ebay.de/itm/230000000001',
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    };
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 1, itemSummaries: [ghast] }),
+    });
+    const run = (s1: Map<CardId, string>) =>
+      createEbayFetcher({
+        collections: EBAY_COLLECTIONS.filter((c) => c.id !== 'lego-minecraft-2'),
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        cardNames: (c) => (c === 'lego-minecraft-3' ? new Map([[cid('104'), 'Ghast']]) : s1),
+      }).fetchListings();
+    // Series 1 not synced: unsure, no id.
+    expect((await run(new Map())).listings).toEqual([]);
+    // Synced, without a Ghast at #104: series 3's.
+    expect((await run(new Map([[cid('1'), 'Steve']]))).listings.map((l) => l.cardIds)).toEqual([
+      ids('104'),
+    ]);
+  });
+
+  test('the fetcher stores each title in the collection it names', async () => {
+    const at = (n: number, title: string) => ({
+      itemId: `v1|24000000000${n}|0`,
+      legacyItemId: `24000000000${n}`,
+      title,
+      itemWebUrl: `https://www.ebay.de/itm/24000000000${n}`,
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    });
+    const items = [
+      at(1, 'LEGO Minecraft Serie 1 Trading Card 134 - Neon Lohe - Mob Karte - Neon'),
+      at(2, 'LEGO MINECRAFT TNT BOOM Serie 2 ULTRA RARE CREEPER 12 Karte Trading Card'),
+      at(3, 'LEGO Minecraft On Fire Karte 12'),
+    ];
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: items.length, itemSummaries: items }),
+    });
+    const { listings, namesUnknown } = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      cardNames: () => new Map(),
+    }).fetchListings();
+    expect(listings.map((l) => [l.collection, l.cardIds])).toEqual([
+      ['lego-minecraft-1', ids('134')],
+      ['lego-minecraft-2', ids('12')],
+      ['lego-minecraft-3', ids('12')],
+    ]);
+    // Without catalog names nothing was read by name; series 1 and 2 are named for the alert.
+    expect(namesUnknown).toEqual(['lego-minecraft-1', 'lego-minecraft-2']);
+  });
+
+  test('without series 3, or without catalog names, no unloaded card list is reported', async () => {
+    const fake = makeFetch({
+      searchBody: () => oneItem('LEGO Minecraft Serie 1 Trading Card 4 - X - Skin Karte'),
+    });
+    const run = (over: Partial<Parameters<typeof createEbayFetcher>[0]>) =>
+      createEbayFetcher({
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        ...over,
+      }).fetchListings();
+    const s1 = EBAY_COLLECTIONS.filter((c) => c.id === 'lego-minecraft-1');
+    expect(
+      (await run({ collections: s1, cardNames: () => new Map() })).namesUnknown
+    ).toBeUndefined();
+    expect((await run({})).namesUnknown).toBeUndefined();
+  });
+
+  test('a collection whose own searches all return nothing is reported, the others read', async () => {
+    const fake = makeFetch({
+      searchBody: (_n, url) =>
+        ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'].includes(
+          new URL(url).searchParams.get('q') ?? ''
+        )
+          ? JSON.stringify({ total: 0, itemSummaries: [] })
+          : oneItem('LEGO Minecraft On Fire Karte 12'),
+    });
+    const result = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    }).fetchListings();
+    expect(result.emptySearches).toEqual(['lego-minecraft-1']);
+    expect(result.listings.map((l) => l.collection)).toEqual(['lego-minecraft-3']);
+  });
+
+  test('the fetcher places titles with the markers it is given', async () => {
+    const fake = makeFetch({
+      searchBody: () => oneItem('LEGO Minecraft FOO Karte 12'),
+    });
+    const s1 = EBAY_COLLECTIONS.find((c) => c.id === 'lego-minecraft-1')!;
+    const { listings } = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      collections: [{ ...s1, series: /\bFOO\b/i }],
+    }).fetchListings();
+    expect(listings.map((l) => [l.collection, l.cardIds])).toEqual([
+      ['lego-minecraft-1', ids('12')],
+    ]);
+  });
+
+  test('a TCC number other than a series number keeps a title from being a picture candidate', () => {
+    expect(isPictureCandidate('LEGO Minecraft TCC 3 Ghast Karte')).toBe(true);
+    expect(isPictureCandidate('LEGO Minecraft TCC 12 Karte Serie 3')).toBe(false);
+    // Only series numbers 1 to 3 are a series.
+    expect(isPictureCandidate('LEGO Minecraft On Fire Serie 4 Steve')).toBe(false);
+    expect(isPictureCandidate('LEGO Minecraft Serie 3 Steve TCC 5')).toBe(false);
+  });
+
+  test('searches answering only unusable items are empty; a collection without searches is not', async () => {
+    const broken = JSON.stringify({ total: 1, itemSummaries: [{ itemId: 'v1|1|0' }] });
+    const s1Queries = ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'];
+    const fake = makeFetch({
+      searchBody: (_n, url) =>
+        s1Queries.includes(new URL(url).searchParams.get('q') ?? '')
+          ? broken
+          : oneItem('LEGO Minecraft On Fire Karte 12'),
+    });
+    const s2 = EBAY_COLLECTIONS.find((c) => c.id === 'lego-minecraft-2')!;
+    const result = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      collections: [
+        ...EBAY_COLLECTIONS.filter((c) => c.id !== 'lego-minecraft-2'),
+        { ...s2, queries: [] },
+      ],
+    }).fetchListings();
+    expect(result.emptySearches).toEqual(['lego-minecraft-1']);
+  });
+
+  test('a name a series this run does not read has at that number gives no id', async () => {
+    const fake = makeFetch({ searchBody: () => oneItem('LEGO Minecraft Karte 104 - Ghast') });
+    const run = (s1: ReadonlyMap<CardId, string>) =>
+      createEbayFetcher({
+        collections: SERIES_3_ONLY,
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        cardNames: (c) =>
+          c === 'lego-minecraft-3'
+            ? new Map([[cid('104'), 'Ghast']])
+            : c === 'lego-minecraft-1'
+              ? s1
+              : OTHER_SERIES_NAMES,
+      }).fetchListings();
+    expect((await run(new Map([[cid('104'), 'Ghast']]))).listings).toEqual([]);
+    const unloaded = await run(new Map());
+    expect(unloaded.listings).toEqual([]);
+    expect(unloaded.namesUnknown).toEqual(['lego-minecraft-1']);
+    expect((await run(OTHER_SERIES_NAMES)).listings.map((l) => l.cardIds)).toEqual([ids('104')]);
+  });
+
+  test('a picture candidate is told by the markers the fetcher is given', async () => {
+    const fake = makeFetch({ searchBody: () => oneItem('LEGO Minecraft FOO Ender Dragon') });
+    const s3 = EBAY_COLLECTIONS.find((c) => c.id === 'lego-minecraft-3')!;
+    const foo = [{ ...s3, series: /\bFOO\b/i }];
+    const { listings } = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      collections: foo,
+    }).fetchListings();
+    expect(listings.map((l) => [l.collection, l.idSource, l.cardIds])).toEqual([
+      ['lego-minecraft-3', 'picture', []],
+    ]);
+    expect(isPictureCandidate('LEGO Minecraft FOO Ender Dragon', foo)).toBe(true);
+    expect(isPictureCandidate('LEGO Minecraft FOO Ender Dragon')).toBe(false);
+  });
+
+  test('searches answering nothing but unusable items are a layout error of the run', async () => {
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 1, itemSummaries: [{ itemId: 'v1|1|0' }] }),
+    });
+    await expect(
+      createEbayFetcher({
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings()
+    ).rejects.toThrow('returned no usable item (1 without link or title)');
+  });
+
+  test('a long run of signs or list words after a series is read in linear time', () => {
+    for (const sign of [
+      '-',
+      '.',
+      '~',
+      '|',
+      ' -',
+      '–',
+      'u.',
+      'o.',
+      'bzw.',
+      'und/oder',
+      'u. ',
+      'u.o.',
+    ]) {
+      const title = `LEGO Minecraft Serie 3 ${sign.repeat(Math.ceil(60 / sign.length))} Steve`;
+      const started = performance.now();
+      classifyTitle(title);
+      expect(performance.now() - started).toBeLessThan(50);
+    }
   });
 });

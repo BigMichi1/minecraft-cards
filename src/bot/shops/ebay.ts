@@ -1,4 +1,11 @@
 import { compareCardIds, normalizeCardId } from '../cards/cardId';
+import {
+  LEGACY_COLLECTION,
+  type CollectionDefinition,
+  type CollectionId,
+  type EbayCollectionSettings,
+} from '../collections/ids';
+import { COLLECTIONS } from '../collections/index';
 import type { CardId } from '../cards/cardId';
 import { errorMessage, sleep as realSleep } from '../utils/async';
 import { REQUEST_TIMEOUT_MS, USER_AGENT, HttpError } from '../utils/http';
@@ -28,24 +35,31 @@ const TOTAL_TOLERANCE_SHARE = 0.02;
 const tolerance = (total: number) =>
   Math.max(TOTAL_TOLERANCE_MIN, Math.ceil(total * TOTAL_TOLERANCE_SHARE));
 
-export const EBAY_QUERIES = [
-  'lego minecraft on fire karte',
-  'lego minecraft tcc serie 3',
-  'lego minecraft trading card on fire',
-  // Most single cards ("LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)").
-  'lego minecraft karten serie 3',
+/** Every collection read on eBay: its id, searches and series marker (CollectionDefinition). */
+export type EbayCollection = EbayCollectionSettings & { readonly id: CollectionId };
+
+/** The definitions that name eBay settings, as eBay collections, in their order. */
+export function ebayCollectionsOf(definitions: readonly CollectionDefinition[]): EbayCollection[] {
+  return definitions.flatMap((d) => (d.shops.ebay ? [{ id: d.id, ...d.shops.ebay }] : []));
+}
+
+/** The collections whose definition names eBay settings, in registry order. */
+export const EBAY_COLLECTIONS: readonly EbayCollection[] = ebayCollectionsOf(COLLECTIONS);
+
+/** Every collection's searches, each once, in registry order. */
+export const EBAY_QUERIES: readonly string[] = [
+  ...new Set(EBAY_COLLECTIONS.flatMap((c) => c.queries)),
 ];
 
 const LETTER = 'A-Za-zÄÖÜäöüß';
-// "Serie 3", "Series 3", "Serie3", "On Fire".
-const SERIES_3_PATTERN = /\bSeries?\s*3\b|\bOn\s*Fire\b/i;
-// "Serie 1", "Series 2", but not "Serie 12".
-const SERIES_1_2_PATTERN = /\bSeries?\s*[12]\b/i;
 // A listing the buyer picks a card from: "zum aussuchen", "auswählen", "Auswahl", "du wählst",
 // "waehlen". `pick` only as a whole word: "Pickaxe" is a card name.
 const MULTI_PICK_PATTERN = /aussuch|auswahl|w(?:ä|ae)hl|\bchoos|\bpick\b/i;
-// Not right after a series word: "Serie 3 - Steve" names the series, not card 3.
-const NOT_AFTER_SERIES = '(?<!\\b(?:Serie|Series|Staffel)\\s*)';
+/** The numbered series there are (1 to 3): raise it with a new numbered series. */
+const SERIES_NUMBER = '[1-3]';
+// Not right after a series word: "Serie 3 - Steve" and "TCC 3 - Steve" name the series, not
+// card 3.
+const NOT_AFTER_SERIES = '(?<!\\b(?:Serie|Series|Staffel|TCC)\\s*)';
 // A number range: "1 - 228", "151-254", "LE1 - LE22", "1 bis 228". Only 1 to 3 digits, so
 // "Serie 3 - 2026" (a year) is not one; the first number must be the smaller (see hasRange).
 const RANGE_PATTERN = new RegExp(
@@ -253,34 +267,143 @@ function hasRange(title: string): boolean {
 }
 
 /**
- * Why a title gives no card ids by the title forms, whatever it names; see titleExclusion. Only
- * `no series 3` may still give ids, by catalog name (nameMatchedCardIds).
+ * Why a title gives no card ids by the title forms for a collection, whatever it names; see
+ * titleExclusion. Only `no series` may still give series 3 ids, by catalog name
+ * (nameMatchedCardIds).
  */
-export type TitleExclusion = 'other series' | 'no series 3' | 'pick list' | 'range';
+export type TitleExclusion =
+  'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
+
+// A series word followed by a list of series numbers ("Serie 1-2", "Serie 1 & 2 - Karte 45",
+// "Serie 1 bis 3", "Serie 3 und 1", "Serie 1 bzw. 2", "Serie 1 (2)", "Serie 1 2 3"). The series
+// numbers (SERIES_NUMBER) right after the series word are read pair by pair; a number followed
+// by another digit is a card number or a year ("Serie 3 - 12 - Steve - Charakterkarte" is #12,
+// "Serie 3 - 2026" a year), and one followed by "/NN" a card fraction ("Serie 1 2/150"). A
+// separator is a run of spaces, signs and list words, read one character at a time (no regular
+// expression: any run is read in linear time). Holding a list word or a list sign (LIST_SIGNS),
+// it makes the pair a list in any order; made only of spaces, dashes and title signs
+// (TITLE_SIGNS), which sellers also put between a series and a card number, only going upward
+// ("Serie 3 - 1 - Steve - Charakterkarte" and "Serie 3 | 2 - Alex - Charakterkarte" are cards
+// #1 and #2). After a closing bracket the series is over: a pair is a list then only through a
+// list sign or word ("(Serie 3) 2 - Alex" is card #2, "(Serie 1) & 2" a list). Any pair that
+// is a list makes the title one: "Serie 1 - 2 - Steve" may be series 1 #2 or a list, unclear,
+// so no ids.
+const LIST_WORDS = new Set([
+  'und',
+  'and',
+  'oder',
+  'or',
+  'bis',
+  'to',
+  'sowie',
+  'plus',
+  'auch',
+  'bzw',
+  'u',
+  'o',
+]);
+/**
+ * Dashes (hyphen, en, em, figure, bar, minus, fullwidth, soft hyphen) and title signs, a
+ * zero-width space too.
+ */
+const TITLE_SIGNS = new Set([...' -‐‑‒–—―−－\u00ad\u200b|｜·•;:~._']);
+/** Signs that join series: slash, ampersand, plus, comma, opening brackets (fullwidth too). */
+const LIST_SIGNS = new Set([...'/&+,([／＆＋，、（［﹠⁄∕']);
+/** Closing brackets: the series word's bracket ends, a list needs a list sign or word. */
+const CLOSING_BRACKETS = new Set([...')]）］']);
+const SERIES_START = new RegExp(`\\b(?:Series?|Staffel|TCC)\\s*(${SERIES_NUMBER})(?!\\d)`, 'gi');
+const LETTERS = /[A-Za-zÄÖÜäöüß]+/y;
+const ONE_SERIES_NUMBER = new RegExp(`^${SERIES_NUMBER}$`);
+
+/** Whether a title names a list of series with one series word (see SERIES_START). */
+function namesSeriesList(title: string): boolean {
+  for (const m of title.matchAll(SERIES_START)) {
+    let previous = Number(m[1]);
+    let at = m.index + m[0].length;
+    for (;;) {
+      // The separator: spaces, signs and list words.
+      let end = at;
+      let definite = false;
+      let closed = false;
+      while (end < title.length) {
+        const ch = title[end]!;
+        if (TITLE_SIGNS.has(ch) || /\s/.test(ch)) {
+          end++;
+        } else if (CLOSING_BRACKETS.has(ch)) {
+          closed = true;
+          end++;
+        } else if (LIST_SIGNS.has(ch)) {
+          definite = true;
+          end++;
+        } else {
+          LETTERS.lastIndex = end;
+          const word = LETTERS.exec(title)?.[0];
+          if (!word || !LIST_WORDS.has(word.toLowerCase())) break;
+          definite = true;
+          end += word.length;
+        }
+      }
+      const digit = title[end] ?? '';
+      if (end === at || !ONE_SERIES_NUMBER.test(digit)) break;
+      const rest = title.slice(end + 1, end + 4);
+      if (/^\d/.test(rest) || /^\/\d{2}/.test(rest)) break;
+      const number = Number(digit);
+      if (definite || (!closed && number > previous)) return true;
+      previous = number;
+      at = end + 1;
+    }
+  }
+  return false;
+}
 
 /**
- * Why a title cannot name a series 3 card, or null when it can. It must name series 3
- * ("Serie 3", "On Fire") and no other series (a lot mixing series 1 or 2 is ambiguous; a title
- * without any series word may be series 1 or 2, which used the same title forms), and must not
- * be a listing to pick cards from or name a number range ("Einzelkarten 1 - 228 zum
- * aussuchen"): a range or a choice is not stock.
+ * The collection a title names by its series marker (`Serie 1`, `Boom-Bastic`, `On Fire`), or
+ * why none: several (a lot mixing series is ambiguous) or none (series 1, 2 and 3 used the same
+ * title forms, so a number alone may be any series' card).
  */
-export function titleExclusion(title: string): TitleExclusion | null {
-  if (SERIES_1_2_PATTERN.test(title)) return 'other series';
-  if (!SERIES_3_PATTERN.test(title)) return 'no series 3';
+export function classifyTitle(
+  title: string,
+  collections: readonly EbayCollection[] = EBAY_COLLECTIONS
+): { collection: CollectionId } | { exclusion: 'several collections' | 'no series' } {
+  // "Serie 1-2", "Serie 1 und 2", "Serie 2/3": one series word for several series.
+  if (namesSeriesList(title)) return { exclusion: 'several collections' };
+  const named = collections.filter((c) => c.series.test(title));
+  if (named.length > 1) return { exclusion: 'several collections' };
+  const [only] = named;
+  return only ? { collection: only.id } : { exclusion: 'no series' };
+}
+
+/**
+ * Why a title cannot name a card of `collection` (series 3 unless given), or null when it can.
+ * It must name that collection's series and no other's, and must not be a listing to pick
+ * cards from or name a number range ("Einzelkarten 1 - 228 zum aussuchen"): a range or a
+ * choice is not stock.
+ */
+export function titleExclusion(
+  title: string,
+  collection: CollectionId = LEGACY_COLLECTION,
+  collections: readonly EbayCollection[] = EBAY_COLLECTIONS
+): TitleExclusion | null {
+  const placed = classifyTitle(title, collections);
+  if ('exclusion' in placed) return placed.exclusion;
+  if (placed.collection !== collection) return 'other series';
   if (MULTI_PICK_PATTERN.test(title)) return 'pick list';
   if (hasRange(title)) return 'range';
   return null;
 }
 
 /**
- * Card ids named in an eBay title, only for a title titleExclusion lets through. Prefixed forms
- * (`#12`, `Nr. 12`, `Karte 12`, `LE8`), `n/228`, `132 - Name - Charakterkarte` (also after
- * "Karten") and `ZOMBIE 68 Karte` (a card name word from CARD_NAME_WORDS) count; bare numbers
- * (`Serie 3`, `2026`) and counts (`6 Karten`) never do.
+ * Card ids of `collection` (series 3 unless given) named in an eBay title, only for a title
+ * titleExclusion lets through for it. Prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `Card 134`,
+ * `LE8`), `n/228`, `132 - Name - Charakterkarte` (also after "Karten") and `ZOMBIE 68 Karte` (a
+ * card name word from CARD_NAME_WORDS) count; bare numbers (`Serie 3`, `2026`) and counts
+ * (`6 Karten`) never do.
  */
-export function extractCardIdsFromTitle(title: string): CardId[] {
-  if (titleExclusion(title) !== null) return [];
+export function extractCardIdsFromTitle(
+  title: string,
+  collection: CollectionId = LEGACY_COLLECTION
+): CardId[] {
+  if (titleExclusion(title, collection) !== null) return [];
   return readCardIds(title);
 }
 
@@ -400,11 +523,15 @@ const NAME_TITLE_WORD_SET = new Set(NAME_TITLE_WORDS);
  * and names are taken out, nothing but NAME_TITLE_WORDS words and punctuation may be left:
  * "Comic Karte 3 - Steve", "Gold Ghast Karte 131" and "Karte 131 - Ghast 2025" give nothing.
  * A name several series 3 cards share counts beside each of their numbers: "Karte 104 - Ghast" is
- * #104 (Ghast is #15, #102, #104 and #131). A series 1 or 2 card sharing number and name passes
- * too; its picture is compared as for every title (docs/image-matching.md).
+ * #104 (Ghast is #15, #102, #104 and #131), unless another series has that name at that number
+ * (`otherSeriesNames`, series 1's and 2's catalogs): such a title cannot be placed.
  */
-export function nameMatchedCardIds(title: string, names: ReadonlyMap<CardId, string>): CardId[] {
-  if (titleExclusion(title) !== 'no series 3') return [];
+export function nameMatchedCardIds(
+  title: string,
+  names: ReadonlyMap<CardId, string>,
+  otherSeriesNames: readonly ReadonlyMap<CardId, string>[] = []
+): CardId[] {
+  if (titleExclusion(title) !== 'no series') return [];
   if (MULTI_PICK_PATTERN.test(title) || hasRange(title) || ANY_COUNT_WORD.test(title)) return [];
   const candidates = new Set(readCardIds(title));
   for (const pattern of [NUMBER_DASH_PATTERN, SPACED_LE_XXL_PATTERN]) {
@@ -418,9 +545,13 @@ export function nameMatchedCardIds(title: string, names: ReadonlyMap<CardId, str
   // them are taken out at once, and only allowed words may be left.
   let rest = nameText(title);
   const spans: RegExp[] = [];
+  const sameName = (a: string, b: string) => nameWords(a).join(' ') === nameWords(b).join(' ');
   for (const id of candidates) {
-    const namePattern = cardNamePattern(names.get(id) ?? '');
+    const name = names.get(id) ?? '';
+    const namePattern = cardNamePattern(name);
     if (!namePattern) return [];
+    // Series 1 or 2 has this name at this number too: the title cannot be placed.
+    if (otherSeriesNames.some((other) => sameName(other.get(id) ?? '', name))) return [];
     const num = cardIdPattern(id);
     const beside = new RegExp(
       `${num}${BESIDE}${namePattern}|${namePattern}${BESIDE}${NUMBER_PREFIX}${num}`,
@@ -435,8 +566,11 @@ export function nameMatchedCardIds(title: string, names: ReadonlyMap<CardId, str
 }
 
 // The numbers a single-card title may carry without naming a card: the series ("Serie 3",
-// "Series3") and a year ("2026").
-const SERIES_OR_YEAR = /\b(?:Series?|Staffel)\s*\d+\b|\b(?:19|20)\d{2}\b/gi;
+// "Series3", "TCC 3"; series numbers 1 to 3 only) and a year ("2026").
+const SERIES_OR_YEAR = new RegExp(
+  `\\b(?:Series?|Staffel|TCC)\\s*${SERIES_NUMBER}\\b|\\b(?:19|20)\\d{2}\\b`,
+  'gi'
+);
 
 /**
  * Whether a title naming no card id may still offer one series 3 single card, so its picture
@@ -444,9 +578,14 @@ const SERIES_OR_YEAR = /\b(?:Series?|Staffel)\s*\d+\b|\b(?:19|20)\d{2}\b/gi;
  * no COUNT_WORDS word ("Booster", "Lot", "Karten", "Holo", "5 Stück") and no number but the
  * series and a year. A number the id patterns do not read is a count as often as a card
  * ("6 TradingCards ... 1 special Card"), so such a title is not left to the picture.
+ * @param markers the series markers that place the title (default the registry's); the title
+ *   must still name series 3.
  */
-export function isPictureCandidate(title: string): boolean {
-  if (titleExclusion(title) !== null) return false;
+export function isPictureCandidate(
+  title: string,
+  markers: readonly EbayCollection[] = EBAY_COLLECTIONS
+): boolean {
+  if (titleExclusion(title, LEGACY_COLLECTION, markers) !== null) return false;
   if (ANY_COUNT_WORD.test(title)) return false;
   return !/\d/.test(title.replace(SERIES_OR_YEAR, ' '));
 }
@@ -517,7 +656,13 @@ function listingUrl(item: EbayItem): string | null {
 }
 
 /** `ids`: the title's card ids, or `picture` for a title naming none (isPictureCandidate). */
-function toListing(item: EbayItem, url: string, title: string, ids: CardId[] | 'picture'): Listing {
+function toListing(
+  item: EbayItem,
+  url: string,
+  title: string,
+  ids: CardId[] | 'picture',
+  collection: CollectionId
+): Listing {
   const isAuction = item.buyingOptions?.includes('AUCTION') ?? false;
   const endsAt = isAuction && item.itemEndDate ? Date.parse(item.itemEndDate) : Number.NaN;
   const fields = {
@@ -531,6 +676,7 @@ function toListing(item: EbayItem, url: string, title: string, ids: CardId[] | '
     format: isAuction ? ('auction' as const) : ('fixed_price' as const),
     auctionEndsAt: Number.isNaN(endsAt) ? null : endsAt,
     idConflict: false,
+    collection,
   };
   return ids === 'picture'
     ? { ...fields, idSource: 'picture', cardIds: [] }
@@ -546,13 +692,19 @@ export function createEbayFetcher(
     clientSecret: string;
     fetchFn?: FetchFn;
     /**
-     * The catalog names (laststicker's, or the admin's for a manual card) of the collection this
-     * fetcher is bound to
-     * (`shops/adapters.ts` binds it), read once per fetch: a title without a series word counts
-     * only by a name beside its number (nameMatchedCardIds). Without it, such titles stay
+     * Each collection's catalog names (laststicker's, or the admin's for a manual card), read
+     * once per fetch: a title without a series word is series 3's only by a name beside its
+     * number that no other series has there (nameMatchedCardIds). Without it, such titles stay
      * excluded.
      */
-    cardNames?: () => ReadonlyMap<CardId, string>;
+    cardNames?: (collection: CollectionId) => ReadonlyMap<CardId, string>;
+    /**
+     * The collections read (default every one with eBay settings): their queries are searched,
+     * their markers place the titles, and their titles are stored. A title naming a registry
+     * collection not read here is `other series`; one naming several, or none, is excluded as
+     * `several collections` or `no series` (series 3's name check apart).
+     */
+    collections?: readonly EbayCollection[];
   } & AdapterOptions
 ): ShopFetcher {
   const fetchFn = opts.fetchFn ?? fetch;
@@ -800,7 +952,34 @@ export function createEbayFetcher(
   return {
     id: 'ebay',
     async fetchListings(): Promise<FetchResult> {
-      const names = opts.cardNames?.() ?? new Map<CardId, string>();
+      const collections = opts.collections ?? EBAY_COLLECTIONS;
+      // Every known marker places a title: the collections read, then the registry's others.
+      const known = [
+        ...collections,
+        ...EBAY_COLLECTIONS.filter((k) => !collections.some((c) => c.id === k.id)),
+      ];
+      const queries = [...new Set(collections.flatMap((c) => c.queries))];
+      const namesOf = (collection: CollectionId) =>
+        opts.cardNames?.(collection) ?? new Map<CardId, string>();
+      // Series 3's names, and the other series' to refuse a name they have at that number.
+      const series3 = collections.some((c) => c.id === LEGACY_COLLECTION);
+      const names = series3 ? namesOf(LEGACY_COLLECTION) : new Map<CardId, string>();
+      // Every other known series, read in this run or not, may have the name at that number.
+      const others = known
+        .filter((c) => c.id !== LEGACY_COLLECTION)
+        .map((c) => ({ id: c.id, names: namesOf(c.id) }));
+      const otherNames = others.map((o) => o.names);
+      // An other series' catalog not synced yet cannot rule a name out: no title read by name
+      // (the runner alerts the admin, `namesUnknown`).
+      // Without catalog names at all, nothing is read by name anyway, and nothing is reported.
+      const namesUnknown =
+        series3 && opts.cardNames ? others.filter((o) => o.names.size === 0) : [];
+      if (namesUnknown.length > 0) {
+        logger.warn(
+          `eBay: no title is read by catalog name while the card list of ${namesUnknown.map((c) => c.id).join(', ')} is not loaded`
+        );
+      }
+      const namesKnown = namesUnknown.length === 0;
       const byUrl = new Map<string, Listing>();
       const noId = new Set<string>();
       const excluded = new Set<string>();
@@ -813,9 +992,12 @@ export function createEbayFetcher(
       const pace = async () => {
         if (requests++ > 0) await sleep(delayMs);
       };
-      for (const query of EBAY_QUERIES) {
+      const perQuery = new Map<string, number>();
+      for (const query of queries) {
         const items = await search(query, pace, truncated);
         itemsSeen += items.length;
+        // Usable items only: answers of nothing but items without link or title are empty.
+        perQuery.set(query, items.filter((i) => listingUrl(i) && i.title).length);
         for (const item of items) {
           const url = listingUrl(item);
           const title = item.title;
@@ -827,15 +1009,30 @@ export function createEbayFetcher(
             continue;
           }
           if (byUrl.has(url) || noId.has(url) || excluded.has(url)) continue;
+          // Placed by every known series marker; a collection this run does not read is
+          // another series here.
+          const placed = classifyTitle(title, known);
+          const read =
+            'collection' in placed && collections.some((c) => c.id === placed.collection);
+          const collection = 'collection' in placed ? placed.collection : LEGACY_COLLECTION;
           // A listing with variations (`SELLER_DEFINED_VARIATIONS`) sells a choice of cards
           // under one title; which of them is in stock is not in the search answer.
-          const reason = item.itemGroupType ? 'variations' : titleExclusion(title);
-          const byName = reason === 'no series 3' ? nameMatchedCardIds(title, names) : [];
+          const reason = item.itemGroupType
+            ? 'variations'
+            : 'exclusion' in placed
+              ? placed.exclusion
+              : read
+                ? titleExclusion(title, collection, known)
+                : 'other series';
+          const byName =
+            reason === 'no series' && series3 && namesKnown
+              ? nameMatchedCardIds(title, names, otherNames)
+              : [];
           if (byName.length > 0) {
             logger.debug(
               `eBay: "${clip(title)}" names no series, read by catalog name as ${byName.join(', ')}`
             );
-            byUrl.set(url, toListing(item, url, title, byName));
+            byUrl.set(url, toListing(item, url, title, byName, LEGACY_COLLECTION));
             continue;
           }
           if (reason) {
@@ -843,10 +1040,12 @@ export function createEbayFetcher(
             logger.debug(`eBay: skipped "${clip(title)}" (${reason})`);
             continue;
           }
-          const cardIds = extractCardIdsFromTitle(title);
-          if (cardIds.length === 0 && isPictureCandidate(title)) {
+          // Placed and not excluded above: the title forms read its numbers.
+          const cardIds = readCardIds(title);
+          // isPictureCandidate is series 3's only (it needs a title naming series 3).
+          if (cardIds.length === 0 && isPictureCandidate(title, known)) {
             // No card id, but one single card: passed on without ids for the picture to decide.
-            byUrl.set(url, toListing(item, url, title, 'picture'));
+            byUrl.set(url, toListing(item, url, title, 'picture', LEGACY_COLLECTION));
             continue;
           }
           if (cardIds.length === 0) {
@@ -854,20 +1053,35 @@ export function createEbayFetcher(
             logger.debug(`eBay: skipped "${clip(title)}" (no card id)`);
             continue;
           }
-          byUrl.set(url, toListing(item, url, title, cardIds));
+          byUrl.set(url, toListing(item, url, title, cardIds, collection));
         }
       }
       // Same rule as the shops: an answer with nothing in it is an API or query problem,
       // and must not mark every stored eBay listing unavailable.
       if (itemsSeen === 0) {
-        throw new ShopLayoutError(`eBay: all ${EBAY_QUERIES.length} searches returned no items`);
+        throw new ShopLayoutError(`eBay: all ${queries.length} searches returned no items`);
       }
+      // Items, but none with a link and a title: eBay answered in another shape.
+      if ([...perQuery.values()].every((n) => n === 0)) {
+        throw new ShopLayoutError(
+          `eBay: all ${queries.length} searches returned no usable item (${invalid.size} without link or title)`
+        );
+      }
+      // A collection whose own searches all came back empty is a query or API problem there:
+      // the runner leaves its stored listings alone (shop error of that collection); a search
+      // whose items all lack a link or a title found nothing usable either. A
+      // collection without searches never counts as empty.
+      const emptySearches = collections
+        .filter((c) => c.queries.length > 0 && c.queries.every((q) => (perQuery.get(q) ?? 0) === 0))
+        .map((c) => c.id);
       return {
         listings: [...byUrl.values()],
         skippedNoId: noId.size,
         skippedExcluded: excluded.size,
         skippedInvalid: invalid.size,
         ...(truncated.length > 0 ? { truncated } : {}),
+        ...(namesUnknown.length > 0 ? { namesUnknown: namesUnknown.map((c) => c.id) } : {}),
+        ...(emptySearches.length > 0 ? { emptySearches } : {}),
       };
     },
   };

@@ -198,28 +198,64 @@ function byUrl(tx: Tx, url: string): StoredListing | undefined {
 export const listingManager = {
   /**
    * Insert or update by url; listings of `shop` in `collection` missing from `found` become
-   * unavailable (eBay: once unseen for EBAY_MISSING_GRACE_MS). Ended auctions are unavailable.
+   * unavailable (eBay: once unseen for EBAY_MISSING_GRACE_MS), unless the run saw them
+   * elsewhere (`seenUrls`: a shared run's other collections). Ended auctions are unavailable.
    * A URL already stored under another collection (stored there first) is left as it is, not
-   * returned, not marked unavailable by this run, and logged. Call only after a successful
-   * fetch.
+   * returned, not marked unavailable by this run, and logged; with `moveFromOtherCollections`
+   * (eBay, whose titles name their collection) an unmapped listing of the same shop moves to
+   * `collection` instead, with a fresh match status (`pending`, compared again there, or
+   * `bundle`) and a new availability period, and the moves are logged. Call only after a
+   * successful fetch.
    */
   upsertFromRun(
     shop: ShopId,
     collection: CollectionId,
     found: ShopListing[],
-    now: number
+    now: number,
+    options: {
+      readonly moveFromOtherCollections?: boolean;
+      readonly seenUrls?: ReadonlySet<string>;
+    } = {}
   ): StoredListing[] {
     const foreign: string[] = [];
+    const moved: string[] = [];
     const stored = db.transaction((tx) => {
       const ids: number[] = [];
       for (const scraped of found) {
         const item = auctionEnded(scraped.auctionEndsAt, now)
           ? { ...scraped, available: false }
           : scraped;
-        const existing = tx.select().from(listings).where(eq(listings.url, item.url)).get();
+        let existing = tx.select().from(listings).where(eq(listings.url, item.url)).get();
+        let movedHere = false;
         if (existing && existing.collection !== collection) {
-          foreign.push(`${clipText(item.url, MAX_LOGGED_URL)} (${existing.collection})`);
-          continue;
+          if (
+            !options.moveFromOtherCollections ||
+            existing.manualOverride ||
+            existing.shop !== shop
+          ) {
+            foreign.push(`${clipText(item.url, MAX_LOGGED_URL)} (${existing.collection})`);
+            continue;
+          }
+          // Its title now names this collection (eBay): it moves, and is compared again here,
+          // with a new availability period (another collection's alert was no alert for it).
+          tx.update(listings)
+            .set({
+              collection,
+              availableSince: item.available ? now : null,
+              matchStatus: defaultMatchStatus(item.cardIds),
+              similarity: null,
+              matchCheckedAt: null,
+              pictureCardId: null,
+              rematchFrom: null,
+              mismatchNotedAt: null,
+            })
+            .where(eq(listings.id, existing.id))
+            .run();
+          moved.push(
+            `${clipText(item.url, MAX_LOGGED_URL)} (${existing.collection} → ${collection})`
+          );
+          existing = tx.select().from(listings).where(eq(listings.id, existing.id)).get()!;
+          movedHere = true;
         }
         const fields = {
           title: item.title,
@@ -253,7 +289,9 @@ export const listingManager = {
         }
         const storedCards = cardIdsOf(tx, [existing.id]).get(existing.id) ?? [];
         // A title naming no card, rescraped unchanged, keeps the card its picture gave it.
+        // A moved listing's picture card was another collection's: it is not kept.
         const samePictureOnly =
+          !movedHere &&
           fields.idSource === 'picture' &&
           existing.idSource === 'picture' &&
           existing.title === item.title &&
@@ -307,6 +345,9 @@ export const listingManager = {
             eq(listings.collection, collection),
             eq(listings.available, true),
             ids.length > 0 ? notInArray(listings.id, ids) : undefined,
+            options.seenUrls && options.seenUrls.size > 0
+              ? notInArray(listings.url, [...options.seenUrls])
+              : undefined,
             shop === 'ebay'
               ? or(
                   lt(listings.lastSeenAt, now - EBAY_MISSING_GRACE_MS),
@@ -321,6 +362,11 @@ export const listingManager = {
         ids.length === 0 ? [] : tx.select().from(listings).where(inArray(listings.id, ids)).all()
       );
     });
+    if (moved.length > 0) {
+      logger.info(
+        `${shop}: ${moved.length} listing(s) moved to ${collection}, their title names it: ${moved.slice(0, 10).join(', ')}`
+      );
+    }
     if (foreign.length > 0) {
       logger.warn(
         `${shop} (${collection}): ${foreign.length} listing(s) stored under another collection left unchanged: ${foreign.slice(0, 10).join(', ')}`

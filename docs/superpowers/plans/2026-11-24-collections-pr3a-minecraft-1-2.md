@@ -1,5 +1,7 @@
 # Collections PR 3a: LEGO Minecraft series 1 and 2 — Implementation Plan
 
+> **Shipped differently:** the code and `docs/` are authoritative; for example eBay serves every collection since PR 3b (`ebay?` is an `EbayCollectionSettings`, not `Record<string, never>`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add `lego-minecraft-1` and `lego-minecraft-2`:

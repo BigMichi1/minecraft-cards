@@ -4,7 +4,9 @@
  * Reads the collection's laststicker set (`--collection`, default series 3; a set with
  * `scans: false` has no scans, so only its fallbacks are measured) and the single-card listings
  * of its sammel-ente and collect-it categories,
- * and, for series 3 when EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are set, eBay (titles naming one card). Per
+ * and, when EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are set, eBay (the collection's own searches;
+ * titles naming its series and one card; no title is read by catalog name, as the other
+ * series' card lists are not loaded). Per
  * shop it prints the cosine similarity of each listing picture with the scan of its own card
  * (true pairs) and with the scan of the next card id that shop has (false pairs, usually the
  * neighbouring panorama piece), min / median / max, the errors at IMAGE_MATCH_THRESHOLD and the
@@ -14,7 +16,7 @@
  *
  * Usage: ./bin/mise run measure:laststicker [-- --collection lego-minecraft-1]
  *   --collection  the collection (default lego-minecraft-3): its set, its sammel-ente and
- *                 collect-it categories, eBay for series 3 only
+ *                 collect-it categories, and its own eBay searches when it has eBay settings
  *
  * Scans are downloaded at most one per 1500 ms (laststicker's pacing); a scan that cannot be
  * loaded (404: no scan) is listed, and sammel-ente's picture of that card stands in
@@ -36,7 +38,7 @@ const { identifyPicture, TWIN_SIMILARITY, DECISION_GAP } =
 const { fetchLaststickerSet } = await import('../src/bot/catalog/laststicker');
 const { createSammelEnteFetcher } = await import('../src/bot/shops/sammelEnte');
 const { createCollectItFetcher } = await import('../src/bot/shops/collectIt');
-const { createEbayFetcher } = await import('../src/bot/shops/ebay');
+const { createEbayFetcher, ebayCollectionsOf } = await import('../src/bot/shops/ebay');
 const { sleep } = await import('../src/bot/utils/async');
 type Listing = import('../src/bot/shops/types').Listing;
 type ReferenceVector = import('../src/bot/matcher/identify').ReferenceVector;
@@ -127,7 +129,7 @@ if (collectSettings) {
 }
 const { EBAY_CLIENT_ID, EBAY_CLIENT_SECRET } = process.env;
 if (!definition.shops.ebay) {
-  console.log(`eBay skipped: not read for ${definition.id} yet`);
+  console.log(`eBay skipped: ${definition.id} has no eBay settings`);
 } else if (EBAY_CLIENT_ID && EBAY_CLIENT_SECRET) {
   shops.push({
     name: 'ebay',
@@ -136,9 +138,12 @@ if (!definition.shops.ebay) {
         await createEbayFetcher({
           clientId: EBAY_CLIENT_ID,
           clientSecret: EBAY_CLIENT_SECRET,
-          cardNames: () => names,
+          collections: ebayCollectionsOf([definition]),
+          // Kept on purpose: for series 3, the fetcher then warns that the other card lists are not
+          // loaded.
+          cardNames: (c) => (c === definition.id ? names : new Map()),
         }).fetchListings()
-      ).listings,
+      ).listings.filter((l) => l.collection === definition.id),
   });
 } else {
   console.log('eBay skipped: EBAY_CLIENT_ID / EBAY_CLIENT_SECRET not set');

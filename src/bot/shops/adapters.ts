@@ -10,7 +10,7 @@ import logger from '../utils/logger';
 import { createPacedFetch } from '../utils/pacedFetch';
 import { createBlueOceanFetcher } from './blueOcean';
 import { createCollectItFetcher } from './collectIt';
-import { createEbayFetcher } from './ebay';
+import { createEbayFetcher, ebayCollectionsOf } from './ebay';
 import { createSammelEnteFetcher } from './sammelEnte';
 import {
   SHOP_IDS,
@@ -45,8 +45,10 @@ export interface AdapterDeps {
 
 /**
  * Throws for settings a run would get wrong: a category on another host than its shop (it would
- * skip the shop's pacer), or blue-ocean or eBay for a collection their series 3 parsers do not
- * read (they would store series 3 listings under it).
+ * skip the shop's pacer), blue-ocean for a collection its series 3 parser does not read (it
+ * would store series 3 listings under it), or eBay settings without a search (the collection's
+ * listings would be marked gone, never searched) or with a `g`/`y` marker (`test` would keep
+ * state between titles).
  */
 function checkSettings(definition: CollectionDefinition): void {
   for (const shop of ['sammel-ente', 'collect-it'] as const) {
@@ -57,17 +59,25 @@ function checkSettings(definition: CollectionDefinition): void {
       throw new Error(`${definition.id}: ${shop} category is on ${host}, not ${SHOP_HOSTS[shop]}`);
     }
   }
-  for (const shop of ['blue-ocean', 'ebay'] as const) {
-    if (definition.shops[shop] && definition.id !== LEGACY_COLLECTION) {
-      throw new Error(`${definition.id}: ${shop} is read for ${LEGACY_COLLECTION} only`);
-    }
+  if (definition.shops['blue-ocean'] && definition.id !== LEGACY_COLLECTION) {
+    throw new Error(`${definition.id}: blue-ocean is read for ${LEGACY_COLLECTION} only`);
+  }
+  const ebay = definition.shops.ebay;
+  if (ebay && ebay.queries.length === 0) {
+    throw new Error(`${definition.id}: eBay settings without a search`);
+  }
+  if (ebay && (ebay.series.global || ebay.series.sticky)) {
+    throw new Error(`${definition.id}: the eBay series marker must not use the g or y flag`);
   }
 }
 
 /** The shops checked per collection, from the adapters (`/missing status`, `/stock`, `/card`). */
 export function enabledShopsOf(adapters: readonly ShopAdapter[]): EnabledShops {
   const enabled = new Map<CollectionId, ShopId[]>();
-  for (const a of adapters) enabled.set(a.collection, [...(enabled.get(a.collection) ?? []), a.id]);
+  for (const a of adapters) {
+    for (const c of a.collections ?? [a.collection])
+      enabled.set(c, [...(enabled.get(c) ?? []), a.id]);
+  }
   return enabled;
 }
 
@@ -99,22 +109,31 @@ function forCollection(fetcher: ShopFetcher, collection: CollectionId): ShopAdap
 }
 
 /**
- * Throws when a shop has two adapters for one collection: the run summary, a shop's recent peak
- * and the shop alert keys are keyed per (shop, collection).
+ * Throws when a shop has two adapters for one collection (the run summary, a shop's recent peak
+ * and the shop alert keys are keyed per (shop, collection)), counting every collection a shared
+ * run covers, or when a shared run covers no collection, one twice, or not its `collection`
+ * (its skipped counts are filed there).
  */
-export function checkOneAdapterPerShopAndCollection(adapters: ShopAdapter[]): ShopAdapter[] {
+export function checkAdapters(adapters: ShopAdapter[]): ShopAdapter[] {
   const seen = new Set<string>();
   for (const a of adapters) {
-    const key = `${a.id}:${a.collection}`;
-    if (seen.has(key)) throw new Error(`two adapters for shop ${a.id} in ${a.collection}`);
-    seen.add(key);
+    const covered = a.collections ?? [a.collection];
+    if (!covered.includes(a.collection) || new Set(covered).size !== covered.length) {
+      throw new Error(`shop ${a.id}: covers ${covered.join(', ')}, not ${a.collection} once`);
+    }
+    for (const c of covered) {
+      const key = `${a.id}:${c}`;
+      if (seen.has(key)) throw new Error(`two adapters for shop ${a.id} in ${c}`);
+      seen.add(key);
+    }
   }
   return adapters;
 }
 
 /**
  * The shops this process checks: per collection (COLLECTIONS order), the shops its definition
- * lists (SHOP_IDS order), eBay only when its credentials are set. The fetchers of one shop share
+ * lists (SHOP_IDS order) but eBay, then one eBay adapter for every collection with eBay
+ * settings, only when its credentials are set. The fetchers of one shop share
  * one paced fetch, so its pages stay SHOP_DELAY_MS apart across collections too.
  * `cardNames(collection)` gives eBay that collection's catalog names for titles without a series
  * word (read at the start of each eBay fetch, after the catalog sync of the same round).
@@ -140,18 +159,33 @@ export function createShopAdapters(
   };
   const definitions = deps.collections ?? COLLECTIONS;
   for (const definition of definitions) checkSettings(definition);
-  return checkOneAdapterPerShopAndCollection(
-    definitions.flatMap((definition) =>
-      SHOP_IDS.flatMap((shop): ShopAdapter[] => {
-        if (shop === 'ebay') {
-          if (!ebay || !definition.shops.ebay) return [];
-          const collection = definition.id;
-          const names = cardNames ? { cardNames: () => cardNames(collection) } : {};
-          return [forCollection(createEbayFetcher({ ...ebay, ...names }), collection)];
-        }
-        const fetcher = fetcherFor(shop, definition, pacedFor(shop));
-        return fetcher ? [forCollection(fetcher, definition.id)] : [];
-      })
-    )
+  const perCollection = definitions.flatMap((definition) =>
+    SHOP_IDS.flatMap((shop): ShopAdapter[] => {
+      if (shop === 'ebay') return [];
+      const fetcher = fetcherFor(shop, definition, pacedFor(shop));
+      return fetcher ? [forCollection(fetcher, definition.id)] : [];
+    })
   );
+  // One eBay run for every collection with eBay settings: every query is searched once, an item
+  // several queries find is stored once, and each title in the collection it names.
+  const onEbay = ebayCollectionsOf(definitions);
+  const ids = onEbay.map((c) => c.id);
+  const ebayAdapters: ShopAdapter[] =
+    ebay && onEbay.length > 0
+      ? [
+          {
+            ...forCollection(
+              createEbayFetcher({
+                ...ebay,
+                collections: onEbay,
+                ...(cardNames ? { cardNames } : {}),
+              }),
+              // The run's skipped counts are filed here: series 3's, the summary's `shops`.
+              ids.includes(LEGACY_COLLECTION) ? LEGACY_COLLECTION : ids[0]!
+            ),
+            collections: ids,
+          },
+        ]
+      : [];
+  return checkAdapters([...perCollection, ...ebayAdapters]);
 }

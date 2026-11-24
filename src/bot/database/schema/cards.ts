@@ -1,11 +1,11 @@
 import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 import { CARD_TYPES, type CardId } from '../../cards/cardId';
-import { COLLECTION_IDS, type CollectionId } from '../../collections/ids';
+import { COLLECTION_IDS } from '../../collections/ids';
 
 export const cards = sqliteTable(
   'cards',
   {
-    collection: text({ enum: COLLECTION_IDS }).$type<CollectionId>().notNull(),
+    collection: text({ enum: COLLECTION_IDS }).notNull(),
     cardId: text().$type<CardId>().notNull(),
     type: text({ enum: CARD_TYPES }).notNull(),
     name: text(),

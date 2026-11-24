@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, primaryKey } from 'drizzle-orm/sqlite-core';
 import type { CardId } from '../../cards/cardId';
-import { COLLECTION_IDS, type CollectionId } from '../../collections/ids';
+import { COLLECTION_IDS } from '../../collections/ids';
 
 export const users = sqliteTable('users', {
   discordId: text().primaryKey(),
@@ -14,7 +14,7 @@ export const wantedCards = sqliteTable(
     discordId: text()
       .notNull()
       .references(() => users.discordId, { onDelete: 'cascade' }),
-    collection: text({ enum: COLLECTION_IDS }).$type<CollectionId>().notNull(),
+    collection: text({ enum: COLLECTION_IDS }).notNull(),
     cardId: text().$type<CardId>().notNull(),
   },
   (t) => [primaryKey({ columns: [t.discordId, t.collection, t.cardId] })]

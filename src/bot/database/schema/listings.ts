@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, real, primaryKey, index } from 'drizzle-orm/sqlite-core';
 import type { CardId } from '../../cards/cardId';
-import { COLLECTION_IDS, type CollectionId } from '../../collections/ids';
+import { COLLECTION_IDS } from '../../collections/ids';
 import { MATCH_STATUSES } from '../../matcher/matchStatus';
 import { ID_SOURCES, LISTING_FORMATS, SHOP_IDS } from '../../shops/types';
 
@@ -9,7 +9,7 @@ export const listings = sqliteTable(
   {
     id: integer().primaryKey({ autoIncrement: true }),
     /** The collection whose card ids `listing_cards` and `picture_card_id` hold. */
-    collection: text({ enum: COLLECTION_IDS }).$type<CollectionId>().notNull(),
+    collection: text({ enum: COLLECTION_IDS }).notNull(),
     shop: text({ enum: SHOP_IDS }).notNull(),
     url: text().notNull().unique(),
     title: text().notNull(),

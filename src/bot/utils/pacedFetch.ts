@@ -28,7 +28,8 @@ export function createPacedFetch(
       }
       lastAt = now();
     });
-    queue = turn;
+    // A failed turn fails its own request only; the queue goes on.
+    queue = turn.catch(() => undefined);
     return turn.then(() => fetchFn(url, init));
   };
 }

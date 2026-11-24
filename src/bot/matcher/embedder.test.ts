@@ -1,9 +1,10 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { db, initializeDatabase } from '../database/db';
 import { imageEmbeddings } from '../database/schema/index';
 import type { Listing } from '../shops/types';
 import {
   allowedImageUrl,
+  pacedImageFetch,
   createCachedEmbedder,
   createTransformersEmbedder,
   DEFAULT_IMAGE_MATCH_THRESHOLD,
@@ -628,7 +629,10 @@ describe('loadReferenceSet', () => {
     test('a 404 of a shop or admin picture stays image_unavailable and is no missing scan', async () => {
       const missingScans: string[] = [];
       const set = await loadReferenceSet(
-        { usable: [{ ...card('XXL1', scan), source: 'shop' as const }], missing: [] },
+        {
+          usable: [{ ...card('XXL1', scan), source: 'shop' as const, fallbackUrl: null }],
+          missing: [],
+        },
         failing(httpFailure(404)),
         { onScanMissing: (id) => missingScans.push(id) }
       );
@@ -733,6 +737,20 @@ describe('loadReferenceSet', () => {
 
 const IMG = 'https://shop-sammel-ente.de/media/12.jpg';
 
+describe('pacedImageFetch', () => {
+  test('passes a request on to fetch', async () => {
+    const spy = spyOn(globalThis, 'fetch').mockImplementation(
+      (async () => new Response('ok')) as unknown as typeof fetch
+    );
+    try {
+      expect(await (await pacedImageFetch('https://cdn.blue-ocean.de/x.jpg')).text()).toBe('ok');
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('allowedImageUrl', () => {
   test('only https on the shop, eBay and laststicker image hosts', () => {
     for (const ok of [
@@ -830,6 +848,37 @@ describe('createTransformersEmbedder', () => {
     const error = await embedder.embed('https://cdn.blue-ocean.de/missing.jpg').catch((e) => e);
     expect(error).toBeInstanceOf(ImageUnavailableError);
     expect(error.message).toMatch(/404/);
+  });
+
+  test('a 404 scan through the real download falls back to the shop picture', async () => {
+    const scan = 'https://www.laststicker.com/i/cards/12125/xxl1.jpg';
+    const inner = await createTransformersEmbedder(
+      { model: 'm', cacheDir: 'c' },
+      {
+        fetchFn: async (url) =>
+          url === scan ? new Response('', { status: 404 }) : new Response(new Uint8Array([7, 8])),
+        loadPipeline: async () => async () => ({ data: new Float32Array([1, 0]), dims: [1, 2] }),
+      }
+    );
+    const missing: string[] = [];
+    const set = await loadReferenceSet(
+      {
+        usable: [
+          {
+            cardId: cid('XXL1'),
+            referenceImageUrl: scan,
+            source: 'laststicker',
+            fallbackUrl: 'https://shop-sammel-ente.de/xxl1.jpg',
+            puzzle: false,
+          },
+        ],
+        missing: [],
+      },
+      inner,
+      { onScanMissing: (id) => missing.push(id) }
+    );
+    expect(set.urls.get(cid('XXL1'))).toBe('https://shop-sammel-ente.de/xxl1.jpg');
+    expect(missing).toEqual(['XXL1']);
   });
 
   test('a network failure is ImageUnavailableError', async () => {

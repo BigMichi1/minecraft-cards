@@ -7,8 +7,13 @@ import {
   type CardType,
 } from '../cards/cardId';
 import { parseChecklist } from '../cards/starterCatalog';
-import { COLLECTIONS } from '../collections/index';
-import type { CardSource, CollectionCards, CollectionId } from '../collections/ids';
+import { COLLECTIONS, collectionById } from '../collections/index';
+import type {
+  CardSource,
+  CollectionCards,
+  CollectionDefinition,
+  CollectionId,
+} from '../collections/ids';
 import { CatalogLayoutError, type LaststickerRow } from '../catalog/laststicker';
 import type { MissingReference } from '../matcher/identify';
 import { db } from './db';
@@ -41,7 +46,10 @@ export interface SyncResult {
    * marks them noted (markListedNoted) once the admin alert is delivered.
    */
   readonly nowListed: readonly CardId[];
-  /** Cards whose reference picture changed (a new or changed scan): their mismatches go back. */
+  /**
+   * Stored cards whose chosen reference changed (a new or changed scan, a cleared missing-scan
+   * mark, a released card); added cards are left out: their mismatches are compared again.
+   */
   readonly repictured: readonly CardId[];
 }
 
@@ -84,19 +92,22 @@ export interface ReferenceCatalog {
 export type ReferenceSource = 'laststicker' | 'shop' | 'manual';
 
 /** A card with a reference picture, for the picture identification. */
-export interface ReferenceCard {
+export type ReferenceCard = {
   cardId: CardId;
   referenceImageUrl: string;
-  source: ReferenceSource;
-  /**
-   * The shop picture to use instead when the scan answers 404 (embedder's loadReferenceSet);
-   * set only for `source` `laststicker`.
-   */
-  fallbackUrl: string | null;
   puzzle: boolean;
   /** One of the collection's `knownTwins`: never told apart from its twin by the picture. */
   knownTwin?: true;
-}
+} & ChosenSource;
+
+/**
+ * The source and, for a laststicker scan only, the shop picture to use instead when the scan
+ * answers 404 or 410 (embedder's loadReferenceSet); null when there is none, or it is a
+ * placeholder or shown for several cards.
+ */
+type ChosenSource =
+  | { source: 'laststicker'; fallbackUrl: string | null }
+  | { source: 'shop' | 'manual'; fallbackUrl: null };
 
 /** A scan that answered 404 is tried again this long after (laststicker may add it). */
 export const SCAN_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -126,7 +137,7 @@ const PICTURE_COLUMNS = {
 function chooseReference(
   row: PictureColumns,
   now: number
-): { url: string; source: ReferenceSource; fallbackUrl: string | null } | null {
+): ({ url: string } & ChosenSource) | null {
   if (row.source === 'manual') {
     if (row.referenceImageUrl !== null) {
       return { url: row.referenceImageUrl, source: 'manual', fallbackUrl: null };
@@ -143,15 +154,18 @@ function chooseReference(
     : { url: row.shopImageUrl, source: 'shop', fallbackUrl: null };
 }
 
-/** Card id -> the URL of its chosen reference picture, for the collection's cards in `ids`. */
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/** Card id -> the URL of its chosen reference picture, for the collection's `cardIds`. */
 function chosenUrls(
+  tx: Tx,
   collection: CollectionId,
   cardIds: readonly CardId[],
   now: number
 ): Map<CardId, string | null> {
   const out = new Map<CardId, string | null>();
   if (cardIds.length === 0) return out;
-  const rows = db
+  const rows = tx
     .select({ cardId: cards.cardId, ...PICTURE_COLUMNS })
     .from(cards)
     .where(and(eq(cards.collection, collection), inArray(cards.cardId, [...cardIds])))
@@ -373,9 +387,9 @@ export const catalogManager = {
     /** A picture that tells its card apart: no placeholder, not shown for several cards. */
     const distinct = (url: string) =>
       !PLACEHOLDER_FILE.test(pictureKey(url)) && (uses.get(pictureKey(url)) ?? 0) <= 1;
-    const twins = new Set<string>(
-      COLLECTIONS.find((c) => c.id === collection)?.knownTwins?.flat() ?? []
-    );
+    // A row's collection may have no definition in this build (collectionName).
+    const definition: CollectionDefinition | undefined = collectionById(collection);
+    const twins = new Set<string>(definition?.knownTwins?.flat() ?? []);
     const usable: ReferenceCard[] = [];
     const missing: MissingReference[] = [];
     for (const { cardId, chosen, puzzleSeen } of rows) {
@@ -386,13 +400,21 @@ export const catalogManager = {
       } else if ((uses.get(pictureKey(chosen.url)) ?? 0) > 1) {
         missing.push({ cardId, reason: 'shared' });
       } else {
+        // The placeholder and shared rules hold for the fallback too.
+        const sourced: ChosenSource =
+          chosen.source === 'laststicker'
+            ? {
+                source: 'laststicker',
+                fallbackUrl:
+                  chosen.fallbackUrl !== null && distinct(chosen.fallbackUrl)
+                    ? chosen.fallbackUrl
+                    : null,
+              }
+            : { source: chosen.source, fallbackUrl: null };
         usable.push({
           cardId,
           referenceImageUrl: chosen.url,
-          source: chosen.source,
-          // The placeholder and shared rules hold for the fallback too.
-          fallbackUrl:
-            chosen.fallbackUrl !== null && distinct(chosen.fallbackUrl) ? chosen.fallbackUrl : null,
+          ...sourced,
           puzzle: puzzleSeen,
           ...(twins.has(cardId) ? { knownTwin: true as const } : {}),
         });
@@ -410,22 +432,22 @@ export const catalogManager = {
    */
   updateShopPictures(
     collection: CollectionId,
-    entries: { cardId: CardId; imageUrl: string | null }[]
+    entries: { cardId: CardId; imageUrl: string | null }[],
+    now: number = Date.now()
   ): CardId[] {
-    const now = Date.now();
     const withPicture = entries.filter(
       (e): e is { cardId: CardId; imageUrl: string } => e.imageUrl !== null
     );
     const ids = withPicture.map((e) => e.cardId);
-    return db.transaction(() => {
-      const before = chosenUrls(collection, ids, now);
+    return db.transaction((tx) => {
+      const before = chosenUrls(tx, collection, ids, now);
       for (const e of withPicture) {
-        db.update(cards)
+        tx.update(cards)
           .set({ shopImageUrl: e.imageUrl, updatedAt: now })
           .where(ofCard(collection, e.cardId))
           .run();
       }
-      return changedIds(before, chosenUrls(collection, ids, now));
+      return changedIds(before, chosenUrls(tx, collection, ids, now));
     });
   },
 
@@ -445,6 +467,7 @@ export const catalogManager = {
   ): SyncResult {
     return db.transaction((tx) => {
       const before = chosenUrls(
+        tx,
         collection,
         rows.map((r) => r.cardId),
         now
@@ -508,6 +531,7 @@ export const catalogManager = {
       }
       const sorted = (list: CardId[]) => list.sort(compareCardIds);
       const after = chosenUrls(
+        tx,
         collection,
         rows.map((r) => r.cardId),
         now

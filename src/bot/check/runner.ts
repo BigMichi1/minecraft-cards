@@ -65,8 +65,8 @@ export interface RunSummary {
 }
 
 export interface RematchCounts {
-  compared: number;
-  changed: number;
+  readonly compared: number;
+  readonly changed: number;
   /** `#<card> <shop> <old>→<new> <url>`, at most MAX_REMATCH_NAMED. */
   changes: readonly string[];
 }
@@ -610,7 +610,8 @@ async function checkShop(
           return l.cardIds.length === 1 && cardId !== undefined
             ? [{ cardId, imageUrl: l.imageUrl }]
             : [];
-        })
+        }),
+        deps.now()
       );
       // A new reference picture may settle a mismatch either way: compare those again.
       try {

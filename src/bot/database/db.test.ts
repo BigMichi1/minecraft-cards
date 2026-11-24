@@ -442,6 +442,9 @@ describe('database schema', () => {
       insert('https://s/mapped-ref', 'sammel-ente', 'reference', 1);
       insert('https://b/mapped', 'blue-ocean', 'confirmed', 1);
       insert('https://e/bundle', 'ebay', 'bundle', 0);
+      insert('https://b/mismatch', 'blue-ocean', 'mismatch', 0);
+      insert('https://b/pending', 'blue-ocean', 'pending', 0);
+      insert('https://b/unavailable', 'blue-ocean', 'image_unavailable', 0);
       migrate(oldDb, { migrationsFolder: dir });
       expect(
         old
@@ -489,6 +492,31 @@ describe('database schema', () => {
           similarity: 0.9,
           match_checked_at: 5,
           picture_card_id: '45',
+        },
+        {
+          url: 'https://b/mismatch',
+          match_status: 'pending',
+          rematch_from: 'mismatch',
+          similarity: null,
+          match_checked_at: null,
+          picture_card_id: null,
+        },
+        // Not judged yet before the switch: compared as any new listing, no change to count.
+        {
+          url: 'https://b/pending',
+          match_status: 'pending',
+          rematch_from: null,
+          similarity: null,
+          match_checked_at: null,
+          picture_card_id: null,
+        },
+        {
+          url: 'https://b/unavailable',
+          match_status: 'pending',
+          rematch_from: null,
+          similarity: null,
+          match_checked_at: null,
+          picture_card_id: null,
         },
       ]);
     } finally {

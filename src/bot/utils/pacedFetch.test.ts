@@ -78,4 +78,22 @@ describe('createPacedFetch', () => {
     expect(urls).toEqual(['not a url']);
     expect(sleeps).toEqual([]);
   });
+
+  test('a failing pacing step rejects that request only, never the later ones', async () => {
+    let fail = true;
+    let clock = 0;
+    const f = createPacedFetch(async () => new Response('ok'), paced, 1500, {
+      now: () => clock,
+      sleep: async () => {
+        if (fail) {
+          fail = false;
+          throw new Error('timer broke');
+        }
+      },
+    });
+    await f('https://www.laststicker.com/a.jpg');
+    await expect(f('https://www.laststicker.com/b.jpg')).rejects.toThrow('timer broke');
+    clock += 5000;
+    expect((await f('https://www.laststicker.com/c.jpg')).ok).toBe(true);
+  });
 });

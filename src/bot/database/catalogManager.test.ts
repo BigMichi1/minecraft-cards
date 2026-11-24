@@ -396,6 +396,32 @@ describe('catalogManager', () => {
       expect(catalogManager.clearScanMissing('lego-minecraft-3', [])).toEqual([]);
     });
 
+    test("a shop picture shared by one card's reference and another's fallback serves neither", () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('LE10'), imageUrl: 'https://se/same.jpg' },
+        { cardId: cid('LE11'), scanUrl: scan('le11'), imageUrl: 'https://se/same.jpg?ts=2' },
+      ]);
+      const { usable, missing } = catalogManager.referenceCatalog('lego-minecraft-3');
+      expect(missing).toContainEqual({ cardId: cid('LE10'), reason: 'shared' });
+      expect(usable.find((c) => c.cardId === 'LE11')).toMatchObject({
+        source: 'laststicker',
+        fallbackUrl: null,
+      });
+    });
+
+    test('a missing scan whose shop picture is a placeholder is no reference', () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('LE10'), scanUrl: scan('le10'), imageUrl: 'https://se/mnc3_leer.jpg' },
+      ]);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('LE10'), 1000);
+      expect(catalogManager.referenceCatalog('lego-minecraft-3', 1001).missing).toContainEqual({
+        cardId: cid('LE10'),
+        reason: 'placeholder',
+      });
+    });
+
     test('a missing scan without a shop picture is no_picture', () => {
       catalogManager.seedIfEmpty();
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('1'), scanUrl: scan('1') }]);

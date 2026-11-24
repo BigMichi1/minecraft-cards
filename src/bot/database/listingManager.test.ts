@@ -987,6 +987,30 @@ describe('listingManager', () => {
         return l;
       };
 
+      test('pendingNotifications holds back only a listing that was a mismatch', () => {
+        userManager.setList('u1', 'lego-minecraft-3', '12, 13, 14');
+        const of = (id: string) => ({ ...blue12, url: `https://x/${id}`, cardIds: ids(id) });
+        listingManager.upsertFromRun(
+          'blue-ocean',
+          'lego-minecraft-3',
+          [of('12'), of('13'), of('14')],
+          1000
+        );
+        const set = (id: string, from: LegacyMatchStatus | null) =>
+          db
+            .update(listings)
+            .set({ rematchFrom: from })
+            .where(eq(listings.url, `https://x/${id}`))
+            .run();
+        set('12', 'mismatch');
+        set('13', 'confirmed');
+        set('14', null);
+        const urls = (listingManager.pendingNotifications({ now: 1000 }).get('u1') ?? []).map(
+          (n) => n.listing.url
+        );
+        expect(urls.sort()).toEqual(['https://x/13', 'https://x/14']);
+      });
+
       test('an admin map clears it, so the listing is notified again', () => {
         userManager.setList('u1', 'lego-minecraft-3', '12');
         waiting();

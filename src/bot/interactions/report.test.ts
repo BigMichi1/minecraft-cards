@@ -398,6 +398,19 @@ describe('report flow', () => {
     expect(db.select().from(reports).all()).toHaveLength(0);
   });
 
+  test('admin message carries Confirm and Dismiss buttons and keeps the command hint', () => {
+    const l = makeListing();
+    const msg = buildAdminReportMessage(
+      { listingId: l.id, reporterId: 'u1', reason: 'wrong_number', note: null },
+      l,
+      'bob#1'
+    );
+    expect(msg.components).toHaveLength(1);
+    const ids = (msg.components![0] as any).toJSON().components.map((c: any) => c.custom_id);
+    expect(ids).toEqual([`admin-confirm:${l.id}:12`, `admin-dismiss:${l.id}`]);
+    expect(msg.content).toContain('/admin map url:');
+  });
+
   test('admin message has the fields, commands, and survives a bad listing url', () => {
     const l = { ...makeListing(), url: 'not a url' };
     const msg = buildAdminReportMessage(

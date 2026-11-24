@@ -2,18 +2,16 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   MessageFlags,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
 import type { ButtonInteraction, MessageCreateOptions, ModalSubmitInteraction } from 'discord.js';
-import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { reportManager, type ReportReason } from '../database/reportManager';
 import { runManager } from '../database/runManager';
-import { validUrl } from '../notify/messages';
+import { adminActionRow, adminListingEmbed } from './adminActions';
 import logger, { logError } from '../utils/logger';
 import { replyWithError } from '../utils/interactionReply';
 
@@ -152,38 +150,24 @@ export function buildAdminReportMessage(
   listing: StoredListing,
   reporterTag: string
 ): MessageCreateOptions {
-  const embed = new EmbedBuilder()
-    .setTitle(`⚠️ Wrong card reported (listing ${report.listingId})`)
-    .addFields(
-      {
-        name: 'Reporter',
-        value: truncate(`${reporterTag} (${report.reporterId})`, MAX_FIELD),
-        inline: true,
-      },
-      {
-        name: 'Cards',
-        value: truncate(listing.cardIds.map((id) => `#${id}`).join(', ') || 'none', MAX_FIELD),
-        inline: true,
-      },
-      { name: 'Shop', value: listing.shop, inline: true },
-      { name: 'URL', value: truncate(listing.url, MAX_FIELD) },
-      { name: 'Reason', value: REASONS[report.reason], inline: true }
-    );
+  const embed = adminListingEmbed(listing, `⚠️ Wrong card reported (listing ${report.listingId})`, [
+    {
+      name: 'Reporter',
+      value: truncate(`${reporterTag} (${report.reporterId})`, MAX_FIELD),
+      inline: true,
+    },
+  ]).addFields({ name: 'Reason', value: REASONS[report.reason], inline: true });
   if (report.note) embed.addFields({ name: 'Note', value: truncate(report.note, MAX_FIELD) });
-  const url = validUrl(listing.url);
-  if (url) embed.setURL(url);
-  const image = validUrl(listing.imageUrl);
-  if (image) embed.setImage(image);
-  const reference = listing.cardIds[0] ? catalogManager.getCard(listing.cardIds[0]) : undefined;
-  const thumbnail = validUrl(reference?.referenceImageUrl);
-  if (thumbnail) embed.setThumbnail(thumbnail);
   const ids = listing.cardIds.join(',');
+  const row = adminActionRow(listing, { dismiss: true });
   return {
+    // The command stays: mapping the listing to other cards has no button.
     content: truncate(
       `Fix with \`/admin map url:${listing.url} cards:${ids}\` or dismiss with \`/admin clear url:${listing.url}\`.`,
       2000
     ),
     embeds: [embed],
+    ...(row ? { components: [row] } : {}),
   };
 }
 

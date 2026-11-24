@@ -657,6 +657,17 @@ describe('loadReferenceSet', () => {
     });
   });
 
+  test('a known twin keeps its mark in the loaded set', async () => {
+    const set = await loadReferenceSet(
+      { usable: [{ ...card('59', 'ok'), knownTwin: true }, card('60', 'ok2')], missing: [] },
+      { model: 'm', embed: async () => new Float32Array([1, 0]) }
+    );
+    expect(set.vectors.map((v) => [v.cardId, v.knownTwin])).toEqual([
+      [cid('59'), true],
+      [cid('60'), undefined],
+    ]);
+  });
+
   test('a model failing on every reference is model_unavailable (R11)', async () => {
     const set = await loadReferenceSet(
       { usable: [card('12', 'a'), card('13', 'b')], missing: [] },

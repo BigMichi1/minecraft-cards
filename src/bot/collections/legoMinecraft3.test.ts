@@ -10,6 +10,7 @@ describe('legoMinecraft3', () => {
       starterChecklist: STARTER_CHECKLIST,
       laststicker: { set: 'blue_ocean_lego_minecraft_on_fire' },
       referenceFallbackShop: 'sammel-ente',
+      knownTwins: [['59', 'XXL1']],
     });
   });
 });

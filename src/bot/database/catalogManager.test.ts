@@ -373,6 +373,20 @@ describe('catalogManager', () => {
       expect(fallbackOf('LE13')).toBe('https://se/le13.jpg');
     });
 
+    test("the collection's known twins are marked on their references", () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('59'), scanUrl: scan('59') },
+        { cardId: cid('XXL1'), imageUrl: 'https://se/xxl1.jpg' },
+        { cardId: cid('60'), scanUrl: scan('60') },
+      ]);
+      const of = (id: string) =>
+        catalogManager.referenceCatalog('lego-minecraft-3').usable.find((c) => c.cardId === id);
+      expect(of('59')?.knownTwin).toBe(true);
+      expect(of('XXL1')?.knownTwin).toBe(true);
+      expect(of('60')?.knownTwin).toBeUndefined();
+    });
+
     test('a missing scan without a shop picture is no_picture', () => {
       catalogManager.seedIfEmpty();
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('1'), scanUrl: scan('1') }]);

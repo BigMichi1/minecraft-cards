@@ -86,10 +86,15 @@ const puzzle = new Set(
 );
 console.log(`laststicker ${SET}: ${rows.length} cards, ${puzzle.size} puzzle cards`);
 
+/** Each shop is read once, also when its pictures are fallback references too. */
+const once = <T>(load: () => Promise<T>): (() => Promise<T>) => {
+  let p: Promise<T> | undefined;
+  return () => (p ??= load());
+};
 const shops: { name: string; load: () => Promise<readonly Listing[]> }[] = [
   {
     name: 'sammel-ente',
-    load: async () => (await createSammelEnteFetcher().fetchListings()).listings,
+    load: once(async () => (await createSammelEnteFetcher().fetchListings()).listings),
   },
   {
     name: 'collect-it',
@@ -136,7 +141,26 @@ console.log(
   `scans loaded: ${scans.length}; not loaded: ${noScan.length ? noScan.join('; ') : 'none'}`
 );
 
-console.log('\n== twins (scan pairs at or above TWIN_SIMILARITY)');
+// The production reference set: a card without a scan has sammel-ente's picture
+// (referenceFallbackShop), as catalogManager.referenceCatalog chooses it.
+const fallbackCards: string[] = [];
+const sammelPictures = picturesById(await shops[0]!.load());
+for (const row of rows) {
+  if (scanOf.has(row.cardId)) continue;
+  const url = sammelPictures.get(row.cardId);
+  if (url === undefined) continue;
+  try {
+    const vector = await embedder.embed(url);
+    scans.push({ cardId: row.cardId, vector, puzzle: puzzle.has(row.cardId) });
+    scanOf.set(row.cardId, vector);
+    fallbackCards.push(row.cardId);
+  } catch (error) {
+    console.log(`  fallback ${row.cardId} not loaded: ${message(error)}`);
+  }
+}
+console.log(`fallback references (sammel-ente pictures): ${fallbackCards.join(', ') || 'none'}`);
+
+console.log('\n== twins (reference pairs at or above TWIN_SIMILARITY, fallbacks included)');
 for (let a = 0; a < scans.length; a++) {
   for (let b = a + 1; b < scans.length; b++) {
     const sim = cosineSimilarity(scans[a]!.vector, scans[b]!.vector);

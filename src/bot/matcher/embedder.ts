@@ -427,7 +427,13 @@ export async function loadReferenceSet(
         results[i] =
           'noScan' in loaded
             ? { failed: 'no_picture', detail: loaded.noScan }
-            : { cardId: card.cardId, vector: loaded.vector, puzzle: card.puzzle, url: loaded.url };
+            : {
+                cardId: card.cardId,
+                vector: loaded.vector,
+                puzzle: card.puzzle,
+                ...(card.knownTwin ? { knownTwin: true as const } : {}),
+                url: loaded.url,
+              };
       } catch (error) {
         results[i] = { failed: unavailableStatus(error), detail: errorMessage(error) };
       }

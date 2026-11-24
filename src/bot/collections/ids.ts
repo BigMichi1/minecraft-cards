@@ -41,6 +41,11 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
    * or a manual card has no picture of the admin's; none: such a card has no reference.
    */
   readonly referenceFallbackShop?: ShopId;
+  /**
+   * Cards that show the same art, measured so (docs/image-matching.md): each is a twin of the
+   * other whatever their reference pictures score, so the picture alone never tells them apart.
+   */
+  readonly knownTwins?: readonly (readonly [string, string])[];
 }
 
 /**

@@ -94,6 +94,8 @@ export interface ReferenceCard {
    */
   fallbackUrl: string | null;
   puzzle: boolean;
+  /** One of the collection's `knownTwins`: never told apart from its twin by the picture. */
+  knownTwin?: true;
 }
 
 /** A scan that answered 404 is tried again this long after (laststicker may add it). */
@@ -352,6 +354,9 @@ export const catalogManager = {
     /** A picture that tells its card apart: no placeholder, not shown for several cards. */
     const distinct = (url: string) =>
       !PLACEHOLDER_FILE.test(pictureKey(url)) && (uses.get(pictureKey(url)) ?? 0) <= 1;
+    const twins = new Set<string>(
+      COLLECTIONS.find((c) => c.id === collection)?.knownTwins?.flat() ?? []
+    );
     const usable: ReferenceCard[] = [];
     const missing: MissingReference[] = [];
     for (const { cardId, chosen, puzzleSeen } of rows) {
@@ -370,6 +375,7 @@ export const catalogManager = {
           fallbackUrl:
             chosen.fallbackUrl !== null && distinct(chosen.fallbackUrl) ? chosen.fallbackUrl : null,
           puzzle: puzzleSeen,
+          ...(twins.has(cardId) ? { knownTwin: true as const } : {}),
         });
       }
     }

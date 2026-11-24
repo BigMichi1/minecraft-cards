@@ -32,6 +32,8 @@ export interface ReferenceVector {
   vector: Float32Array;
   /** A puzzle card: pieces of one big picture, alike, see rule 5. */
   puzzle: boolean;
+  /** A twin by the collection's `knownTwins`, whatever the pictures score. */
+  knownTwin?: true;
 }
 
 /**
@@ -112,9 +114,12 @@ export function identifyPicture(
   }
   if (best === null) return null;
   const { ref } = best;
-  const twin = references.some(
-    (other) => other !== ref && atLeast(cosineSimilarity(other.vector, ref.vector), TWIN_SIMILARITY)
-  );
+  const twin =
+    ref.knownTwin === true ||
+    references.some(
+      (other) =>
+        other !== ref && atLeast(cosineSimilarity(other.vector, ref.vector), TWIN_SIMILARITY)
+    );
   return {
     cardId: ref.cardId,
     similarity: best.similarity,

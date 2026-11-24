@@ -27,6 +27,12 @@ describe('identifyPicture', () => {
     expect(DECISION_GAP).toBe(0.02);
   });
 
+  test('a known twin is a twin, however far apart its pictures are', () => {
+    const twin = { ...ref('XXL1', angle(0.95)), knownTwin: true as const };
+    const result = identifyPicture(at(0), [twin, ref('59', -angle(0.5))], 0.78);
+    expect(result).toMatchObject({ cardId: cid('XXL1'), decided: true, twin: true });
+  });
+
   test('decides when the best reference reaches the threshold and leads by the gap', () => {
     // 45 on the other side, so the two references are far apart (no twins).
     const result = identifyPicture(at(0), [ref('12', angle(0.9)), ref('45', -angle(0.7))], 0.78);

@@ -308,6 +308,16 @@ XXL1), so 234 scans loaded. Those 17 cards keep the sammel-ente picture as their
   only with more missed ones; no single value is better for all three. So the values stay:
   0.78, 0.02 and 0.9.
 
+**Run again on the production set** (the scans plus sammel-ente's pictures for the 17 cards
+without one, as `referenceCatalog` chooses them; the first run left those 17 out). The rates
+stay alike (wrong pairs at 0.78: sammel-ente 9 of 251, of them LE10~LE11 at 1.0, one shared
+picture, which the shared-picture rule keeps from being a reference; collect-it 11 of 228; eBay
+10 of 222), collect-it and eBay made no wrong decision (203 and 190 decided), and sammel-ente one
+of 228: its #59 picture was decided as XXL1 (0.945). laststicker's #59 scan and sammel-ente's
+XXL1 picture score below `TWIN_SIMILARITY`, so the twin rule no longer saw the pair. They show the
+same art, so the collection names them (`knownTwins: [['59', 'XXL1']]`): a known twin is a twin
+whatever its pictures score, and its picture alone never decides another card (rule 2 and 4).
+
 ## Data quality finding
 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",

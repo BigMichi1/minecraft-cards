@@ -45,6 +45,11 @@ export type StoredListing = Readonly<{
   idSource: IdSource;
   /** The card the picture was taken for (see the `pictureCardId` column), or null. */
   pictureCardId: CardId | null;
+  /**
+   * The status before the reference switch (migration 0008) while the listing waits to be
+   * compared again; an old value may be `reference`, a status no longer in use.
+   */
+  rematchFrom: string | null;
 }>;
 
 /** One listing to tell a user about: the cards of it they want, for this availability period. */
@@ -123,6 +128,7 @@ function toStored(row: ListingRow, cardIds: readonly CardId[]): StoredListing {
     lastSeenAt: row.lastSeenAt,
     idSource: row.idSource,
     pictureCardId: row.pictureCardId,
+    rematchFrom: row.rematchFrom,
   };
 }
 
@@ -364,6 +370,18 @@ export const listingManager = {
 
   markMismatchNoted(listingId: number, now: number): void {
     db.update(listings).set({ mismatchNotedAt: now }).where(eq(listings.id, listingId)).run();
+  },
+
+  /**
+   * The listing was compared again after the reference switch: clear `rematchFrom`. With
+   * `mismatchNotedAt` its mismatch is marked noted, so it gets no note of its own (the run's
+   * summary names it). Call it after setMatch, which makes a new mismatch's note due.
+   */
+  finishRematch(listingId: number, mismatchNotedAt: number | null): void {
+    db.update(listings)
+      .set({ rematchFrom: null, ...(mismatchNotedAt !== null ? { mismatchNotedAt } : {}) })
+      .where(eq(listings.id, listingId))
+      .run();
   },
 
   /**

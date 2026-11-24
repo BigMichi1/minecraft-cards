@@ -408,6 +408,16 @@ describe('/admin', () => {
     );
   });
 
+  test('the summary names the re-match counts', () => {
+    expect(
+      formatSummary({
+        ...summary,
+        shops: { ebay: { listings: 1 } },
+        rematch: { compared: 12, changed: 2, changes: ['#12 ebay confirmed→mismatch u'] },
+      })
+    ).toBe('ebay: 1 listings\nRe-match: 12 compared, 2 changed\nNotified: 4 · DM failures: 1');
+  });
+
   describe('catalog sync and manual cards', () => {
     const catalogSub = (name: string) =>
       (

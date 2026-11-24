@@ -279,6 +279,11 @@ export function formatSummary(summary: RunSummary): string {
   });
   if (summary.error) lines.push(`Run failed: ${summary.error}`);
   if (summary.pictures) lines.push(picturesLine(summary.pictures));
+  if (summary.rematch) {
+    lines.push(
+      `Re-match: ${summary.rematch.compared} compared, ${summary.rematch.changed} changed`
+    );
+  }
   lines.push(`Notified: ${summary.notified} · DM failures: ${summary.dmFailures}`);
   return lines.join('\n').slice(0, DISCORD_MESSAGE_LIMIT);
 }

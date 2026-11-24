@@ -42,6 +42,7 @@ export function storedListing(
     lastSeenAt: T,
     idSource: 'title',
     pictureCardId: null,
+    rematchFrom: null,
     ...over,
   };
 }

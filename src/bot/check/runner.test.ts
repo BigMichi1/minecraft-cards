@@ -984,6 +984,97 @@ describe('runCheck', () => {
       expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('mismatch');
     });
 
+    describe('the re-match after the reference switch', () => {
+      const DAY_AND_MORE = 25 * 60 * 60 * 1000;
+      const mismatchNotes = () => notes().filter((a) => a.startsWith('Picture mismatch'));
+      const summaries = () => notes().filter((a) => a.startsWith('Reference switch'));
+      /** What migration 0008 does to the stored listing, with `from` as its old status. */
+      const resetAsMigration = (from: string) =>
+        db
+          .update(listings)
+          .set({
+            rematchFrom: from,
+            matchStatus: 'pending',
+            similarity: null,
+            matchCheckedAt: null,
+            pictureCardId: null,
+          })
+          .where(eq(listings.url, blue12.url))
+          .run();
+      const shopsAt = (deg: number) => [
+        ok('sammel-ente', references),
+        ok('blue-ocean', [blueAt(deg)]),
+      ];
+
+      test('the re-match sends one summary instead of a note per mismatch', async () => {
+        await run(shopsAt(60));
+        expect(mismatchNotes()).toHaveLength(1);
+        resetAsMigration('confirmed');
+        clock += DAY_AND_MORE;
+        const r = await run(shopsAt(60));
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+          matchStatus: 'mismatch',
+          rematchFrom: null,
+        });
+        expect(mismatchNotes()).toHaveLength(1);
+        expect(summaries()).toHaveLength(1);
+        expect(summaries()[0]).toContain('compared 1 listing(s) again, 1 changed');
+        expect(summaries()[0]).toContain(`#12 blue-ocean confirmed→mismatch ${blue12.url}`);
+        expect(r.rematch).toEqual({
+          compared: 1,
+          changed: 1,
+          changes: [`#12 blue-ocean confirmed→mismatch ${blue12.url}`],
+        });
+        clock += DAY_AND_MORE;
+        expect((await run(shopsAt(60))).rematch).toBeUndefined();
+        expect(summaries()).toHaveLength(1);
+        expect(mismatchNotes()).toHaveLength(1);
+      });
+
+      test('a summary that fails leaves the new mismatch its own note', async () => {
+        await run(shopsAt(60));
+        resetAsMigration('confirmed');
+        clock += DAY_AND_MORE;
+        const alertAdmin = async (text: string) => {
+          if (text.startsWith('Reference switch')) throw new Error('DM failed');
+          alerts.push(text);
+        };
+        await run(shopsAt(60), { alertAdmin });
+        expect(summaries()).toEqual([]);
+        expect(mismatchNotes()).toHaveLength(2);
+      });
+
+      test('an unchanged re-match sends no summary; reference counts as confirmed', async () => {
+        await run(shopsAt(5));
+        resetAsMigration('reference');
+        const r = await run(shopsAt(5));
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+          matchStatus: 'confirmed',
+          rematchFrom: null,
+        });
+        expect(r.rematch).toEqual({ compared: 1, changed: 0, changes: [] });
+        expect(summaries()).toEqual([]);
+      });
+
+      test('a listing that cannot be compared keeps rematchFrom', async () => {
+        await run(shopsAt(5));
+        resetAsMigration('confirmed');
+        const r = await run(shopsAt(5), { embedder: null });
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+          matchStatus: 'model_unavailable',
+          rematchFrom: 'confirmed',
+        });
+        expect(r.rematch).toBeUndefined();
+      });
+
+      test('an available listing notified before the reset is not notified again', async () => {
+        expect((await run(shopsAt(5))).notified).toBe(1);
+        resetAsMigration('confirmed');
+        expect((await run(shopsAt(5))).notified).toBe(0);
+        expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
+      });
+    });
+
     test("rule 3: an undecided picture falls back to today's comparison", async () => {
       const r = await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(30)])]);
       expect(listingManager.getByUrl(blue12.url)).toMatchObject({

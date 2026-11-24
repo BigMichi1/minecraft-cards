@@ -40,6 +40,7 @@ function listing(i: number, over: Partial<StoredListing> = {}): StoredListing {
     lastSeenAt: 1,
     idSource: 'title',
     pictureCardId: null,
+    rematchFrom: null,
     ...over,
   };
 }

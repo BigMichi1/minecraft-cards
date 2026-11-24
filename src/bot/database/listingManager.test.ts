@@ -978,6 +978,28 @@ describe('listingManager', () => {
       expect(listingManager.pendingMismatchNotes().map((x) => x.id)).toEqual([l.id]);
     });
 
+    test('finishRematch clears rematchFrom and, given a time, marks the mismatch noted', () => {
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+      const l = listingManager.getByUrl(blue12.url)!;
+      expect(l.rematchFrom).toBeNull();
+      db.update(listings).set({ rematchFrom: 'confirmed' }).where(eq(listings.id, l.id)).run();
+      expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBe('confirmed');
+      listingManager.setMatch(l.id, mismatch45, 1001);
+      listingManager.finishRematch(l.id, 1002);
+      expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBeNull();
+      expect(listingManager.pendingMismatchNotes()).toEqual([]);
+    });
+
+    test('finishRematch without a time leaves a due note due', () => {
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+      const l = listingManager.getByUrl(blue12.url)!;
+      db.update(listings).set({ rematchFrom: 'mismatch' }).where(eq(listings.id, l.id)).run();
+      listingManager.setMatch(l.id, mismatch45, 1001);
+      listingManager.finishRematch(l.id, null);
+      expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBeNull();
+      expect(listingManager.pendingMismatchNotes().map((x) => x.id)).toEqual([l.id]);
+    });
+
     test('an admin-mapped mismatch needs no note', () => {
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;

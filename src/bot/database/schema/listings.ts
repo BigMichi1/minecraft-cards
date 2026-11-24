@@ -39,6 +39,11 @@ export const listings = sqliteTable(
     pictureCardId: text().$type<CardId>(),
     /** When the admin note of the current `mismatch` went out; null while it is due. */
     mismatchNotedAt: integer(),
+    /**
+     * The status before the switch to laststicker's references (migration 0008), until the
+     * listing is compared again: the run counts what changed and sends one summary.
+     */
+    rematchFrom: text(),
     firstSeenAt: integer().notNull(),
     lastSeenAt: integer().notNull(),
   },

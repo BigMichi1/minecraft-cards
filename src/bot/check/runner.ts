@@ -1,4 +1,6 @@
 import type { CardId } from '../cards/cardId';
+import type { CollectionId } from '../collections/ids';
+import { collectionName } from '../collections/index';
 import { catalogManager, type ReferenceCatalog } from '../database/catalogManager';
 import {
   listingManager,
@@ -118,17 +120,21 @@ function needsMatch(l: StoredListing, now: number): boolean {
   }
 }
 
-/** Whether the listing is worth comparing: a card someone wants, or a title naming no card. */
-function wantedOrPictureOnly(l: StoredListing, wanted: Set<CardId>): boolean {
+/**
+ * Whether the listing is worth comparing: a card someone wants in the listing's collection, or
+ * a title naming no card.
+ */
+function wantedOrPictureOnly(l: StoredListing, wanted: Map<CollectionId, Set<CardId>>): boolean {
   if (l.idSource === 'picture' && l.cardIds.length === 0) return true;
-  return l.cardIds.some((id) => wanted.has(id));
+  const ofCollection = wanted.get(l.collection);
+  return ofCollection !== undefined && l.cardIds.some((id) => ofCollection.has(id));
 }
 
 /** At most this many cards are named in a log line or an alert. */
 const MAX_NAMED = 10;
 
 /**
- * Every catalog card's reference picture for this run: read from the catalog and embedded on
+ * One collection's reference pictures for this run: read from its catalog and embedded on
  * first use (through the embedding cache), then reused. A reference that failed to load within
  * IMAGE_RETRY_MS (`referenceFailures`) is not tried again. Placeholder and shared pictures are
  * named in one warning; load failures in one warning and a throttled admin alert.
@@ -137,6 +143,7 @@ function referencesOnce(
   deps: RunDeps,
   embedder: ImageEmbedder,
   alert: AlertFn,
+  collection: CollectionId,
   catalogOf: () => ReferenceCatalog
 ): () => Promise<ReferenceSet> {
   let loading: Promise<ReferenceSet> | null = null;
@@ -183,9 +190,10 @@ function referencesOnce(
             (m) => `#${m.cardId} (${m.reason}: ${m.detail ?? '?'}, ${urlOf.get(m.cardId) ?? '?'})`
           )
           .join('; ');
-        const text = `${failed.length} reference picture(s) could not be loaded this run, so no picture decides a card on its own and no mismatch is made until they load: ${named}`;
+        const text = `${failed.length} reference picture(s) of ${collectionName(collection)} could not be loaded this run, so no picture decides a card on its own and no mismatch is made until they load: ${named}`;
         logger.warn(text);
-        await alert('reference-unavailable', text);
+        // Keyed per collection: one collection's failures must not throttle another's alert.
+        await alert(`reference-unavailable:${collection}`, text);
       }
       return set;
     })();
@@ -200,7 +208,7 @@ function mismatchNote(l: StoredListing, pictureCard: CardId): string {
     l.similarity === null ? '' : ` (#${titleCard} only ${l.similarity.toFixed(2)})`;
   return (
     `Picture mismatch, not sent to users: the title says #${titleCard}, the picture shows ` +
-    `#${pictureCard}${titleScore}. ${l.url} — if the title is wrong, fix it with /admin map.`
+    `#${pictureCard}${titleScore}. ${l.url} — if the title is wrong, fix it with /admin map collection:${l.collection}.`
   );
 }
 
@@ -225,13 +233,38 @@ function countPicture(counts: PictureCounts, result: MatchResult): void {
   if (key) counts[key] = (counts[key] ?? 0) + 1;
 }
 
+/** One collection's reference lookups for a run: the title card's picture, and the whole set. */
+interface CollectionReferences {
+  referenceOf: (id: CardId) => string | null;
+  references: (() => Promise<ReferenceSet>) | undefined;
+}
+
+function collectionReferences(
+  deps: RunDeps,
+  alert: AlertFn,
+  collection: CollectionId
+): CollectionReferences {
+  let catalog: ReferenceCatalog | null = null;
+  const catalogOf = () => (catalog ??= catalogManager.referenceCatalog(collection));
+  let usable: Map<CardId, string> | null = null;
+  return {
+    referenceOf: (id) => {
+      usable ??= new Map(catalogOf().usable.map((c) => [c.cardId, c.referenceImageUrl]));
+      return usable.get(id) ?? null;
+    },
+    references: deps.embedder
+      ? referencesOnce(deps, deps.embedder, alert, collection, catalogOf)
+      : undefined,
+  };
+}
+
 async function matchPending(
   deps: RunDeps,
   alert: AlertFn,
   summary: RunSummary,
   stored: StoredListing[],
   fetched: Map<string, Listing>,
-  wanted: Set<CardId>
+  wanted: Map<CollectionId, Set<CardId>>
 ): Promise<number[]> {
   // One warning per status and run: a missing model would otherwise log a line per listing.
   const unavailable = new Map<string, string[]>();
@@ -240,17 +273,17 @@ async function matchPending(
     reasons.push(reason);
     unavailable.set(status, reasons);
   };
-  // The catalog is read once per run, on first need, for both lookups below.
-  let catalog: ReferenceCatalog | null = null;
-  const catalogOf = () => (catalog ??= catalogManager.referenceCatalog());
-  let usable: Map<CardId, string> | null = null;
-  const referenceOf = (id: CardId) => {
-    usable ??= new Map(catalogOf().usable.map((c) => [c.cardId, c.referenceImageUrl]));
-    return usable.get(id) ?? null;
+  // Each collection's catalog is read once per run, on first need, for both lookups below; a
+  // listing is compared with its own collection's references only.
+  const contexts = new Map<CollectionId, CollectionReferences>();
+  const contextOf = (collection: CollectionId): CollectionReferences => {
+    let context = contexts.get(collection);
+    if (!context) {
+      context = collectionReferences(deps, alert, collection);
+      contexts.set(collection, context);
+    }
+    return context;
   };
-  const references = deps.embedder
-    ? referencesOnce(deps, deps.embedder, alert, catalogOf)
-    : undefined;
   const counts: PictureCounts = {};
   const failed: string[] = [];
   const failedIds: number[] = [];
@@ -261,6 +294,7 @@ async function matchPending(
     const source = fetched.get(l.url);
     if (!source) continue;
     const [only] = l.cardIds;
+    const { referenceOf, references } = contextOf(l.collection);
     try {
       const reference = l.cardIds.length === 1 && only !== undefined ? referenceOf(only) : null;
       const result = await matchListing(
@@ -300,7 +334,7 @@ function toShopListing(source: Listing, l: StoredListing): Listing {
   const base = { ...source, imageUrl: l.imageUrl };
   return l.idSource === 'picture' && l.cardIds.length === 0
     ? { ...base, idSource: 'picture', cardIds: [] }
-    : { ...base, idSource: 'title', cardIds: l.cardIds };
+    : { ...base, idSource: 'title', cardIds: [...l.cardIds] };
 }
 
 /** The baseline for the drop check; a failed lookup is logged and only skips that check. */
@@ -335,7 +369,7 @@ async function checkShop(
   const found = result.listings;
   try {
     const peak = recentPeak(adapter.id, deps.now());
-    stored.push(...listingManager.upsertFromRun(adapter.id, found, deps.now()));
+    stored.push(...listingManager.upsertFromRun(adapter.id, adapter.collection, found, deps.now()));
     if (found.length > 0 && found.every((l) => !l.available)) {
       // Every card sold out at once is more likely a changed stock marker than real.
       await alert(
@@ -362,6 +396,7 @@ async function checkShop(
     for (const l of found) fetched.set(l.url, l);
     if (adapter.id === 'sammel-ente') {
       const changed = catalogManager.updateNamesAndReferences(
+        adapter.collection,
         found.flatMap((l) => {
           const [cardId] = l.cardIds;
           return l.cardIds.length === 1 && cardId !== undefined && l.cardName !== null
@@ -370,7 +405,7 @@ async function checkShop(
         })
       );
       // A new reference picture may settle a mismatch either way: compare those again.
-      listingManager.rematchMismatches(changed);
+      listingManager.rematchMismatches(adapter.collection, changed);
     }
     summary.shops[adapter.id] = {
       listings: found.length,

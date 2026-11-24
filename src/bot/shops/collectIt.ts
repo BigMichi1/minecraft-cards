@@ -4,7 +4,7 @@ import { errorMessage, sleep as realSleep } from '../utils/async';
 import { fetchText, HttpError } from '../utils/http';
 import logger from '../utils/logger';
 import { clipText } from '../utils/messageLimit';
-import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopAdapter, ShopId } from './types';
+import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher, ShopId } from './types';
 import { ShopLayoutError } from './types';
 
 const SHOP = 'collect-it' satisfies ShopId;
@@ -297,10 +297,10 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
  * (PAGE_SIZE): both catch a dropped `rel="next"` and cards shifting between pages. The runner
  * then leaves the stored listings untouched, and the run is retried next hour.
  */
-export function createCollectItAdapter(
+export function createCollectItFetcher(
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
-): ShopAdapter {
+): ShopFetcher {
   const sleep = options.sleep ?? realSleep;
   const delayMs = options.delayMs ?? PAGE_DELAY_MS;
   return {

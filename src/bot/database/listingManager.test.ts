@@ -1,4 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import logger from '../utils/logger';
 import { eq } from 'drizzle-orm';
 import { db, initializeDatabase } from './db';
 import {
@@ -16,6 +17,10 @@ import { imageFingerprint } from '../matcher/imageFingerprint';
 import { userManager } from './userManager';
 import type { Listing } from '../shops/types';
 import { cid, ids } from '../../test/cardIds';
+import type { CollectionId } from '../collections/ids';
+
+/** A collection outside the registry, to show runs and reads stay inside their collection. */
+const OTHER = 'other-set' as CollectionId;
 
 const blue12: Listing = {
   shop: 'blue-ocean',
@@ -65,29 +70,134 @@ describe('listingManager', () => {
       url: 'https://www.blue-ocean.de/p/45',
       cardIds: [cid('45')],
     };
-    listingManager.upsertFromRun('blue-ocean', [blue12, blue45], 1000);
-    listingManager.upsertFromRun('sammel-ente', [sammel12], 1000);
-    listingManager.upsertFromRun('ebay', [bundle], 1000);
-    const found = listingManager.listingsForCards([cid('12')]);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, blue45], 1000);
+    listingManager.upsertFromRun('sammel-ente', 'lego-minecraft-3', [sammel12], 1000);
+    listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [bundle], 1000);
+    const found = listingManager.listingsForCards('lego-minecraft-3', [cid('12')]);
     expect(found.map((l) => l.url).sort()).toEqual([blue12.url, bundle.url, sammel12.url].sort());
     expect(found.find((l) => l.url === bundle.url)!.cardIds).toEqual(ids('12', '45'));
-    expect(listingManager.listingsForCards([])).toEqual([]);
+    expect(listingManager.listingsForCards('lego-minecraft-3', [])).toEqual([]);
+  });
+
+  describe('collections', () => {
+    test('a listing is stored in the collection of the run that found it', () => {
+      const [stored] = listingManager.upsertFromRun(
+        'blue-ocean',
+        'lego-minecraft-3',
+        [blue12],
+        1000
+      );
+      expect(stored!.collection).toBe('lego-minecraft-3');
+      expect(listingManager.getByUrl(blue12.url)!.collection).toBe('lego-minecraft-3');
+    });
+
+    test('a run marks unavailable only the listings of its own shop and collection', () => {
+      listingManager.upsertFromRun('blue-ocean', OTHER, [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [], 2000);
+      expect(listingManager.getByUrl(blue12.url)!.available).toBe(true);
+      listingManager.upsertFromRun('blue-ocean', OTHER, [], 3000);
+      expect(listingManager.getByUrl(blue12.url)!.available).toBe(false);
+    });
+
+    test('the warning about another collection clips shop-controlled URLs', () => {
+      const long = { ...blue12, url: `https://www.blue-ocean.de/p/${'x'.repeat(400)}` };
+      listingManager.upsertFromRun('blue-ocean', OTHER, [long], 1000);
+      const warn = spyOn(logger, 'warn');
+      try {
+        listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [long], 2000);
+        const [line] = warn.mock.calls.map((c: unknown[]) => String(c[0]));
+        expect(line).not.toContain(long.url);
+        expect(line!.length).toBeLessThan(400);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    test('a URL stored under another collection keeps its row, cards and collection', () => {
+      listingManager.upsertFromRun('blue-ocean', OTHER, [blue12], 1000);
+      const warn = spyOn(logger, 'warn');
+      let found;
+      try {
+        found = listingManager.upsertFromRun(
+          'blue-ocean',
+          'lego-minecraft-3',
+          [{ ...blue12, title: 'changed', cardIds: [cid('45')] }],
+          2000
+        );
+        expect(warn.mock.calls.map((c: unknown[]) => String(c[0]))).toEqual([
+          `blue-ocean (lego-minecraft-3): 1 listing(s) stored under another collection left unchanged: ${blue12.url} (other-set)`,
+        ]);
+      } finally {
+        warn.mockRestore();
+      }
+      expect(found).toEqual([]);
+      const kept = listingManager.getByUrl(blue12.url)!;
+      expect(kept).toMatchObject({
+        collection: OTHER,
+        title: blue12.title,
+        lastSeenAt: 1000,
+        available: true,
+      });
+      expect(kept.cardIds).toEqual(ids('12'));
+    });
+
+    test('card reads and notifications stay inside the listing collection', () => {
+      listingManager.upsertFromRun('blue-ocean', OTHER, [blue12], 1000);
+      userManager.setList('u1', 'lego-minecraft-3', '12');
+      expect(listingManager.listingsForCards('lego-minecraft-3', [cid('12')])).toEqual([]);
+      expect(listingManager.listingsForCards(OTHER, [cid('12')]).map((l) => l.url)).toEqual([
+        blue12.url,
+      ]);
+      expect(listingManager.pendingNotifications({ now: 1000 })).toEqual(new Map());
+    });
+
+    test('overrideCards sets the collection, and a rescrape keeps cards and collection', () => {
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+      const mapped = listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('45') },
+        2000
+      );
+      expect(mapped).toMatchObject({ collection: 'lego-minecraft-3', cardIds: ids('45') });
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 3000);
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        collection: 'lego-minecraft-3',
+        cardIds: ids('45'),
+        manualOverride: true,
+      });
+    });
+
+    test('rematchMismatches only resets mismatches of its collection', () => {
+      listingManager.upsertFromRun('blue-ocean', OTHER, [blue12], 1000);
+      const { id } = listingManager.getByUrl(blue12.url)!;
+      listingManager.setMatch(
+        id,
+        { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.95 } },
+        1000
+      );
+      listingManager.rematchMismatches('lego-minecraft-3', ids('12', '45'));
+      expect(listingManager.getById(id)!.matchStatus).toBe('mismatch');
+      listingManager.rematchMismatches(OTHER, ids('12'));
+      expect(listingManager.getById(id)!.matchStatus).toBe('pending');
+    });
   });
 
   test('a stored listing carries when it was last seen', () => {
-    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
     expect(listingManager.getByUrl(blue12.url)!.lastSeenAt).toBe(1000);
-    listingManager.upsertFromRun('blue-ocean', [], 2000);
-    expect(listingManager.listingsForCards([cid('12')])[0]!.lastSeenAt).toBe(1000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [], 2000);
+    expect(listingManager.listingsForCards('lego-minecraft-3', [cid('12')])[0]!.lastSeenAt).toBe(
+      1000
+    );
   });
 
   describe('notification periods', () => {
     beforeEach(() => {
-      userManager.setList('u1', '12');
+      userManager.setList('u1', 'lego-minecraft-3', '12');
     });
 
     test('a new available listing is pending once, with its availability period', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const pending = listingManager.pendingNotifications().get('u1')!;
       expect(pending).toHaveLength(1);
       expect(pending[0]!.availableSince).toBe(1000);
@@ -95,52 +205,63 @@ describe('listingManager', () => {
     });
 
     test('staying in stock never re-notifies', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.recordNotified('u1', l.id, l.availableSince!);
-      listingManager.upsertFromRun('blue-ocean', [blue12], 2000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 2000);
       expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
     });
 
     test('sold out then back in stock re-notifies exactly once', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.recordNotified('u1', l.id, l.availableSince!);
-      listingManager.upsertFromRun('blue-ocean', [{ ...blue12, available: false }], 3000);
+      listingManager.upsertFromRun(
+        'blue-ocean',
+        'lego-minecraft-3',
+        [{ ...blue12, available: false }],
+        3000
+      );
       expect(listingManager.getByUrl(blue12.url)!.availableSince).toBeNull();
-      listingManager.upsertFromRun('blue-ocean', [blue12], 4000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 4000);
       const pending = listingManager.pendingNotifications().get('u1')!;
       expect(pending).toHaveLength(1);
       expect(pending[0]!.availableSince).toBe(4000);
       listingManager.recordNotified('u1', l.id, 4000);
-      listingManager.upsertFromRun('blue-ocean', [blue12], 5000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 5000);
       expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
     });
 
     test('a listing missing from a successful fetch becomes unavailable', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
-      listingManager.upsertFromRun('blue-ocean', [], 5000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [], 5000);
       expect(listingManager.getByUrl(blue12.url)!.available).toBe(false);
     });
 
     test('a listing on hold is not notified', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       listingManager.setOnHold(listingManager.getByUrl(blue12.url)!.id);
       expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
     });
 
     test('a hold survives rescrapes, a changed picture and a new availability period', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setOnHold(l.id);
-      listingManager.upsertFromRun('blue-ocean', [blue12], 2000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 2000);
       listingManager.upsertFromRun(
         'blue-ocean',
+        'lego-minecraft-3',
         [{ ...blue12, imageUrl: 'https://img/new.jpg' }],
         3000
       );
-      listingManager.upsertFromRun('blue-ocean', [{ ...blue12, available: false }], 4000);
-      listingManager.upsertFromRun('blue-ocean', [blue12], 5000);
+      listingManager.upsertFromRun(
+        'blue-ocean',
+        'lego-minecraft-3',
+        [{ ...blue12, available: false }],
+        4000
+      );
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 5000);
       expect(listingManager.getById(l.id)!.onHold).toBe(true);
       expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
     });
@@ -148,28 +269,41 @@ describe('listingManager', () => {
 
   describe('admin mapping', () => {
     test('/admin map cards survive the next scrape of the same listing', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 6000);
-      listingManager.overrideCards(blue12.url, ids('8'), 6500);
-      listingManager.upsertFromRun('blue-ocean', [blue12], 7000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 6000);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('8') },
+        6500
+      );
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 7000);
       expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual(ids('8'));
     });
 
     test('mapping re-opens notification and lifts the hold', () => {
-      userManager.setList('u1', '12');
-      listingManager.upsertFromRun('blue-ocean', [blue12], 6000);
+      userManager.setList('u1', 'lego-minecraft-3', '12');
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 6000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.recordNotified('u1', l.id, l.availableSince!);
       listingManager.setOnHold(l.id);
-      listingManager.overrideCards(blue12.url, ids('12'), 7500);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('12') },
+        7500
+      );
       expect(listingManager.getById(l.id)!.onHold).toBe(false);
       expect(listingManager.pendingNotifications().get('u1')).toHaveLength(1);
     });
 
     test('a mapped listing stays confirmed when its picture changes', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
-      listingManager.overrideCards(blue12.url, ids('12'), 1500);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('12') },
+        1500
+      );
       listingManager.upsertFromRun(
         'blue-ocean',
+        'lego-minecraft-3',
         [{ ...blue12, imageUrl: 'https://img/new.jpg', idConflict: true }],
         2000
       );
@@ -188,20 +322,20 @@ describe('listingManager', () => {
       shop: 'collect-it',
       url: 'https://www.collect-it.de/12-Squid-Charakterkarte-Serie-3',
     };
-    listingManager.upsertFromRun('collect-it', [collect12], 1000);
+    listingManager.upsertFromRun('collect-it', 'lego-minecraft-3', [collect12], 1000);
     expect(listingManager.getByUrl(collect12.url)).toMatchObject({
       shop: 'collect-it',
       matchStatus: 'pending',
       available: true,
     });
     // collect-it hides sold-out products: the listing just disappears from the category.
-    listingManager.upsertFromRun('collect-it', [], 2000);
+    listingManager.upsertFromRun('collect-it', 'lego-minecraft-3', [], 2000);
     expect(listingManager.getByUrl(collect12.url)!.available).toBe(false);
   });
 
   test('vanished listings of another shop are untouched', () => {
-    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
-    listingManager.upsertFromRun('sammel-ente', [], 2000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+    listingManager.upsertFromRun('sammel-ente', 'lego-minecraft-3', [], 2000);
     expect(listingManager.getByUrl(blue12.url)!.available).toBe(true);
   });
 
@@ -214,21 +348,21 @@ describe('listingManager', () => {
       title: 'LEGO Minecraft Karte 131 - Ghast',
       cardIds: [cid('131')],
     };
-    listingManager.upsertFromRun('ebay', [byName], 1000);
+    listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [byName], 1000);
     expect(listingManager.getByUrl(byName.url)!.matchStatus).toBe('pending');
   });
 
   test('default match status and reset to pending when the image changes', () => {
     const bundle = { ...blue12, url: 'https://x/b', cardIds: ids('1', '2') };
     const ente = { ...blue12, shop: 'sammel-ente' as const, url: 'https://x/e' };
-    listingManager.upsertFromRun('blue-ocean', [blue12, bundle], 1000);
-    listingManager.upsertFromRun('sammel-ente', [ente], 1000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, bundle], 1000);
+    listingManager.upsertFromRun('sammel-ente', 'lego-minecraft-3', [ente], 1000);
     expect(listingManager.getByUrl(bundle.url)!.matchStatus).toBe('bundle');
     expect(listingManager.getByUrl(ente.url)!.matchStatus).toBe('reference');
     const l = listingManager.getByUrl(blue12.url)!;
     expect(l.matchStatus).toBe('pending');
     listingManager.setMatch(l.id, { status: 'confirmed', similarity: 0.93, picture: null }, 1500);
-    listingManager.upsertFromRun('blue-ocean', [blue12, bundle], 2000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, bundle], 2000);
     expect(listingManager.getById(l.id)).toMatchObject({
       matchStatus: 'confirmed',
       similarity: 0.93,
@@ -236,6 +370,7 @@ describe('listingManager', () => {
     });
     listingManager.upsertFromRun(
       'blue-ocean',
+      'lego-minecraft-3',
       [{ ...blue12, imageUrl: 'https://img/new.jpg' }, bundle],
       3000
     );
@@ -248,16 +383,21 @@ describe('listingManager', () => {
   });
 
   test('an id conflict that appears or goes away with the same picture resets to pending', () => {
-    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
     const l = listingManager.getByUrl(blue12.url)!;
     listingManager.setMatch(l.id, { status: 'confirmed', similarity: 0.93, picture: null }, 1500);
-    listingManager.upsertFromRun('blue-ocean', [{ ...blue12, idConflict: true }], 2000);
+    listingManager.upsertFromRun(
+      'blue-ocean',
+      'lego-minecraft-3',
+      [{ ...blue12, idConflict: true }],
+      2000
+    );
     expect(listingManager.getById(l.id)).toMatchObject({
       matchStatus: 'pending',
       idConflict: true,
     });
     listingManager.setMatch(l.id, { status: 'unconfirmed', similarity: 0.93, picture: null }, 2500);
-    listingManager.upsertFromRun('blue-ocean', [blue12], 3000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 3000);
     expect(listingManager.getById(l.id)).toMatchObject({
       matchStatus: 'pending',
       idConflict: false,
@@ -265,9 +405,10 @@ describe('listingManager', () => {
   });
 
   test('pendingNotifications returns the intersection sorted, items by listing id', () => {
-    userManager.setList('u1', '1, 2, LE8');
+    userManager.setList('u1', 'lego-minecraft-3', '1, 2, LE8');
     listingManager.upsertFromRun(
       'blue-ocean',
+      'lego-minecraft-3',
       [
         { ...blue12, cardIds: [cid('LE8'), cid('2'), cid('9')] },
         { ...blue12, url: 'https://x/2', cardIds: [cid('1')] },
@@ -281,7 +422,7 @@ describe('listingManager', () => {
   });
 
   test('clearHold and overrideCards resolve open reports', () => {
-    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
     const l = listingManager.getByUrl(blue12.url)!;
     const report = { listingId: l.id, reporterId: 'r', reason: 'other' as const, createdAt: 1 };
     db.insert(reports).values(report).run();
@@ -289,7 +430,11 @@ describe('listingManager', () => {
     expect(listingManager.clearHold(blue12.url)!.onHold).toBe(false);
     expect(db.select().from(reports).get()!.resolvedAt).not.toBeNull();
     db.update(reports).set({ resolvedAt: null }).run();
-    const o = listingManager.overrideCards(blue12.url, [cid('5'), cid('3')], 9000)!;
+    const o = listingManager.overrideCards(
+      blue12.url,
+      { collection: 'lego-minecraft-3', ids: [cid('5'), cid('3')] },
+      9000
+    )!;
     expect(o).toMatchObject({
       cardIds: ['3', '5'],
       manualOverride: true,
@@ -297,7 +442,9 @@ describe('listingManager', () => {
       availableSince: 9000,
     });
     expect(db.select().from(reports).get()!.resolvedAt).toBe(9000);
-    expect(listingManager.overrideCards('nope', [cid('1')], 1)).toBeUndefined();
+    expect(
+      listingManager.overrideCards('nope', { collection: 'lego-minecraft-3', ids: [cid('1')] }, 1)
+    ).toBeUndefined();
     expect(listingManager.clearHold('nope')).toBeUndefined();
   });
 
@@ -311,23 +458,23 @@ describe('listingManager', () => {
     };
 
     test('a missing eBay listing stays available for 24 h, then becomes unavailable', () => {
-      listingManager.upsertFromRun('ebay', [ebay12], 0);
-      listingManager.upsertFromRun('ebay', [], 23 * HOUR);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [ebay12], 0);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [], 23 * HOUR);
       expect(listingManager.getByUrl(ebay12.url)).toMatchObject({
         available: true,
         availableSince: 0,
       });
-      listingManager.upsertFromRun('ebay', [], 24 * HOUR + 1);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [], 24 * HOUR + 1);
       expect(listingManager.getByUrl(ebay12.url)!.available).toBe(false);
     });
 
     test('an eBay item that drops out for one run and returns is not re-notified', () => {
-      userManager.setList('u1', '12');
-      listingManager.upsertFromRun('ebay', [ebay12], 1000);
+      userManager.setList('u1', 'lego-minecraft-3', '12');
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [ebay12], 1000);
       const l = listingManager.getByUrl(ebay12.url)!;
       listingManager.recordNotified('u1', l.id, l.availableSince!);
-      listingManager.upsertFromRun('ebay', [], 1000 + HOUR);
-      listingManager.upsertFromRun('ebay', [ebay12], 1000 + 2 * HOUR);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [], 1000 + HOUR);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [ebay12], 1000 + 2 * HOUR);
       expect(listingManager.getByUrl(ebay12.url)!.availableSince).toBe(1000);
       expect(
         listingManager.pendingNotifications({ now: 1000 + 2 * HOUR }).get('u1')
@@ -335,24 +482,24 @@ describe('listingManager', () => {
     });
 
     test('other shops still drop a missing listing at once', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 0);
-      listingManager.upsertFromRun('blue-ocean', [], HOUR);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 0);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [], HOUR);
       expect(listingManager.getByUrl(blue12.url)!.available).toBe(false);
     });
 
     test('an auction that has ended is unavailable, found or missing', () => {
-      userManager.setList('u1', '12');
+      userManager.setList('u1', 'lego-minecraft-3', '12');
       const auction: Listing = {
         ...ebay12,
         format: 'auction',
         auctionEndsAt: 5 * HOUR,
       };
       const missing: Listing = { ...auction, url: 'https://www.ebay.de/itm/2' };
-      listingManager.upsertFromRun('ebay', [auction, missing], HOUR);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [auction, missing], HOUR);
       expect(listingManager.pendingNotifications({ now: HOUR }).get('u1')).toHaveLength(2);
       // Ended but not yet re-fetched: not notified any more.
       expect(listingManager.pendingNotifications({ now: 6 * HOUR }).get('u1')).toBeUndefined();
-      listingManager.upsertFromRun('ebay', [auction], 6 * HOUR);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [auction], 6 * HOUR);
       expect(listingManager.getByUrl(auction.url)).toMatchObject({
         available: false,
         availableSince: null,
@@ -362,8 +509,8 @@ describe('listingManager', () => {
   });
 
   test('pendingNotifications skips listings not seen since the cutoff', () => {
-    userManager.setList('u1', '12');
-    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    userManager.setList('u1', 'lego-minecraft-3', '12');
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
     expect(listingManager.pendingNotifications({ seenSince: 1000 }).get('u1')).toHaveLength(1);
     expect(listingManager.pendingNotifications({ seenSince: 1001 }).get('u1')).toBeUndefined();
   });
@@ -371,6 +518,7 @@ describe('listingManager', () => {
   test('onHold lists held listings by id', () => {
     const [a, b] = listingManager.upsertFromRun(
       'blue-ocean',
+      'lego-minecraft-3',
       [blue12, { ...blue12, url: 'https://x/2' }],
       1000
     );
@@ -381,10 +529,16 @@ describe('listingManager', () => {
   });
 
   test('overrideCards marks the listing confirmed by the admin', () => {
-    listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
     const l = listingManager.getByUrl(blue12.url)!;
     listingManager.setMatch(l.id, { status: 'unconfirmed', similarity: 0.4, picture: null }, 1500);
-    expect(listingManager.overrideCards(blue12.url, [cid('12')], 2000)).toMatchObject({
+    expect(
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        2000
+      )
+    ).toMatchObject({
       matchStatus: 'confirmed',
       similarity: null,
     });
@@ -395,7 +549,7 @@ describe('listingManager', () => {
       listingManager.confirmCards({ listingId: id, cardIds: cards.map(cid), image }, now);
 
     function unconfirmed12() {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(
         l.id,
@@ -426,7 +580,7 @@ describe('listingManager', () => {
     });
 
     test('confirming never re-notifies a user who already had the alert', () => {
-      userManager.setList('u1', '12');
+      userManager.setList('u1', 'lego-minecraft-3', '12');
       const l = unconfirmed12();
       listingManager.recordNotified('u1', l.id, l.availableSince!);
       confirm(l.id, ['12']);
@@ -434,7 +588,7 @@ describe('listingManager', () => {
     });
 
     test('confirming a held listing sends the held-back alert exactly once', () => {
-      userManager.setList('u1', '12');
+      userManager.setList('u1', 'lego-minecraft-3', '12');
       const l = unconfirmed12();
       listingManager.setOnHold(l.id);
       expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
@@ -447,7 +601,12 @@ describe('listingManager', () => {
     });
 
     test('a listing without a picture URL is confirmed by the fingerprint of none', () => {
-      listingManager.upsertFromRun('blue-ocean', [{ ...blue12, imageUrl: null }], 1000);
+      listingManager.upsertFromRun(
+        'blue-ocean',
+        'lego-minecraft-3',
+        [{ ...blue12, imageUrl: null }],
+        1000
+      );
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(
         l.id,
@@ -472,6 +631,7 @@ describe('listingManager', () => {
     test('a subset of a bundle is refused as changed cards', () => {
       listingManager.upsertFromRun(
         'blue-ocean',
+        'lego-minecraft-3',
         [{ ...blue12, cardIds: [cid('12'), cid('13')] }],
         1000
       );
@@ -502,7 +662,11 @@ describe('listingManager', () => {
 
     test('an admin-mapped listing may be confirmed whatever its status', () => {
       const l = unconfirmed12();
-      listingManager.overrideCards(blue12.url, [cid('12')], 2000);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        2000
+      );
       db.update(listings).set({ matchStatus: 'pending' }).where(eq(listings.id, l.id)).run();
       expect(confirm(l.id, ['12']).kind).toBe('confirmed');
     });
@@ -527,6 +691,7 @@ describe('listingManager', () => {
       confirm(l.id, ['12']);
       listingManager.upsertFromRun(
         'blue-ocean',
+        'lego-minecraft-3',
         [{ ...blue12, imageUrl: 'https://img/new.jpg' }],
         5000
       );
@@ -554,7 +719,7 @@ describe('listingManager', () => {
     const stored = () => listingManager.getByUrl(candidate.url)!;
     /** Store the candidate and let the picture decide card 12. */
     function decided(now = 1000): void {
-      listingManager.upsertFromRun('ebay', [candidate], now);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], now);
       listingManager.setMatch(
         stored().id,
         { status: 'confirmed', similarity: 0.91, picture: { cardId: cid('12'), similarity: 0.91 } },
@@ -563,11 +728,11 @@ describe('listingManager', () => {
     }
 
     beforeEach(() => {
-      userManager.setList('u1', '12');
+      userManager.setList('u1', 'lego-minecraft-3', '12');
     });
 
     test('a candidate is stored pending, without cards, and never notified', () => {
-      listingManager.upsertFromRun('ebay', [candidate], 1000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 1000);
       expect(stored()).toMatchObject({
         cardIds: [],
         idSource: 'picture',
@@ -578,7 +743,7 @@ describe('listingManager', () => {
     });
 
     test('a titled listing has the id source title', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       expect(listingManager.getByUrl(blue12.url)).toMatchObject({
         idSource: 'title',
         pictureCardId: null,
@@ -597,12 +762,12 @@ describe('listingManager', () => {
       const pending = listingManager.pendingNotifications().get('u1')!;
       expect(pending.map((p) => p.cardIds)).toEqual([[cid('12')]]);
       listingManager.recordNotified('u1', stored().id, stored().availableSince!);
-      listingManager.upsertFromRun('ebay', [candidate], 2000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 2000);
       expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
     });
 
     test('an undecided candidate stays without cards and is never notified', () => {
-      listingManager.upsertFromRun('ebay', [candidate], 1000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 1000);
       listingManager.setMatch(
         stored().id,
         { status: 'unconfirmed', similarity: null, picture: null },
@@ -610,13 +775,13 @@ describe('listingManager', () => {
       );
       expect(stored()).toMatchObject({ cardIds: [], matchStatus: 'unconfirmed' });
       expect(listingManager.pendingNotifications().size).toBe(0);
-      listingManager.upsertFromRun('ebay', [candidate], 2000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 2000);
       expect(stored().matchStatus).toBe('unconfirmed');
     });
 
     test('the same candidate rescraped keeps the card the picture gave it', () => {
       decided();
-      listingManager.upsertFromRun('ebay', [candidate], 2000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 2000);
       expect(stored()).toMatchObject({
         cardIds: ['12'],
         matchStatus: 'confirmed',
@@ -628,6 +793,7 @@ describe('listingManager', () => {
       decided();
       listingManager.upsertFromRun(
         'ebay',
+        'lego-minecraft-3',
         [{ ...candidate, imageUrl: 'https://i.ebayimg.com/78.jpg' }],
         2000
       );
@@ -635,6 +801,7 @@ describe('listingManager', () => {
       decided(3000);
       listingManager.upsertFromRun(
         'ebay',
+        'lego-minecraft-3',
         [{ ...candidate, title: `${candidate.title} neu` }],
         4000
       );
@@ -645,6 +812,7 @@ describe('listingManager', () => {
       decided();
       listingManager.upsertFromRun(
         'ebay',
+        'lego-minecraft-3',
         [{ ...candidate, title: 'On Fire Karte 45', cardIds: [cid('45')], idSource: 'title' }],
         2000
       );
@@ -658,14 +826,14 @@ describe('listingManager', () => {
 
     test('a decided candidate missing from eBay keeps the 24 h grace', () => {
       decided(0);
-      listingManager.upsertFromRun('ebay', [], 23 * HOUR);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [], 23 * HOUR);
       expect(stored()).toMatchObject({ available: true, cardIds: ['12'] });
-      listingManager.upsertFromRun('ebay', [], 24 * HOUR + 2);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [], 24 * HOUR + 2);
       expect(stored().available).toBe(false);
     });
 
     test('a mismatch holds the picture card and is never notified', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(
         l.id,
@@ -677,14 +845,14 @@ describe('listingManager', () => {
         matchStatus: 'mismatch',
         pictureCardId: '45',
       });
-      userManager.setList('u2', '45');
+      userManager.setList('u2', 'lego-minecraft-3', '45');
       expect(listingManager.pendingNotifications().size).toBe(0);
-      listingManager.upsertFromRun('blue-ocean', [blue12], 2000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 2000);
       expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('mismatch');
     });
 
     test('a rescrape with a changed picture or title compares a mismatch again', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(
         l.id,
@@ -693,6 +861,7 @@ describe('listingManager', () => {
       );
       listingManager.upsertFromRun(
         'blue-ocean',
+        'lego-minecraft-3',
         [{ ...blue12, title: 'Sticker Card 12 neu' }],
         2000
       );
@@ -707,6 +876,7 @@ describe('listingManager', () => {
       );
       listingManager.upsertFromRun(
         'blue-ocean',
+        'lego-minecraft-3',
         [{ ...blue12, title: 'Sticker Card 12 neu', imageUrl: 'https://img/12b.jpg' }],
         3000
       );
@@ -714,7 +884,7 @@ describe('listingManager', () => {
     });
 
     test('a confirmed titled listing is not compared again for a changed title alone', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(
         l.id,
@@ -723,6 +893,7 @@ describe('listingManager', () => {
       );
       listingManager.upsertFromRun(
         'blue-ocean',
+        'lego-minecraft-3',
         [{ ...blue12, title: 'Sticker Card 12 neu' }],
         2000
       );
@@ -733,24 +904,35 @@ describe('listingManager', () => {
     });
 
     test('/admin map on a mismatch or a candidate is final: confirmed, no picture card, kept on rescrape', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(
         l.id,
         { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.5 } },
         1001
       );
-      expect(listingManager.overrideCards(blue12.url, [cid('45')], 2000)).toMatchObject({
+      expect(
+        listingManager.overrideCards(
+          blue12.url,
+          { collection: 'lego-minecraft-3', ids: [cid('45')] },
+          2000
+        )
+      ).toMatchObject({
         cardIds: ['45'],
         matchStatus: 'confirmed',
         pictureCardId: null,
         manualOverride: true,
       });
 
-      listingManager.upsertFromRun('ebay', [candidate], 1000);
-      listingManager.overrideCards(candidate.url, [cid('12')], 2000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 1000);
+      listingManager.overrideCards(
+        candidate.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        2000
+      );
       listingManager.upsertFromRun(
         'ebay',
+        'lego-minecraft-3',
         [{ ...candidate, title: 'changed', imageUrl: 'https://i.ebayimg.com/79.jpg' }],
         3000
       );
@@ -762,8 +944,12 @@ describe('listingManager', () => {
     });
 
     test('setMatch on a mapped candidate never touches its cards', () => {
-      listingManager.upsertFromRun('ebay', [candidate], 1000);
-      listingManager.overrideCards(candidate.url, [cid('12')], 2000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 1000);
+      listingManager.overrideCards(
+        candidate.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        2000
+      );
       listingManager.setMatch(
         stored().id,
         { status: 'unconfirmed', similarity: null, picture: null },
@@ -780,7 +966,7 @@ describe('listingManager', () => {
     } as const;
 
     test('a new mismatch waits for its admin note until marked noted (R5)', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(l.id, mismatch45, 1001);
       expect(listingManager.pendingMismatchNotes().map((x) => x.id)).toEqual([l.id]);
@@ -792,10 +978,14 @@ describe('listingManager', () => {
     });
 
     test('an admin-mapped mismatch needs no note', () => {
-      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(l.id, mismatch45, 1001);
-      listingManager.overrideCards(blue12.url, [cid('12')], 1500);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        1500
+      );
       expect(listingManager.pendingMismatchNotes()).toEqual([]);
     });
 
@@ -805,20 +995,20 @@ describe('listingManager', () => {
         url: 'https://www.blue-ocean.de/p/13',
         cardIds: [cid('13')],
       };
-      listingManager.upsertFromRun('blue-ocean', [blue12, blue13], 1000);
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, blue13], 1000);
       const a = listingManager.getByUrl(blue12.url)!;
       const b = listingManager.getByUrl(blue13.url)!;
       listingManager.setMatch(a.id, mismatch45, 1001);
       listingManager.setMatch(b.id, mismatch45, 1001);
-      listingManager.rematchMismatches([cid('12')]);
+      listingManager.rematchMismatches('lego-minecraft-3', [cid('12')]);
       expect(listingManager.getByUrl(blue12.url)).toMatchObject({
         matchStatus: 'pending',
         pictureCardId: null,
       });
       expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('mismatch');
-      listingManager.rematchMismatches([cid('45')]);
+      listingManager.rematchMismatches('lego-minecraft-3', [cid('45')]);
       expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('pending');
-      listingManager.rematchMismatches([]);
+      listingManager.rematchMismatches('lego-minecraft-3', []);
     });
 
     test('any changed reference also lets an undecided title naming no card be identified again', () => {
@@ -830,16 +1020,16 @@ describe('listingManager', () => {
         idSource: 'picture',
         cardIds: [],
       };
-      listingManager.upsertFromRun('ebay', [candidate], 1000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 1000);
       const l = listingManager.getByUrl(candidate.url)!;
       listingManager.setMatch(
         l.id,
         { status: 'unconfirmed', similarity: null, picture: null },
         1001
       );
-      listingManager.rematchMismatches([]);
+      listingManager.rematchMismatches('lego-minecraft-3', []);
       expect(listingManager.getByUrl(candidate.url)!.matchStatus).toBe('unconfirmed');
-      listingManager.rematchMismatches([cid('LE10')]);
+      listingManager.rematchMismatches('lego-minecraft-3', [cid('LE10')]);
       expect(listingManager.getByUrl(candidate.url)!.matchStatus).toBe('pending');
     });
   });

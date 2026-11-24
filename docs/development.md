@@ -53,6 +53,14 @@ create it again. Production deploys only from `main`, whose migrations never cha
   (see `DCO.md`). Hooks run gitleaks, eslint (check only; fix with `lint:fix` and stage the
   result), commitlint and a DCO check; never `--no-verify`.
 - Commands are imported statically in `bot.ts`.
+- Collections live in `src/bot/collections/`: `ids.ts` lists the ids (stored in the database,
+  never renamed), one file per collection holds its definition, `index.ts` lists them in display
+  order. Every manager function that takes a card id takes the collection too; a shop adapter is
+  bound to one collection (`shops/adapters.ts`), and card ids travel with their collection
+  (`CollectionCards`). Collection ids are never renamed or removed: the database does not check
+  them. A listing URL is unique across collections: it belongs to the collection that stored it
+  first, and `/admin map` maps only within that collection for now. The design and rollout are
+  in `docs/superpowers/specs/2026-11-19-multi-collection-design.md`.
 - Shell scripts and hooks are POSIX `sh`.
 
 ## CI

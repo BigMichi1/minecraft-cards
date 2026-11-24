@@ -102,7 +102,7 @@ export function adminListingEmbed(
   if (image) embed.setImage(image);
   const [first] = listing.cardIds;
   const reference = first
-    ? catalogManager.referenceCatalog().usable.find((c) => c.cardId === first)
+    ? catalogManager.referenceCatalog(listing.collection).usable.find((c) => c.cardId === first)
     : undefined;
   const thumbnail = validUrl(reference?.referenceImageUrl);
   if (thumbnail) embed.setThumbnail(thumbnail);

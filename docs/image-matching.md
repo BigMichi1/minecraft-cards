@@ -134,7 +134,7 @@ run that compares pictures names these cards in one warning.
 **Only the complete reference set decides.** A card missing from the comparison could be the
 true one, and the gap to the runner-up would then look fine for a wrong card (a photo of LE10
 decided as LE5). So the picture may decide a card other than the title's (rules 2 and 4) only
-when every catalog card has a loaded, usable reference. Narrowing that to the card's kind (base,
+when every card of the listing's collection has a loaded, usable reference. Narrowing that to the card's kind (base,
 LE, XXL) does not hold: on 2026-11-18, 39 of 475 live listing pictures (eBay and collect-it)
 reached 0.78 against a reference of another kind than their own, and for 5 of them that
 reference was the best match. With LE10 and LE11 on the placeholder, rules 2 and 4 are
@@ -145,8 +145,8 @@ one picture) leaves the set incomplete for the run. A listing that would then en
 but `confirmed` gets `image_unavailable` (or `model_unavailable` when the model fails on every
 reference) instead, so it is compared again with the full set: never a final `unconfirmed`,
 `mismatch` or picture-only card. The bot tries a failed reference again at most once a day
-(`referenceFailures`, kept for the process), and sends one throttled admin alert
-(`reference-unavailable`) naming the cards, reasons and picture URLs. References load four at a
+(`referenceFailures`, kept for the process), and sends one throttled admin alert per collection
+(`reference-unavailable:<collection>`) naming the collection, cards, reasons and picture URLs. References load four at a
 time.
 
 ### Rules

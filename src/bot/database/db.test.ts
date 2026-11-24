@@ -5,7 +5,10 @@
  */
 import { Database } from 'bun:sqlite';
 import { beforeAll, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
 import { cid } from '../../test/cardIds';
@@ -51,14 +54,15 @@ describe('database schema', () => {
   test('every table takes a row and returns it', () => {
     db.insert(users).values({ discordId: 'u1', createdAt: 1 }).run();
     db.insert(wantedCards)
-      .values({ discordId: 'u1', cardId: cid('12') })
+      .values({ discordId: 'u1', collection: 'lego-minecraft-3', cardId: cid('12') })
       .run();
     db.insert(cards)
-      .values({ cardId: cid('12'), type: 'base', updatedAt: 1 })
+      .values({ collection: 'lego-minecraft-3', cardId: cid('12'), type: 'base', updatedAt: 1 })
       .run();
     const { id } = db
       .insert(listings)
       .values({
+        collection: 'lego-minecraft-3',
         shop: 'blue-ocean',
         url: 'https://www.blue-ocean.de/p/12',
         title: 't',
@@ -88,10 +92,19 @@ describe('database schema', () => {
       createdAt: 1,
       dmFailedAt: null,
     });
-    expect(db.select().from(wantedCards).get()).toEqual({ discordId: 'u1', cardId: cid('12') });
-    expect(db.select().from(cards).get()).toMatchObject({ cardId: '12', type: 'base' });
+    expect(db.select().from(wantedCards).get()).toEqual({
+      discordId: 'u1',
+      collection: 'lego-minecraft-3',
+      cardId: cid('12'),
+    });
+    expect(db.select().from(cards).get()).toMatchObject({
+      collection: 'lego-minecraft-3',
+      cardId: '12',
+      type: 'base',
+    });
     expect(db.select().from(listings).get()).toMatchObject({
       id,
+      collection: 'lego-minecraft-3',
       onHold: false,
       manualOverride: false,
       idConflict: false,
@@ -172,5 +185,113 @@ describe('database schema', () => {
       { url: 'https://s/ref', match_status: 'reference', similarity: 0.9, ...plain },
     ]);
     old.close();
+  });
+  test('migration 0005 through the migrator keeps every row under lego-minecraft-3', () => {
+    // Run as production does (drizzle's migrator, one transaction): migrations up to 0004 from a
+    // trimmed copy of the folder, rows stored as the old release did, then the real folder.
+    const dir = path.join(process.cwd(), 'src/bot/database/migrations');
+    const journal = JSON.parse(readFileSync(path.join(dir, 'meta/_journal.json'), 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) =>
+      readFileSync(path.join(dir, `${e.tag}.sql`), 'utf8').includes('`collection`')
+    );
+    expect(at).toBeGreaterThan(0);
+    const before = mkdtempSync(path.join(tmpdir(), 'migrations-'));
+    mkdirSync(path.join(before, 'meta'));
+    writeFileSync(
+      path.join(before, 'meta/_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, at) })
+    );
+    for (const e of journal.entries.slice(0, at)) {
+      copyFileSync(path.join(dir, `${e.tag}.sql`), path.join(before, `${e.tag}.sql`));
+    }
+    const old = new Database(':memory:');
+    old.run('PRAGMA foreign_keys = ON');
+    const oldDb = drizzle(old, { casing: 'snake_case' });
+    try {
+      migrate(oldDb, { migrationsFolder: before });
+      old.run(
+        `INSERT INTO cards (card_id, type, name, reference_image_url, puzzle_seen, updated_at) VALUES ('12', 'base', 'Squid', 'https://s/12.jpg', 1, 1)`
+      );
+      old.run(`INSERT INTO users (discord_id, created_at) VALUES ('u1', 1)`);
+      old.run(`INSERT INTO wanted_cards (discord_id, card_id) VALUES ('u1', '12'), ('u1', 'LE8')`);
+      old.run(
+        `INSERT INTO listings (shop, url, title, format, available, available_since, match_status, match_checked_at, on_hold, manual_override, id_source, picture_card_id, mismatch_noted_at, first_seen_at, last_seen_at)
+         VALUES ('blue-ocean', 'https://b/12', 't', 'shop', 1, 5, 'mismatch', 4, 1, 1, 'title', '45', 6, 1, 1)`
+      );
+      old.run(`INSERT INTO listing_cards (listing_id, card_id) VALUES (1, '12')`);
+      old.run(
+        `INSERT INTO notifications (discord_id, listing_id, available_since) VALUES ('u1', 1, 5)`
+      );
+      migrate(oldDb, { migrationsFolder: dir });
+
+      expect(
+        old
+          .query('SELECT collection, card_id, name, reference_image_url, puzzle_seen FROM cards')
+          .all()
+      ).toEqual([
+        {
+          collection: 'lego-minecraft-3',
+          card_id: '12',
+          name: 'Squid',
+          reference_image_url: 'https://s/12.jpg',
+          puzzle_seen: 1,
+        },
+      ]);
+      expect(
+        old.query('SELECT discord_id, collection, card_id FROM wanted_cards ORDER BY card_id').all()
+      ).toEqual([
+        { discord_id: 'u1', collection: 'lego-minecraft-3', card_id: '12' },
+        { discord_id: 'u1', collection: 'lego-minecraft-3', card_id: 'LE8' },
+      ]);
+      expect(
+        old
+          .query(
+            'SELECT id, collection, url, available, available_since, match_status, match_checked_at, on_hold, manual_override, id_source, picture_card_id, mismatch_noted_at FROM listings'
+          )
+          .all()
+      ).toEqual([
+        {
+          id: 1,
+          collection: 'lego-minecraft-3',
+          url: 'https://b/12',
+          available: 1,
+          available_since: 5,
+          match_status: 'mismatch',
+          match_checked_at: 4,
+          on_hold: 1,
+          manual_override: 1,
+          id_source: 'title',
+          picture_card_id: '45',
+          mismatch_noted_at: 6,
+        },
+      ]);
+      expect(old.query('SELECT listing_id, card_id FROM listing_cards').all()).toEqual([
+        { listing_id: 1, card_id: '12' },
+      ]);
+      // The notification still matches the listing's availability period: nobody is notified
+      // again for it.
+      expect(
+        old.query('SELECT discord_id, listing_id, available_since FROM notifications').all()
+      ).toEqual([{ discord_id: 'u1', listing_id: 1, available_since: 5 }]);
+      expect(() =>
+        old.run(
+          `INSERT INTO cards (collection, card_id, type, updated_at) VALUES ('lego-minecraft-3', '12', 'base', 2)`
+        )
+      ).toThrow(/UNIQUE|PRIMARY KEY/);
+      // The column default SQLite needed to add the column: a raw insert naming no collection
+      // lands in lego-minecraft-3 (drizzle's types make the code name one).
+      old.run(
+        `INSERT INTO listings (shop, url, title, format, available, match_status, first_seen_at, last_seen_at) VALUES ('ebay', 'https://e/1', 't', 'auction', 1, 'pending', 1, 1)`
+      );
+      expect(old.query(`SELECT collection FROM listings WHERE url = 'https://e/1'`).get()).toEqual({
+        collection: 'lego-minecraft-3',
+      });
+      expect(old.query('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally {
+      old.close();
+      rmSync(before, { recursive: true, force: true });
+    }
   });
 });

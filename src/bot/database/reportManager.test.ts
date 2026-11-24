@@ -21,6 +21,7 @@ describe('reportManager', () => {
   function makeListing() {
     return listingManager.upsertFromRun(
       'blue-ocean',
+      'lego-minecraft-3',
       [
         {
           shop: 'blue-ocean',
@@ -71,6 +72,7 @@ describe('reportManager', () => {
   test('create stores the report and puts the listing on hold', () => {
     const [l] = listingManager.upsertFromRun(
       'blue-ocean',
+      'lego-minecraft-3',
       [
         {
           shop: 'blue-ocean',

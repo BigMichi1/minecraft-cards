@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { db, initializeDatabase } from '../database/db';
 import { cards, listingCards, listings, reports } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
+import type { CollectionId } from '../collections/ids';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import logger from '../utils/logger';
 import {
@@ -49,6 +50,7 @@ function fakeButton(customId: string, userId = ADMIN, content = 'orig') {
 function makeListing(cardIds = [cid('12')]): StoredListing {
   const l = listingManager.upsertFromRun(
     'ebay',
+    'lego-minecraft-3',
     [
       {
         shop: 'ebay',
@@ -143,15 +145,23 @@ describe('admin actions', () => {
     });
 
     test('a usable reference is the thumbnail', () => {
-      catalogManager.updateNamesAndReferences([
+      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
         { cardId: cid('12'), name: 'Squid', imageUrl: REFERENCE },
       ]);
       expect(adminListingEmbed(makeListing(), 't').toJSON().thumbnail!.url).toBe(REFERENCE);
     });
 
+    test("another collection's listing never gets this collection's reference", () => {
+      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+        { cardId: cid('12'), name: 'Squid', imageUrl: REFERENCE },
+      ]);
+      const other = { ...makeListing(), collection: 'other-set' as CollectionId };
+      expect(adminListingEmbed(other, 't').toJSON().thumbnail).toBeUndefined();
+    });
+
     test('a placeholder or missing reference is never the thumbnail', () => {
       expect(adminListingEmbed(makeListing(), 't').toJSON().thumbnail).toBeUndefined();
-      catalogManager.updateNamesAndReferences([
+      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
         {
           cardId: cid('12'),
           name: 'Squid',

@@ -1,6 +1,8 @@
 import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction } from 'discord.js';
 import type { CardId } from '../cards/cardId';
+import type { CollectionCards, CollectionId } from '../collections/ids';
+import { collectionName } from '../collections/index';
 import { catalogManager, type ImportPreview } from '../database/catalogManager';
 import { replyWithError } from '../utils/interactionReply';
 import { errorMessage } from '../utils/async';
@@ -11,42 +13,50 @@ import { joinWithinLimit } from '../utils/messageLimit';
 const TTL_MS = 10 * 60_000;
 const EXPIRED = 'This import expired, run the command again.';
 
+/** A previewed import: the collection and the card ids to save. */
+export type PendingImport = CollectionCards;
+
+type Entry = PendingImport & { readonly expiresAt: number };
+
 export interface ImportStore {
-  put(ids: CardId[]): string;
-  /** The pending ids, without consuming the token; undefined when unknown or expired. */
-  peek(token: string): CardId[] | undefined;
-  /** Returns the pending ids once; the token is consumed. */
-  take(token: string): CardId[] | undefined;
+  put(collection: CollectionId, ids: readonly CardId[]): string;
+  /** The pending import, without consuming the token; undefined when unknown or expired. */
+  peek(token: string): PendingImport | undefined;
+  /** Returns the pending import once; the token is consumed. */
+  take(token: string): PendingImport | undefined;
 }
 
 export function createImportStore(now: () => number): ImportStore {
-  const pending = new Map<string, { ids: CardId[]; expiresAt: number }>();
+  const pending = new Map<string, Entry>();
+  const unexpired = (entry: Entry): PendingImport | undefined =>
+    entry.expiresAt > now() ? { collection: entry.collection, ids: entry.ids } : undefined;
   return {
-    put(ids) {
+    put(collection, ids) {
       const t = now();
       for (const [key, entry] of pending) if (entry.expiresAt <= t) pending.delete(key);
       const token = crypto.randomUUID();
-      pending.set(token, { ids, expiresAt: t + TTL_MS });
+      pending.set(token, { collection, ids, expiresAt: t + TTL_MS });
       return token;
     },
     peek(token) {
       const entry = pending.get(token);
-      return entry && entry.expiresAt > now() ? entry.ids : undefined;
+      return entry ? unexpired(entry) : undefined;
     },
     take(token) {
       const entry = pending.get(token);
       if (!entry) return undefined;
       pending.delete(token);
-      return entry.expiresAt > now() ? entry.ids : undefined;
+      return unexpired(entry);
     },
   };
 }
 
 export const importStore = createImportStore(Date.now);
 
-export function buildPreviewText(preview: ImportPreview): string {
+export function buildPreviewText(collection: CollectionId, preview: ImportPreview): string {
   const { counts, added, removed, removedStillWanted } = preview;
   const lines = [
+    `Collection: ${collectionName(collection)}`,
     `Catalog: ${counts.base} base, ${counts.le} LE, ${counts.xxl} XXL.`,
     joinWithinLimit('Added: ', added.length > 0 ? added : ['none'], 600),
     joinWithinLimit('Removed: ', removed.length > 0 ? removed : ['none'], 600),
@@ -79,18 +89,18 @@ export async function handleCatalogButton(
     const sep = i.customId.indexOf(':');
     const action = i.customId.slice(0, sep);
     const token = i.customId.slice(sep + 1);
-    const ids = store.peek(token);
-    if (!ids) {
+    const entry = store.peek(token);
+    if (!entry) {
       store.take(token);
       await i.update({ content: EXPIRED, components: [] });
       return;
     }
     if (action === 'catalog-save') {
       try {
-        catalogManager.applyImport(ids);
+        catalogManager.applyImport(entry);
       } catch (err) {
         // The token stays: the buttons still work for another try.
-        logError('[CATALOG IMPORT] saving failed', err);
+        logError(`[CATALOG IMPORT] saving ${entry.collection} failed`, err);
         await replyWithError(i, 'Import failed', 'Saving the catalog failed. Press Save again.');
         return;
       }
@@ -98,7 +108,12 @@ export async function handleCatalogButton(
     store.take(token);
     const saved = action === 'catalog-save';
     try {
-      await i.update({ content: saved ? 'Catalog saved.' : 'Import cancelled.', components: [] });
+      await i.update({
+        content: saved
+          ? `Catalog of ${collectionName(entry.collection)} saved.`
+          : 'Import cancelled.',
+        components: [],
+      });
     } catch (err) {
       // The work is done; only the message could not be updated, so do not say it failed:
       // a plain ephemeral note, not the red error embed.

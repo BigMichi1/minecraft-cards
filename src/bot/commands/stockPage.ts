@@ -1,5 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { CardId } from '../cards/cardId';
+import { COLLECTION_IDS, LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
 import type { RunSummary } from '../check/runner';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { SHOP_NAMES } from '../notify/messages';
@@ -12,7 +13,12 @@ export type StockFilter = (typeof STOCK_FILTERS)[number];
 
 /** Everything one `/stock` page shows; gathered by the command, formatted here without I/O. */
 export interface StockInput extends CellContext {
-  /** The cards of the filter, in display order: the catalog, or the user's missing list. */
+  /** The collection shown; the paging buttons carry it. */
+  collection: CollectionId;
+  /**
+   * The cards of the filter, in display order: the collection's catalog, or the user's missing
+   * list in it.
+   */
   cards: CardId[];
   filter: StockFilter;
   /** The page asked for, from 1; a page past the end shows the last page. */
@@ -62,28 +68,48 @@ const FILTER_LABEL: Record<StockFilter, string> = {
 };
 
 const EMPTY: Record<StockFilter, string> = {
-  all: 'The catalog has no cards.',
+  all: 'This collection has no cards.',
   missing: 'You have no missing cards on your list.',
   'in-stock': 'No card is in stock in any enabled shop right now.',
 };
 
+/** Collection ids are slugs (checked in `collections/ids.test.ts`): no regex syntax, no `:`. */
 const CUSTOM_ID = new RegExp(
-  `^stock:([1-9]\\d{0,${MAX_PAGE_DIGITS - 1}}):(${STOCK_FILTERS.join('|')})$`
+  `^stock:(?:(${COLLECTION_IDS.join('|')}):)?([1-9]\\d{0,${MAX_PAGE_DIGITS - 1}}):(${STOCK_FILTERS.join('|')})$`
 );
 
-/** The custom id of a paging button: `stock:<page>:<filter>`. */
-export function stockCustomId(page: number, filter: StockFilter): string {
-  return `stock:${page}:${filter}`;
+/** What a paging button opens: one page of one filter of one collection. */
+export interface StockButton {
+  readonly collection: CollectionId;
+  readonly page: number;
+  readonly filter: StockFilter;
 }
 
 /**
- * The page and filter of a paging button, or null for anything this bot did not build: the
- * custom id comes back from Discord, so it is matched exactly (page 1-9999, a known filter).
+ * The custom id of a paging button: `stock:<collection>:<page>:<filter>`. A page parseStockCustomId
+ * would refuse (not a whole number from 1 to 9999) throws, rather than build a dead button.
  */
-export function parseStockCustomId(customId: string): { page: number; filter: StockFilter } | null {
+export function stockCustomId({ collection, page, filter }: StockButton): string {
+  if (!Number.isInteger(page) || page < 1 || page >= 10 ** MAX_PAGE_DIGITS) {
+    throw new RangeError(`/stock: page ${page} does not fit a button`);
+  }
+  return `stock:${collection}:${page}:${filter}`;
+}
+
+/**
+ * The collection, page and filter of a paging button, or null for anything this bot did not
+ * build: the custom id comes back from Discord, so it is matched exactly (a registered
+ * collection, page 1-9999, a known filter). A button sent before collections
+ * (`stock:<page>:<filter>`) is one of LEGACY_COLLECTION.
+ */
+export function parseStockCustomId(customId: string): StockButton | null {
   const match = CUSTOM_ID.exec(customId);
   if (!match) return null;
-  return { page: Number(match[1]), filter: match[2] as StockFilter };
+  return {
+    collection: (match[1] as CollectionId | undefined) ?? LEGACY_COLLECTION,
+    page: Number(match[2]),
+    filter: match[3] as StockFilter,
+  };
 }
 
 function seconds(ms: number): number {
@@ -147,16 +173,16 @@ function statusLines(input: StockInput): string[] {
   return lines;
 }
 
-function pagingRow(page: number, pages: number, filter: StockFilter) {
+function pagingRow(collection: CollectionId, page: number, pages: number, filter: StockFilter) {
   // At the ends the disabled button keeps a distinct id: Discord rejects duplicate custom ids.
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(stockCustomId(Math.max(1, page - 1), filter))
+      .setCustomId(stockCustomId({ collection, page: Math.max(1, page - 1), filter }))
       .setLabel('◀')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === 1),
     new ButtonBuilder()
-      .setCustomId(stockCustomId(Math.min(pages, page + 1), filter))
+      .setCustomId(stockCustomId({ collection, page: Math.min(pages, page + 1), filter }))
       .setLabel('▶')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === pages)
@@ -220,6 +246,6 @@ export function buildStockPage(input: StockInput): StockPage {
     .map((r) => line([r.card, ...r.cells]));
   return {
     content: render(`${page}/${pages}`, body),
-    components: pages > 1 ? [pagingRow(page, pages, input.filter)] : [],
+    components: pages > 1 ? [pagingRow(input.collection, page, pages, input.filter)] : [],
   };
 }

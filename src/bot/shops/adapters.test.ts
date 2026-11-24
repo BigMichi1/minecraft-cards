@@ -1,7 +1,8 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
-import { createShopAdapters } from './adapters';
+import { checkOneAdapterPerShop, createShopAdapters } from './adapters';
 import { SHOP_IDS } from './types';
+import type { CollectionId } from '../collections/ids';
 
 /** Runs `fn` with `logger.warn` spied, and returns what it returned plus the warned messages. */
 function withWarnings<T>(fn: () => T): { value: T; warned: string[] } {
@@ -30,10 +31,24 @@ describe('createShopAdapters', () => {
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(false);
   });
 
+  test('a second adapter of one shop is refused (run summaries and alerts are keyed per shop)', () => {
+    const fetcher = { id: 'blue-ocean' as const, fetchListings: async () => ({ listings: [] }) };
+    const a = { ...fetcher, collection: 'lego-minecraft-3' as const };
+    expect(() => checkOneAdapterPerShop([a, { ...a }])).toThrow('two adapters for shop blue-ocean');
+    expect(checkOneAdapterPerShop([a])).toEqual([a]);
+  });
+
+  test('every adapter checks lego-minecraft-3, the only collection', () => {
+    const adapters = createShopAdapters({ clientId: 'id', clientSecret: 'secret' });
+    expect(adapters.map((a) => a.collection)).toEqual(SHOP_IDS.map(() => 'lego-minecraft-3'));
+  });
+
   test('passes the catalog names on to eBay, read only when eBay fetches', async () => {
     let reads = 0;
-    const cardNames = () => {
+    const asked: string[] = [];
+    const cardNames = (collection: CollectionId) => {
       reads++;
+      asked.push(collection);
       return new Map();
     };
     const adapters = createShopAdapters({ clientId: 'id', clientSecret: 'secret' }, cardNames);
@@ -51,5 +66,6 @@ describe('createShopAdapters', () => {
       fetchSpy.mockRestore();
     }
     expect(reads).toBe(1);
+    expect(asked).toEqual(['lego-minecraft-3']);
   });
 });

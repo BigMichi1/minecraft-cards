@@ -34,7 +34,7 @@ function buildRightMessage(listing: StoredListing, i: ButtonInteraction): Messag
   const row = adminActionRow(listing, { dismiss: false });
   return {
     content: clipText(
-      `Confirm below, or fix with \`/admin map url:${listing.url} cards:${listing.cardIds.join(',')}\`.`,
+      `Confirm below, or fix with \`/admin map url:${listing.url} collection:${listing.collection} cards:${listing.cardIds.join(',')}\`.`,
       DISCORD_MESSAGE_LIMIT
     ),
     embeds: [

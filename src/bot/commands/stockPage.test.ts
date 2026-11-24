@@ -24,6 +24,7 @@ const CATALOG: CardId[] = parseChecklist(STARTER_CHECKLIST).ids;
 
 function input(over: Partial<StockInput> = {}): StockInput {
   return {
+    collection: 'lego-minecraft-3',
     cards: ids('12', '45'),
     filter: 'all',
     page: 1,
@@ -186,7 +187,7 @@ describe('buildStockPage', () => {
       'No card is in stock in any enabled shop right now.'
     );
     expect(empty('in-stock', ids('12')).components).toEqual([]);
-    expect(empty('all').content).toBe('The catalog has no cards.');
+    expect(empty('all').content).toBe('This collection has no cards.');
   });
 
   describe('paging over the full catalog', () => {
@@ -263,14 +264,14 @@ describe('buildStockPage', () => {
           type: 2,
           style: ButtonStyle.Secondary,
           label: '◀',
-          custom_id: 'stock:1:all',
+          custom_id: 'stock:lego-minecraft-3:1:all',
           disabled: true,
         },
         {
           type: 2,
           style: ButtonStyle.Secondary,
           label: '▶',
-          custom_id: 'stock:2:all',
+          custom_id: 'stock:lego-minecraft-3:2:all',
           disabled: false,
         },
       ] as unknown as ButtonJson[]);
@@ -279,8 +280,8 @@ describe('buildStockPage', () => {
     test('middle page: both buttons enabled, to the pages around it', () => {
       const b = buttons(worst(2));
       expect(b.map((x) => [x.custom_id, x.disabled])).toEqual([
-        ['stock:1:all', false],
-        ['stock:3:all', false],
+        ['stock:lego-minecraft-3:1:all', false],
+        ['stock:lego-minecraft-3:3:all', false],
       ]);
     });
 
@@ -289,15 +290,18 @@ describe('buildStockPage', () => {
         const page = worst(p);
         expect(page.content.split('\n')[0]).toEndWith(`page ${pageCount}/${pageCount}`);
         expect(buttons(page).map((x) => [x.custom_id, x.disabled])).toEqual([
-          [`stock:${pageCount - 1}:all`, false],
-          [`stock:${pageCount}:all`, true],
+          [`stock:lego-minecraft-3:${pageCount - 1}:all`, false],
+          [`stock:lego-minecraft-3:${pageCount}:all`, true],
         ]);
       }
     });
 
     test('the buttons keep the filter', () => {
       const page = buildStockPage(input({ cards: CATALOG, filter: 'missing' }));
-      expect(buttons(page).map((x) => x.custom_id)).toEqual(['stock:1:missing', 'stock:2:missing']);
+      expect(buttons(page).map((x) => x.custom_id)).toEqual([
+        'stock:lego-minecraft-3:1:missing',
+        'stock:lego-minecraft-3:2:missing',
+      ]);
     });
 
     test('inside the code block every character is ASCII, €, – or …', () => {
@@ -350,8 +354,30 @@ describe('buildStockPage', () => {
 describe('stock custom ids', () => {
   test('round trip for every filter', () => {
     for (const filter of STOCK_FILTERS) {
-      expect(parseStockCustomId(stockCustomId(3, filter))).toEqual({ page: 3, filter });
+      const button = { collection: 'lego-minecraft-3', page: 3, filter } as const;
+      expect(parseStockCustomId(stockCustomId(button))).toEqual(button);
     }
+    const last = { collection: 'lego-minecraft-3', page: 9999, filter: 'all' } as const;
+    expect(parseStockCustomId(stockCustomId(last))).toEqual(last);
+  });
+
+  test.each([0, -1, 1.5, 10_000])('refuses to build a button for page %p', (page) => {
+    expect(() => stockCustomId({ collection: 'lego-minecraft-3', page, filter: 'all' })).toThrow(
+      RangeError
+    );
+  });
+
+  test('a button sent before collections (stock:<page>:<filter>) is lego-minecraft-3', () => {
+    expect(parseStockCustomId('stock:2:missing')).toEqual({
+      collection: 'lego-minecraft-3',
+      page: 2,
+      filter: 'missing',
+    });
+    expect(parseStockCustomId('stock:lego-minecraft-3:2:missing')).toEqual({
+      collection: 'lego-minecraft-3',
+      page: 2,
+      filter: 'missing',
+    });
   });
 
   test.each([
@@ -368,6 +394,10 @@ describe('stock custom ids', () => {
     'stock:1:ALL',
     'stock:1:instock',
     'stock:1:all:x',
+    'stock:lego-minecraft-9:1:all',
+    'stock::1:all',
+    'stock:lego-minecraft-3:0:all',
+    'stock:lego-minecraft-3:1',
     'stock:1:all ',
     ' stock:1:all',
     'stockx:1:all',
@@ -377,7 +407,11 @@ describe('stock custom ids', () => {
   });
 
   test('accepts the largest page', () => {
-    expect(parseStockCustomId('stock:9999:in-stock')).toEqual({ page: 9999, filter: 'in-stock' });
+    expect(parseStockCustomId('stock:lego-minecraft-3:9999:in-stock')).toEqual({
+      collection: 'lego-minecraft-3',
+      page: 9999,
+      filter: 'in-stock',
+    });
   });
 });
 

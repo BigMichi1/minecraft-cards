@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
-import { parseSammelEntePage, createSammelEnteAdapter } from './sammelEnte';
+import { parseSammelEntePage, createSammelEnteFetcher } from './sammelEnte';
 import { ShopLayoutError } from './types';
 import { HttpError } from '../utils/http';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
@@ -98,12 +98,12 @@ describe('parseSammelEntePage', () => {
   });
 });
 
-describe('createSammelEnteAdapter', () => {
+describe('createSammelEnteFetcher', () => {
   const noDelay = { delayMs: 0 };
 
   test('throws ShopLayoutError when page 1 is not a shop page', async () => {
     const { fetchFn } = fakeFetch({ '?p=1': '<html>Just a moment...</html>' });
-    await expect(createSammelEnteAdapter(fetchFn, noDelay).fetchListings()).rejects.toBeInstanceOf(
+    await expect(createSammelEnteFetcher(fetchFn, noDelay).fetchListings()).rejects.toBeInstanceOf(
       ShopLayoutError
     );
   });
@@ -115,7 +115,7 @@ describe('createSammelEnteAdapter', () => {
       '?p=': readFixture('sammel-ente-p11.html'),
     });
     const sleeps: number[] = [];
-    const adapter = createSammelEnteAdapter(fetchFn, {
+    const adapter = createSammelEnteFetcher(fetchFn, {
       sleep: async (ms) => {
         sleeps.push(ms);
       },
@@ -135,7 +135,7 @@ describe('createSammelEnteAdapter', () => {
       '?p=1': readFixture('sammel-ente-p1.html'),
       '?p=2': '<html>Just a moment...</html>',
     });
-    const error = await createSammelEnteAdapter(fetchFn, noDelay)
+    const error = await createSammelEnteFetcher(fetchFn, noDelay)
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -150,7 +150,7 @@ describe('createSammelEnteAdapter', () => {
         '?p=1': p1,
         '?p=': readFixture('sammel-ente-p11.html'),
       });
-      await createSammelEnteAdapter(fetchFn, noDelay).fetchListings();
+      await createSammelEnteFetcher(fetchFn, noDelay).fetchListings();
       expect(calls).toHaveLength(60);
       expect(warn.mock.calls.some((c) => String(c[0]).includes('75 pages'))).toBe(true);
     } finally {
@@ -160,7 +160,7 @@ describe('createSammelEnteAdapter', () => {
 
   test('an HTTP failure on a later page rejects the whole run', async () => {
     const { fetchFn } = fakeFetch({ '?p=1': readFixture('sammel-ente-p1.html') });
-    await expect(createSammelEnteAdapter(fetchFn, noDelay).fetchListings()).rejects.toBeInstanceOf(
+    await expect(createSammelEnteFetcher(fetchFn, noDelay).fetchListings()).rejects.toBeInstanceOf(
       HttpError
     );
   });

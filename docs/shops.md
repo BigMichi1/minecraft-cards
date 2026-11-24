@@ -105,8 +105,8 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
   single in the probe named its series.
 - **No series word, but the catalog name** (`nameMatchedCardIds`): a title without any series
-  word still gives a card when the catalog name of that number (sammel-ente's, read at the start
-  of each eBay fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
+  word still gives a card when the name of that number in the eBay adapter's collection
+  (sammel-ente's, read at the start of each eBay fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
   because series 3 #131 is "Ghast".
   - The number comes from the title forms above, a plain `N - Name`, or `LE`/`XXL` with any
     spacing (`LE 19 - Creeper` is LE19). The name follows it (spaces and at most one `-`, `–`,

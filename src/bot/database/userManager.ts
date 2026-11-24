@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
+import type { CollectionId } from '../collections/ids';
 import { parseKnownCardList, type CardListResult } from './catalogManager';
 import { db } from './db';
 import { users, wantedCards } from './schema/index';
@@ -13,11 +14,15 @@ function ensureUser(tx: Tx, discordId: string): void {
   tx.insert(users).values({ discordId, createdAt: Date.now() }).onConflictDoNothing().run();
 }
 
-function readList(tx: Tx, discordId: string): CardId[] {
+function ofList(discordId: string, collection: CollectionId) {
+  return and(eq(wantedCards.discordId, discordId), eq(wantedCards.collection, collection));
+}
+
+function readList(tx: Tx, discordId: string, collection: CollectionId): CardId[] {
   return tx
     .select({ cardId: wantedCards.cardId })
     .from(wantedCards)
-    .where(eq(wantedCards.discordId, discordId))
+    .where(ofList(discordId, collection))
     .all()
     .map((r) => r.cardId)
     .sort(compareCardIds);
@@ -25,69 +30,81 @@ function readList(tx: Tx, discordId: string): CardId[] {
 
 export const userManager = {
   /** Replace the whole list atomically; any invalid token changes nothing. */
-  setList(discordId: string, input: string): ListChange {
-    const checked = parseKnownCardList(input);
+  setList(discordId: string, collection: CollectionId, input: string): ListChange {
+    const checked = parseKnownCardList(collection, input);
     if (!checked.ok) return checked;
     return db.transaction((tx) => {
       ensureUser(tx, discordId);
-      tx.delete(wantedCards).where(eq(wantedCards.discordId, discordId)).run();
-      for (const cardId of checked.ids) tx.insert(wantedCards).values({ discordId, cardId }).run();
-      return { ok: true, ids: readList(tx, discordId) };
+      tx.delete(wantedCards).where(ofList(discordId, collection)).run();
+      for (const cardId of checked.ids) {
+        tx.insert(wantedCards).values({ discordId, collection, cardId }).run();
+      }
+      return { ok: true, ids: readList(tx, discordId, collection) };
     });
   },
 
-  addToList(discordId: string, input: string): ListChange {
-    const checked = parseKnownCardList(input);
+  addToList(discordId: string, collection: CollectionId, input: string): ListChange {
+    const checked = parseKnownCardList(collection, input);
     if (!checked.ok) return checked;
     return db.transaction((tx) => {
       ensureUser(tx, discordId);
       for (const cardId of checked.ids) {
-        tx.insert(wantedCards).values({ discordId, cardId }).onConflictDoNothing().run();
+        tx.insert(wantedCards)
+          .values({ discordId, collection, cardId })
+          .onConflictDoNothing()
+          .run();
       }
-      return { ok: true, ids: readList(tx, discordId) };
+      return { ok: true, ids: readList(tx, discordId, collection) };
     });
   },
 
   /** Catalog membership is ignored so ids removed from the catalog can still be removed. */
-  removeFromList(discordId: string, input: string): ListChange {
-    const checked = parseKnownCardList(input, { checkCatalog: false });
+  removeFromList(discordId: string, collection: CollectionId, input: string): ListChange {
+    const checked = parseKnownCardList(collection, input, { checkCatalog: false });
     if (!checked.ok) return checked;
     return db.transaction((tx) => {
       ensureUser(tx, discordId);
       if (checked.ids.length > 0) {
         tx.delete(wantedCards)
-          .where(
-            and(eq(wantedCards.discordId, discordId), inArray(wantedCards.cardId, checked.ids))
-          )
+          .where(and(ofList(discordId, collection), inArray(wantedCards.cardId, checked.ids)))
           .run();
       }
-      return { ok: true, ids: readList(tx, discordId) };
+      return { ok: true, ids: readList(tx, discordId, collection) };
     });
   },
 
-  clearList(discordId: string): void {
-    db.delete(wantedCards).where(eq(wantedCards.discordId, discordId)).run();
+  clearList(discordId: string, collection: CollectionId): void {
+    db.delete(wantedCards).where(ofList(discordId, collection)).run();
   },
 
-  getList(discordId: string): CardId[] {
-    return db.transaction((tx) => readList(tx, discordId));
+  getList(discordId: string, collection: CollectionId): CardId[] {
+    return db.transaction((tx) => readList(tx, discordId, collection));
   },
 
-  allWantedIds(): Set<CardId> {
-    return new Set(
-      db
-        .selectDistinct({ cardId: wantedCards.cardId })
-        .from(wantedCards)
-        .all()
-        .map((r) => r.cardId)
-    );
+  /** Every card someone wants, per collection. */
+  allWantedIds(): Map<CollectionId, Set<CardId>> {
+    const result = new Map<CollectionId, Set<CardId>>();
+    const rows = db
+      .selectDistinct({ collection: wantedCards.collection, cardId: wantedCards.cardId })
+      .from(wantedCards)
+      .all();
+    for (const { collection, cardId } of rows) {
+      const set = result.get(collection) ?? new Set<CardId>();
+      set.add(cardId);
+      result.set(collection, set);
+    }
+    return result;
   },
 
-  /** discordId -> which of `cardIds` that user wants (sorted). */
-  usersWanting(cardIds: CardId[]): Map<string, CardId[]> {
+  /** discordId -> which of the collection's `cardIds` that user wants (sorted). */
+  usersWanting(collection: CollectionId, cardIds: readonly CardId[]): Map<string, CardId[]> {
     const result = new Map<string, CardId[]>();
     if (cardIds.length === 0) return result;
-    const rows = db.select().from(wantedCards).where(inArray(wantedCards.cardId, cardIds)).all();
+    const rows = db
+      .select({ discordId: wantedCards.discordId, cardId: wantedCards.cardId })
+      .from(wantedCards)
+      .where(and(eq(wantedCards.collection, collection), inArray(wantedCards.cardId, cardIds)))
+      .all();
     for (const { discordId, cardId } of rows) {
       const list = result.get(discordId) ?? [];
       list.push(cardId);

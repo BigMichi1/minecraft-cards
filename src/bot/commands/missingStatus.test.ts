@@ -25,6 +25,7 @@ function listing(shop: ShopId, cards: CardId[], over: Partial<StoredListing> = {
   const id = nextId++;
   return {
     id,
+    collection: 'lego-minecraft-3',
     shop,
     url: `https://example.com/${id}`,
     title: 't',

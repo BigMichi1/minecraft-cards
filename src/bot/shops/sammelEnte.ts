@@ -3,7 +3,7 @@ import { normalizeCardId } from '../cards/cardId';
 import { sleep as realSleep } from '../utils/async';
 import { fetchText } from '../utils/http';
 import logger, { logError } from '../utils/logger';
-import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopAdapter } from './types';
+import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher } from './types';
 import { ShopLayoutError } from './types';
 
 const BASE_URL = 'https://shop-sammel-ente.de/Minecraft/Serie-3/';
@@ -83,10 +83,10 @@ export function parseSammelEntePage(html: string): {
   return { listings, lastPage, productCount: boxes.length, skippedNoId, skippedInvalid };
 }
 
-export function createSammelEnteAdapter(
+export function createSammelEnteFetcher(
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
-): ShopAdapter {
+): ShopFetcher {
   const sleep = options.sleep ?? realSleep;
   const delayMs = options.delayMs ?? PAGE_DELAY_MS;
   return {

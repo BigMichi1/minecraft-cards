@@ -52,7 +52,7 @@ export type ConfirmId = ConfirmTarget;
 /** The Confirm id of `listing`; null when it has no cards or the id would pass 100 characters. */
 export function encodeConfirmId(listing: {
   id: number;
-  cardIds: CardId[];
+  cardIds: readonly CardId[];
   imageUrl: string | null;
 }): string | null {
   if (listing.cardIds.length === 0) return null;

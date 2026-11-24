@@ -68,6 +68,7 @@ const lastReply = () => replies[replies.length - 1];
 function makeListing(url = 'https://www.blue-ocean.de/p/12'): StoredListing {
   return listingManager.upsertFromRun(
     'blue-ocean',
+    'lego-minecraft-3',
     [
       {
         shop: 'blue-ocean',
@@ -478,7 +479,7 @@ describe('report flow', () => {
     expect(json.image.url).toBe('https://img/12.jpg');
     const names = json.fields.map((f: any) => f.name);
     expect(names).toEqual(['Reporter', 'Cards', 'Shop', 'URL', 'Reason', 'Note']);
-    expect(msg.content).toContain('/admin map url:not a url cards:12');
+    expect(msg.content).toContain('/admin map url:not a url collection:lego-minecraft-3 cards:12');
     expect(msg.content).toContain('/admin clear url:not a url');
   });
 });

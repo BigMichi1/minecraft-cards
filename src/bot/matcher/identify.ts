@@ -54,7 +54,7 @@ export interface MissingReference {
   detail?: string;
 }
 
-/** Every catalog card: embedded (`vectors`) or not in the comparison (`missing`). */
+/** Every card of one collection's catalog: embedded (`vectors`) or not in the comparison (`missing`). */
 export interface ReferenceSet {
   vectors: ReferenceVector[];
   missing: MissingReference[];
@@ -66,8 +66,8 @@ export function isTransient(m: MissingReference): boolean {
 }
 
 /**
- * Whether the picture may decide a card other than the title's against `set`: every catalog
- * card is in the comparison. A missing card could be the true one, and the gap to the runner-up
+ * Whether the picture may decide a card other than the title's against `set`: every card of the
+ * collection's catalog is in the comparison. A missing card could be the true one, and the gap to the runner-up
  * would then look fine for a wrong card. Narrower scopes do not hold: on 2026-11-18, 39 of 475
  * live listing pictures reached the threshold against a reference of another kind (base, LE,
  * XXL) than their own, and 5 matched one best (docs/image-matching.md).

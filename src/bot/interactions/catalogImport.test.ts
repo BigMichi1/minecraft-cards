@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { MessageFlags, type ButtonInteraction } from 'discord.js';
 import { catalogManager } from '../database/catalogManager';
+import type { CollectionId } from '../collections/ids';
 import { db, initializeDatabase } from '../database/db';
 import { cards } from '../database/schema/index';
 import { createImportStore, handleCatalogButton } from './catalogImport';
@@ -30,15 +31,15 @@ function fakeButton(customId: string, userId = 'admin') {
 describe('import store', () => {
   test('take returns once and consumes the token', () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
-    expect(store.take(token)).toEqual(ids('1'));
+    const token = store.put('lego-minecraft-3', [cid('1')]);
+    expect(store.take(token)).toEqual({ collection: 'lego-minecraft-3', ids: ids('1') });
     expect(store.take(token)).toBeUndefined();
   });
 
   test('tokens expire after 10 minutes', () => {
     clock = 0;
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
+    const token = store.put('lego-minecraft-3', [cid('1')]);
     clock += 11 * 60_000;
     expect(store.take(token)).toBeUndefined();
   });
@@ -60,19 +61,29 @@ describe('handleCatalogButton', () => {
     catalogManager.seedIfEmpty();
   });
 
+  test("save applies the import to the token's collection only", async () => {
+    const other = 'other-set' as CollectionId;
+    const store = createImportStore(() => clock);
+    const token = store.put(other, [cid('1')]);
+    await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
+    expect(catalogManager.knownIds(other)).toEqual(new Set(ids('1')));
+    expect(catalogManager.knownIds('lego-minecraft-3').size).toBe(251);
+    expect(updates[0].content).toBe('Catalog of other-set saved.');
+  });
+
   test('save applies the import once', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1'), cid('2')]);
+    const token = store.put('lego-minecraft-3', [cid('1'), cid('2')]);
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
-    expect(updates[0].content).toBe('Catalog saved.');
-    expect([...catalogManager.knownIds()].sort()).toEqual(ids('1', '2'));
+    expect(updates[0].content).toBe('Catalog of LEGO Minecraft Serie 3 "On Fire" saved.');
+    expect([...catalogManager.knownIds('lego-minecraft-3')].sort()).toEqual(ids('1', '2'));
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
     expect(updates[1].content).toBe('This import expired, run the command again.');
   });
 
   test('a failing save keeps the token, so pressing Save again works', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1'), cid('2')]);
+    const token = store.put('lego-minecraft-3', [cid('1'), cid('2')]);
     const apply = spyOn(catalogManager, 'applyImport').mockImplementationOnce(() => {
       throw new Error('database is locked');
     });
@@ -80,7 +91,7 @@ describe('handleCatalogButton', () => {
       await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
       expect(replies[0].embeds[0].toJSON().description).toContain('Press Save again');
       await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
-      expect(updates.at(-1).content).toBe('Catalog saved.');
+      expect(updates.at(-1).content).toBe('Catalog of LEGO Minecraft Serie 3 "On Fire" saved.');
     } finally {
       apply.mockRestore();
     }
@@ -88,7 +99,7 @@ describe('handleCatalogButton', () => {
 
   test('a message that cannot be updated after the save is reported as saved, not failed', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1'), cid('2')]);
+    const token = store.put('lego-minecraft-3', [cid('1'), cid('2')]);
     const button = fakeButton(`catalog-save:${token}`);
     (button as unknown as { update: () => Promise<void> }).update = async () => {
       throw new Error('unknown interaction');
@@ -96,7 +107,7 @@ describe('handleCatalogButton', () => {
     const log = spyOn(logger, 'log');
     try {
       await handleCatalogButton(button, { adminId: 'admin' }, store);
-      expect([...catalogManager.knownIds()].sort()).toEqual(ids('1', '2'));
+      expect([...catalogManager.knownIds('lego-minecraft-3')].sort()).toEqual(ids('1', '2'));
       expect(replies[0].embeds).toBeUndefined();
       expect(replies[0].content).toBe(
         'The catalog was saved, but this message could not be updated.'
@@ -110,7 +121,7 @@ describe('handleCatalogButton', () => {
 
   test('the note goes out as an ephemeral follow-up when the interaction was already answered', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
+    const token = store.put('lego-minecraft-3', [cid('1')]);
     const button = fakeButton(`catalog-save:${token}`);
     const followUps: any[] = [];
     Object.assign(button, {
@@ -139,7 +150,7 @@ describe('handleCatalogButton', () => {
 
   test('the note goes out as an ephemeral follow-up when it was answered but not deferred', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
+    const token = store.put('lego-minecraft-3', [cid('1')]);
     const button = fakeButton(`catalog-save:${token}`);
     const followUps: any[] = [];
     Object.assign(button, {
@@ -168,7 +179,7 @@ describe('handleCatalogButton', () => {
 
   test('a note that cannot be delivered is logged as a warning and does not become a button failure', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
+    const token = store.put('lego-minecraft-3', [cid('1')]);
     const button = fakeButton(`catalog-save:${token}`);
     Object.assign(button, {
       update: async () => {
@@ -197,7 +208,7 @@ describe('handleCatalogButton', () => {
 
   test('a message that cannot be updated after a cancel is reported as cancelled, not failed', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
+    const token = store.put('lego-minecraft-3', [cid('1')]);
     const button = fakeButton(`catalog-cancel:${token}`);
     (button as unknown as { update: () => Promise<void> }).update = async () => {
       throw new Error('unknown interaction');
@@ -218,15 +229,15 @@ describe('handleCatalogButton', () => {
 
   test('cancel stores nothing', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
+    const token = store.put('lego-minecraft-3', [cid('1')]);
     await handleCatalogButton(fakeButton(`catalog-cancel:${token}`), { adminId: 'admin' }, store);
     expect(updates[0].content).toBe('Import cancelled.');
-    expect(catalogManager.knownIds().size).toBeGreaterThan(200);
+    expect(catalogManager.knownIds('lego-minecraft-3').size).toBeGreaterThan(200);
   });
 
   test('an expired token is reported', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
+    const token = store.put('lego-minecraft-3', [cid('1')]);
     clock += 11 * 60_000;
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
     expect(updates[0].content).toBe('This import expired, run the command again.');
@@ -234,14 +245,14 @@ describe('handleCatalogButton', () => {
 
   test('a non-admin cannot save and does not consume the token', async () => {
     const store = createImportStore(() => clock);
-    const token = store.put([cid('1')]);
+    const token = store.put('lego-minecraft-3', [cid('1')]);
     await handleCatalogButton(
       fakeButton(`catalog-save:${token}`, 'u1'),
       { adminId: 'admin' },
       store
     );
     expect(replies[0].content).toBe('Only the bot admin can use this.');
-    expect(catalogManager.knownIds().size).toBeGreaterThan(200);
-    expect(store.take(token)).toEqual(ids('1'));
+    expect(catalogManager.knownIds('lego-minecraft-3').size).toBeGreaterThan(200);
+    expect(store.take(token)).toEqual({ collection: 'lego-minecraft-3', ids: ids('1') });
   });
 });

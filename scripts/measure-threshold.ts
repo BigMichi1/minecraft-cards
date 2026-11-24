@@ -26,9 +26,9 @@ process.env.DB_PATH = ':memory:';
 
 const { createTransformersEmbedder } = await import('../src/bot/matcher/embedder');
 const { cosineSimilarity } = await import('../src/bot/matcher/similarity');
-const { createSammelEnteAdapter, parseSammelEntePage } =
+const { createSammelEnteFetcher, parseSammelEntePage } =
   await import('../src/bot/shops/sammelEnte');
-const { createBlueOceanAdapter, parseBlueOceanPage } = await import('../src/bot/shops/blueOcean');
+const { createBlueOceanFetcher, parseBlueOceanPage } = await import('../src/bot/shops/blueOcean');
 const { fetchText } = await import('../src/bot/utils/http');
 type Listing = import('../src/bot/shops/types').Listing;
 
@@ -55,8 +55,8 @@ async function loadListings(): Promise<{ sammel: Listing[]; blue: Listing[] }> {
   }
   if (pagesArg !== 'all') throw new Error(`--pages takes 1 or all, got "${pagesArg}"`);
   return {
-    sammel: (await createSammelEnteAdapter().fetchListings()).listings,
-    blue: (await createBlueOceanAdapter().fetchListings()).listings,
+    sammel: (await createSammelEnteFetcher().fetchListings()).listings,
+    blue: (await createBlueOceanFetcher().fetchListings()).listings,
   };
 }
 

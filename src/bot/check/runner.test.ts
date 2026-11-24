@@ -34,6 +34,10 @@ import {
   formatWindow,
 } from './runner';
 import { cid, ids } from '../../test/cardIds';
+import type { CollectionId } from '../collections/ids';
+
+/** A collection outside the registry, to show a run keeps each adapter's collection apart. */
+const OTHER = 'other-set' as CollectionId;
 
 const blue12: Listing = {
   shop: 'blue-ocean',
@@ -50,9 +54,15 @@ const blue12: Listing = {
 };
 
 let fetchCount = 0;
-function ok(id: ShopId, items: Listing[], extra: Omit<FetchResult, 'listings'> = {}): ShopAdapter {
+function ok(
+  id: ShopId,
+  items: Listing[],
+  extra: Omit<FetchResult, 'listings'> = {},
+  collection: CollectionId = 'lego-minecraft-3'
+): ShopAdapter {
   return {
     id,
+    collection,
     fetchListings: async () => {
       fetchCount++;
       return { listings: items, ...extra };
@@ -62,6 +72,7 @@ function ok(id: ShopId, items: Listing[], extra: Omit<FetchResult, 'listings'> =
 function failing(id: ShopId, error: Error): ShopAdapter {
   return {
     id,
+    collection: 'lego-minecraft-3',
     fetchListings: async () => {
       fetchCount++;
       throw error;
@@ -138,7 +149,7 @@ describe('runCheck', () => {
       db.delete(t).run();
     }
     catalogManager.seedIfEmpty();
-    userManager.setList('u1', '12');
+    userManager.setList('u1', 'lego-minecraft-3', '12');
     sender = new FakeSender();
     alerts = [];
     embedded = [];
@@ -161,7 +172,7 @@ describe('runCheck', () => {
   });
 
   test('a DM failure for one user does not block others and is retried next run', async () => {
-    userManager.setList('u2', '12');
+    userManager.setList('u2', 'lego-minecraft-3', '12');
     sender.failFor('u1');
     const r = await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     expect(r.notified).toBe(1);
@@ -173,7 +184,7 @@ describe('runCheck', () => {
   });
 
   test('every run retries the admin DMs of reports that failed, even with no wanted cards', async () => {
-    userManager.clearList('u1');
+    userManager.clearList('u1', 'lego-minecraft-3');
     let retries = 0;
     await runCheck(depsWith([], { retryReports: async () => void retries++ }));
     expect(retries).toBe(1);
@@ -200,7 +211,7 @@ describe('runCheck', () => {
   });
 
   test('no wanted cards means no fetch but the run is recorded', async () => {
-    userManager.clearList('u1');
+    userManager.clearList('u1', 'lego-minecraft-3');
     const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     expect(fetchCount).toBe(0);
     expect(s.shops).toEqual({});
@@ -216,9 +227,54 @@ describe('runCheck', () => {
       imageUrl: 'https://ente/12.jpg',
     };
     await runCheck(depsWith([ok('sammel-ente', [ente])]));
-    const card = catalogManager.getCard(cid('12'))!;
+    const card = catalogManager.getCard('lego-minecraft-3', cid('12'))!;
     expect(card.name).toBe('Creeper');
     expect(card.referenceImageUrl).toBe('https://ente/12.jpg');
+  });
+
+  test('each adapter stores, names and matches in its own collection', async () => {
+    const ente: Listing = {
+      ...blue12,
+      shop: 'sammel-ente',
+      url: 'https://shop-sammel-ente.de/12',
+      cardName: 'Creeper',
+      imageUrl: 'https://ente/12.jpg',
+    };
+    userManager.setList('u1', 'lego-minecraft-3', '12');
+    const s = await runCheck(
+      depsWith([ok('sammel-ente', [ente], {}, OTHER), ok('blue-ocean', [blue12], {}, OTHER)])
+    );
+    expect(catalogManager.getCard('lego-minecraft-3', cid('12'))!.name).toBeNull();
+    expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+      collection: OTHER,
+      matchStatus: 'pending',
+    });
+    expect(embedded).toEqual([]);
+    expect(s.notified).toBe(0);
+  });
+
+  test("a listing is compared with its own collection's references only", async () => {
+    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      { cardId: cid('12'), name: 'Creeper', imageUrl: 'https://ente/12.jpg' },
+    ]);
+    db.insert(cards)
+      .values({
+        collection: OTHER,
+        cardId: cid('12'),
+        type: 'base',
+        referenceImageUrl: 'https://o/12.jpg',
+        updatedAt: 1,
+      })
+      .run();
+    db.insert(users).values({ discordId: 'u9', createdAt: 1 }).run();
+    db.insert(wantedCards)
+      .values({ discordId: 'u9', collection: OTHER, cardId: cid('12') })
+      .run();
+    await runCheck(depsWith([ok('blue-ocean', [blue12], {}, OTHER)]));
+    expect(embedded).toContain('https://o/12.jpg');
+    expect(embedded).toContain(blue12.imageUrl!);
+    expect(embedded).not.toContain('https://ente/12.jpg');
+    expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
   });
 
   test('a sammel-ente listing without a name or with several ids leaves the catalog alone', async () => {
@@ -236,7 +292,7 @@ describe('runCheck', () => {
       cardName: 'Two',
     };
     await runCheck(depsWith([ok('sammel-ente', [nameless, several])]));
-    expect(catalogManager.getCard(cid('12'))).toMatchObject({
+    expect(catalogManager.getCard('lego-minecraft-3', cid('12'))).toMatchObject({
       name: null,
       referenceImageUrl: null,
     });
@@ -287,7 +343,7 @@ describe('runCheck', () => {
     await runCheck(depsWith(shops()));
     expect(embedded).not.toContain('https://img/13.jpg');
     expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('pending');
-    userManager.addToList('u1', '13');
+    userManager.addToList('u1', 'lego-minecraft-3', '13');
     await runCheck(depsWith(shops()));
     expect(embedded).toContain('https://img/13.jpg');
     expect(listingManager.getByUrl(blue13.url)!.matchStatus).toBe('confirmed');
@@ -446,7 +502,7 @@ describe('runCheck', () => {
     });
 
     test('one listing failing to match (a cache write) does not stop the others (R8)', async () => {
-      userManager.setList('u1', '12, 13');
+      userManager.setList('u1', 'lego-minecraft-3', '12, 13');
       const blue13: Listing = {
         ...blue12,
         url: 'https://www.blue-ocean.de/p/13',
@@ -612,13 +668,13 @@ describe('runCheck', () => {
       format: 'fixed_price',
     };
     const other: Listing = { ...ebay12, url: 'https://www.ebay.de/itm/2', cardIds: [cid('99')] };
-    userManager.clearList('u1');
-    userManager.setList('u0', '99');
+    userManager.clearList('u1', 'lego-minecraft-3');
+    userManager.setList('u0', 'lego-minecraft-3', '99');
     await runCheck(depsWith([ok('ebay', [ebay12, other])]));
     for (let i = 0; i < 3; i++) await runCheck(depsWith([ok('ebay', [other])]));
     // Still available (grace), but last seen three intervals ago: stale.
     expect(listingManager.getByUrl(ebay12.url)!.available).toBe(true);
-    userManager.setList('u1', '12');
+    userManager.setList('u1', 'lego-minecraft-3', '12');
     expect((await runCheck(depsWith([ok('ebay', [other])]))).notified).toBe(0);
     expect((await runCheck(depsWith([ok('ebay', [ebay12, other])]))).notified).toBe(1);
     expect((await runCheck(depsWith([ok('ebay', [ebay12, other])]))).notified).toBe(0);
@@ -674,7 +730,7 @@ describe('runCheck', () => {
     });
 
     test('without a model, one warning per run instead of one per listing', async () => {
-      userManager.setList('u1', '12, 13, 14');
+      userManager.setList('u1', 'lego-minecraft-3', '12, 13, 14');
       const shops = () => [
         ok('sammel-ente', [12, 13, 14].map(reference)),
         ok('blue-ocean', [12, 13, 14].map(candidate)),
@@ -688,7 +744,7 @@ describe('runCheck', () => {
     });
 
     test('a failing model also warns once per run', async () => {
-      userManager.setList('u1', '12, 13');
+      userManager.setList('u1', 'lego-minecraft-3', '12, 13');
       const broken: ImageEmbedder = {
         model: 'broken',
         embed: async () => {
@@ -770,15 +826,18 @@ describe('runCheck', () => {
       runCheck(depsWith(shops, { embedder: angled, ...over }));
     beforeEach(() => {
       // A catalog every card of which has a reference: the set is complete (R1).
-      catalogManager.applyImport(ids('12', '45', '77', '160'));
+      catalogManager.applyImport({
+        collection: 'lego-minecraft-3',
+        ids: ids('12', '45', '77', '160'),
+      });
     });
     /** The admin alerts but the one for the sold-out references. */
     const notes = () => alerts.filter((a) => !a.startsWith('Shop sammel-ente: all'));
 
     test('the sammel-ente "Puzzlekarte" names mark the puzzle cards in the catalog', async () => {
       await run([ok('sammel-ente', references)]);
-      expect(catalogManager.getCard(cid('160'))?.puzzle).toBe(true);
-      expect(catalogManager.getCard(cid('45'))?.puzzle).toBe(false);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('160'))?.puzzle).toBe(true);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('45'))?.puzzle).toBe(false);
     });
 
     test('rule 1: a picture deciding the title card confirms it and notifies', async () => {
@@ -792,7 +851,7 @@ describe('runCheck', () => {
     });
 
     test('rule 2: a mismatch is held back and the admin gets one note per listing', async () => {
-      userManager.setList('u2', '45');
+      userManager.setList('u2', 'lego-minecraft-3', '45');
       const shops = () => [ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])];
       const r = await run(shops());
       expect(listingManager.getByUrl(blue12.url)).toMatchObject({
@@ -846,7 +905,7 @@ describe('runCheck', () => {
     });
 
     test('rule 4: a decided eBay candidate gets the picture card and notifies its users', async () => {
-      userManager.setList('u2', '45');
+      userManager.setList('u2', 'lego-minecraft-3', '45');
       const candidate = candidateAt(58);
       const r = await run([ok('sammel-ente', references), ok('ebay', [candidate])]);
       expect(listingManager.getByUrl(candidate.url)).toMatchObject({
@@ -866,7 +925,7 @@ describe('runCheck', () => {
     });
 
     test('rule 4: an undecided candidate is stored without cards and never notified', async () => {
-      userManager.setList('u2', '12, 45');
+      userManager.setList('u2', 'lego-minecraft-3', '12, 45');
       const candidate = candidateAt(30);
       const r = await run([ok('sammel-ente', references), ok('ebay', [candidate])]);
       expect(listingManager.getByUrl(candidate.url)).toMatchObject({
@@ -878,7 +937,7 @@ describe('runCheck', () => {
     });
 
     test('rule 5: a puzzle picture never decides a candidate nor makes a mismatch', async () => {
-      userManager.setList('u1', '12, 160');
+      userManager.setList('u1', 'lego-minecraft-3', '12, 160');
       const candidate = candidateAt(-60);
       const r = await run([
         ok('sammel-ente', references),
@@ -897,7 +956,11 @@ describe('runCheck', () => {
 
     test('an admin-mapped listing is never identified again', async () => {
       await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])]);
-      listingManager.overrideCards(blue12.url, [cid('12')], clock);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        clock
+      );
       const before = embedded.length;
       await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(61)])]);
       expect(embedded.length).toBe(before);
@@ -916,8 +979,11 @@ describe('runCheck', () => {
         ...reference(id, name),
         imageUrl: leer,
       });
-      catalogManager.applyImport(ids('12', '45', '77', '160', 'LE10', 'LE11'));
-      userManager.setList('u1', '12, LE10');
+      catalogManager.applyImport({
+        collection: 'lego-minecraft-3',
+        ids: ids('12', '45', '77', '160', 'LE10', 'LE11'),
+      });
+      userManager.setList('u1', 'lego-minecraft-3', '12, LE10');
       const blueLE10: Listing = {
         ...blue12,
         url: 'https://www.blue-ocean.de/p/le10',
@@ -1007,7 +1073,16 @@ describe('runCheck', () => {
       await run(shops(5), { embedder: broken });
       const sent = () => notes().filter((a) => a.includes('could not be loaded'));
       expect(sent()).toHaveLength(1);
-      expect(sent()[0]).toStartWith('2 reference picture(s) could not be loaded this run');
+      expect(sent()[0]).toStartWith(
+        '2 reference picture(s) of LEGO Minecraft Serie 3 "On Fire" could not be loaded this run'
+      );
+      expect(
+        db
+          .select()
+          .from(adminAlerts)
+          .all()
+          .map((r) => r.key)
+      ).toContain('reference-unavailable:lego-minecraft-3');
       expect(sent()[0]).toContain('#45 (image_unavailable: HTTP 404, https://ente/45.jpg)');
       expect(sent()[0]).toContain('#77 (image_unavailable: HTTP 410, https://ente/77.jpg)');
       // A new listing needs the set again the same day: throttled.
@@ -1061,7 +1136,7 @@ describe('runCheck', () => {
       });
 
       test('a reference failing to load leaves would-be decisions retryable; the next try decides', async () => {
-        userManager.setList('u2', '45');
+        userManager.setList('u2', 'lego-minecraft-3', '45');
         const failing = { on: true };
         const candidate = candidateAt(58);
         const shops = () => [
@@ -1087,7 +1162,10 @@ describe('runCheck', () => {
       });
 
       test('a catalog card without a usable reference: no picture-only card, no mismatch', async () => {
-        catalogManager.applyImport(ids('12', '45', '77', '99', '160'));
+        catalogManager.applyImport({
+          collection: 'lego-minecraft-3',
+          ids: ids('12', '45', '77', '99', '160'),
+        });
         const candidate = candidateAt(58);
         await run([
           ok('sammel-ente', references),
@@ -1146,7 +1224,10 @@ describe('runCheck', () => {
       test('placeholder and shared references are named once per run (R10)', async () => {
         const warn = spyOn(logger, 'warn');
         try {
-          catalogManager.applyImport(ids('12', '45', '77', '160', 'LE10', 'LE11'));
+          catalogManager.applyImport({
+            collection: 'lego-minecraft-3',
+            ids: ids('12', '45', '77', '160', 'LE10', 'LE11'),
+          });
           const leer = (id: string): Listing => ({
             ...reference(id, `C${id}`),
             imageUrl: 'https://ente/mnc3_leer.jpg',
@@ -1184,6 +1265,7 @@ describe('runCheck', () => {
         down = false;
         await run(shops(), { alertAdmin });
         expect(mismatchNotes()).toHaveLength(1);
+        expect(mismatchNotes()[0]).toContain('fix it with /admin map collection:lego-minecraft-3');
         await run(shops(), { alertAdmin });
         expect(mismatchNotes()).toHaveLength(1);
       });
@@ -1224,7 +1306,11 @@ describe('runCheck', () => {
     test('/admin map after a mismatch notifies exactly once on the next run (T5)', async () => {
       const shops = () => [ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])];
       expect((await run(shops())).notified).toBe(0);
-      listingManager.overrideCards(blue12.url, [cid('12')], clock);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        clock
+      );
       expect((await run(shops())).notified).toBe(1);
       expect((await run(shops())).notified).toBe(0);
     });

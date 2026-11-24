@@ -12,6 +12,7 @@ import { cid } from '../../test/cardIds';
 import { runOf, storedListing as listing } from '../../test/listings';
 import logger from '../utils/logger';
 import { data, execute, handleStockButton } from './stock';
+import { UNKNOWN_COLLECTION } from './collectionOption';
 
 const CTX = { enabledShops: ['sammel-ente', 'blue-ocean'] } as const;
 
@@ -25,14 +26,17 @@ type Payload = {
 let replies: Payload[] = [];
 let updates: Payload[] = [];
 
-function command(userId: string, only: string | null) {
+function command(userId: string, only: string | null, collection: string = 'lego-minecraft-3') {
   return {
     user: { id: userId },
     deferred: false,
     replied: false,
     commandName: 'stock',
     isChatInputCommand: () => true,
-    options: { getString: (name: string) => (name === 'only' ? only : null) },
+    options: {
+      getString: (name: string) =>
+        name === 'only' ? only : name === 'collection' ? collection : null,
+    },
     reply: async (p: Payload) => {
       replies.push(p);
     },
@@ -80,7 +84,8 @@ describe('/stock', () => {
   test('declares the only option with its three choices', () => {
     const json = data.toJSON();
     expect(json.name).toBe('stock');
-    const only = json.options![0] as {
+    expect(json.options![0]).toMatchObject({ name: 'collection', required: true });
+    const only = json.options![1] as {
       name: string;
       required?: boolean;
       choices: { value: string }[];
@@ -90,6 +95,17 @@ describe('/stock', () => {
     expect(only.choices.map((c) => c.value)).toEqual(['all', 'missing', 'in-stock']);
   });
 
+  test('an unknown collection is refused before anything is read', async () => {
+    await execute(command('u1', null, 'lego-minecraft-9'), CTX);
+    expect(replies).toEqual([{ content: UNKNOWN_COLLECTION, flags: MessageFlags.Ephemeral }]);
+  });
+
+  test('a paging button of another collection is refused', async () => {
+    await handleStockButton(button('u1', 'stock:lego-minecraft-9:2:all'), CTX);
+    expect(updates).toEqual([]);
+    expect(replies[0]!.content).toBe('This button is not valid or out of date; run /stock again.');
+  });
+
   test('without a filter: page 1 of the whole catalog, ephemeral, with paging buttons', async () => {
     await execute(command('u1', null), CTX);
     const reply = replies[0]!;
@@ -97,7 +113,7 @@ describe('/stock', () => {
     expect(first(reply)).toMatch(/^Stock · all cards \(251\) · page 1\/\d+$/);
     expect(reply.content!.length).toBeLessThanOrEqual(2000);
     expect(reply.content).toMatch(/\n1 +- +- +n\/a +n\/a\n/);
-    expect(ids(reply)).toEqual(['stock:1:all', 'stock:2:all']);
+    expect(ids(reply)).toEqual(['stock:lego-minecraft-3:1:all', 'stock:lego-minecraft-3:2:all']);
   });
 
   test('a failed shop shows when its data is from', async () => {
@@ -123,7 +139,9 @@ describe('/stock', () => {
   });
 
   test('stock:2:in-stock pages through a catalog-sized in-stock set', async () => {
-    const inStock = [...catalogManager.knownIds()].sort(compareCardIds).slice(0, 150);
+    const inStock = [...catalogManager.knownIds('lego-minecraft-3')]
+      .sort(compareCardIds)
+      .slice(0, 150);
     const stored = inStock.map((card) => listing('sammel-ente', [card]));
     const read = spyOn(listingManager, 'listingsForCards').mockImplementation(() => stored);
     try {
@@ -138,14 +156,17 @@ describe('/stock', () => {
     expect(rows.every((r) => /^\w+ +x /.test(r))).toBe(true);
     // Page 2 starts right after page 1's last card.
     expect(rows[0]!.split(' ')[0]).toBe(String(inStock[rows.length]));
-    expect(ids(page)).toEqual(['stock:1:in-stock', 'stock:3:in-stock']);
+    expect(ids(page)).toEqual([
+      'stock:lego-minecraft-3:1:in-stock',
+      'stock:lego-minecraft-3:3:in-stock',
+    ]);
   });
 
   test('a stale click on a list that shrank shows its last page', async () => {
-    userManager.setList('u1', '1-228, LE1-LE22, XXL1');
+    userManager.setList('u1', 'lego-minecraft-3', '1-228, LE1-LE22, XXL1');
     await handleStockButton(button('u1', 'stock:9:missing'), CTX);
     expect(first(updates[0]!)).toMatch(/^Stock · your missing cards \(251\) · page (\d+)\/\1$/);
-    userManager.setList('u1', '12, 45');
+    userManager.setList('u1', 'lego-minecraft-3', '12, 45');
     await handleStockButton(button('u1', 'stock:9:missing'), CTX);
     expect(first(updates[1]!)).toBe('Stock · your missing cards (2) · page 1/1');
     expect(updates[1]!.components).toEqual([]);
@@ -165,7 +186,7 @@ describe('/stock', () => {
   });
 
   test('only:missing uses the list of the user who runs it', async () => {
-    userManager.setList('u1', '12, LE8');
+    userManager.setList('u1', 'lego-minecraft-3', '12, LE8');
     await execute(command('u1', 'missing'), CTX);
     expect(first(replies[0]!)).toBe('Stock · your missing cards (2) · page 1/1');
     await execute(command('u2', 'missing'), CTX);
@@ -177,15 +198,18 @@ describe('/stock', () => {
     expect(replies).toEqual([]);
     expect(updates).toHaveLength(1);
     expect(first(updates[0]!)).toMatch(/· page 2\/\d+$/);
-    expect(ids(updates[0]!)).toEqual(['stock:1:all', 'stock:3:all']);
+    expect(ids(updates[0]!)).toEqual([
+      'stock:lego-minecraft-3:1:all',
+      'stock:lego-minecraft-3:3:all',
+    ]);
   });
 
   test('a click re-reads the data: a card that sold out since drops from in-stock', async () => {
-    const stored = listing('sammel-ente', [cid('1')]);
+    let stored = listing('sammel-ente', [cid('1')]);
     const read = spyOn(listingManager, 'listingsForCards').mockImplementation(() => [stored]);
     try {
       await handleStockButton(button('u1', 'stock:1:in-stock'), CTX);
-      stored.available = false;
+      stored = { ...stored, available: false };
       await handleStockButton(button('u1', 'stock:1:in-stock'), CTX);
     } finally {
       read.mockRestore();
@@ -195,7 +219,7 @@ describe('/stock', () => {
   });
 
   test('a missing-list click pages the list of the user who clicks', async () => {
-    userManager.setList('u2', '45');
+    userManager.setList('u2', 'lego-minecraft-3', '45');
     await handleStockButton(button('u2', 'stock:1:missing'), CTX);
     expect(first(updates[0]!)).toBe('Stock · your missing cards (1) · page 1/1');
   });
@@ -213,8 +237,8 @@ describe('/stock', () => {
     }
     expect(updates).toEqual([]);
     expect(replies.map((r) => [r.content, r.flags])).toEqual([
-      ['This button is not valid.', MessageFlags.Ephemeral],
-      ['This button is not valid.', MessageFlags.Ephemeral],
+      ['This button is not valid or out of date; run /stock again.', MessageFlags.Ephemeral],
+      ['This button is not valid or out of date; run /stock again.', MessageFlags.Ephemeral],
     ]);
   });
 

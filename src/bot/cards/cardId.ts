@@ -101,7 +101,7 @@ export function parseCardList(input: string): { ids: CardId[]; invalid: string[]
 }
 
 /** Sorted, deduped list with runs of two or more consecutive ids written as `a-b`. */
-export function formatCardList(ids: CardId[]): string {
+export function formatCardList(ids: readonly CardId[]): string {
   const runs: CardId[][] = [];
   for (const id of [...new Set(ids)].sort(compareCardIds)) {
     const run = runs.at(-1);

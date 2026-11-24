@@ -35,6 +35,23 @@ Minecraft TCC 1`, the product number in the URL), which need their own parser (P
 
 ## eBay details
 
+**Every collection in one run (2026-11-24).** Each collection's definition names its searches
+(`lego minecraft karten serie 1`, `lego minecraft tcc serie 1`; `lego minecraft karten serie 2`,
+`lego minecraft boom bastic karte`; the series 3 ones below) and its series marker. The run
+searches all of them once, places each title by marker (exactly one collection; several or none
+give no ids, series 3's name check apart) and tags each listing with its collection. A probe of
+the series 1 and 2 searches (536 items; 40 of them, without seller data, in
+`src/test/fixtures/ebay-search-series-1-2.json`) found:
+
+- series 1 singles in one form, read by the `Card N` prefix: `LEGO Minecraft Serie 1 Trading Card
+134 - Neon Lohe - Mob Karte - Neon` (the trailing `Neon`/`Holo`/`Ultra` is the card's variant,
+  #134 is "Neon Lohe");
+- series 2 mostly as category lots without a number (`Lego Minecraft Sammelkarten Serie
+2"NETHER"`), which give no id, and a few `Sammelkarte 216 … Boom-Bastic` titles, which no title
+  form reads (no id, nothing wrong);
+- titles naming two series (`Serie 1-2 … Boom Bastic`, `Boom Bastic One Fire Serie 3`), which
+  give no ids.
+
 Checked against a live probe of 2026-11-18 (234 unique items over six queries; 38 of them, without
 seller data, are in `src/test/fixtures/ebay-search.json`):
 
@@ -153,13 +170,9 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     read by name.
   - A name several series 3 cards share counts beside each of their numbers: Ghast is #15, #102,
     #104 and #131 (laststicker and sammel-ente, 2026-11-24), so `LEGO Minecraft Karte 104 - Ghast`
-    (2026-11-19) is read as #104. A series 1 or 2 card with the same number and name, and
-    nothing else in its title, passes too; it starts `pending` and its picture is compared as for
-    any title, so a clearly other series 3 card becomes a `mismatch`, and an unclear picture an
-    alert marked "number unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with
-    the series 1 and 2 catalogs loaded, is to place such a title by name only when no other
-    series has that name at that number
-    (`docs/superpowers/specs/2026-11-19-multi-collection-design.md`).
+    (2026-11-19) is read as #104, unless series 1 or 2 has the same name at that number: such a
+    title cannot be placed and gives no id (the series 1 and 2 catalogs are read at the start of
+    each eBay run; one not synced yet refuses nothing).
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
   `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
   `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,

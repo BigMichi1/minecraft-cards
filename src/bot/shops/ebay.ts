@@ -434,8 +434,8 @@ const NAME_TITLE_WORD_SET = new Set(NAME_TITLE_WORDS);
  * and names are taken out, nothing but NAME_TITLE_WORDS words and punctuation may be left:
  * "Comic Karte 3 - Steve", "Gold Ghast Karte 131" and "Karte 131 - Ghast 2025" give nothing.
  * A name several series 3 cards share counts beside each of their numbers: "Karte 104 - Ghast" is
- * #104 (Ghast is #15, #102, #104 and #131). A series 1 or 2 card sharing number and name passes
- * too; its picture is compared as for every title (docs/image-matching.md).
+ * #104 (Ghast is #15, #102, #104 and #131), unless another series has that name at that number
+ * (`otherSeriesNames`, series 1's and 2's catalogs): such a title cannot be placed.
  */
 export function nameMatchedCardIds(
   title: string,

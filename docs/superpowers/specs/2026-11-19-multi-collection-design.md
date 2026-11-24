@@ -423,6 +423,20 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
 - Step 4 (Turbo Attax): its id rule goes into the definition (`normalize` for the laststicker
   parser, the shops' title patterns), and `collect-it` settings already take a series label.
 
+## Notes from PR 3b for the later steps
+
+- eBay's one run serves every collection with `shops.ebay` (queries and a series marker regex in
+  the definition); `classifyTitle` places a title by every known marker, and the fetcher tags
+  each listing with its collection (`Listing.collection`). An adapter covering several
+  collections (`ShopAdapter.collections`) is stored per collection by the runner, and its
+  failure alerts once under the shop (`shop-error:ebay`), as designed above.
+- An unmapped eBay listing whose title names another collection moves there
+  (`upsertFromRun(…, { moveFrom: true })`); admin-mapped ones stay. Other shops keep the
+  foreign-listing alert.
+- Series 3's name check refuses a name series 1 or 2 has at that number; picture candidates and
+  the name check stay series 3 only. Step 4 (Turbo Attax) adds its marker (`Turbo Attax` and
+  `2026`) and its id rule's title forms.
+
 ## Left to the builder
 
 - Exact module layout inside each adapter, the migration's SQL (generated), names of helpers.

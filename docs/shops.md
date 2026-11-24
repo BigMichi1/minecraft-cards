@@ -86,7 +86,7 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   announced, 979 read), a `total` within the tolerance of the items read counts as complete (1021
   announced, 1000 read), and a larger one is a cut search (below; 1022 announced, 1000 read).
 - **Page cap**: a search cut at the cap logs a warning and is reported in `FetchResult.truncated`;
-  the runner sends a throttled admin alert (`shop-truncated:ebay:lego-minecraft-3`, at most once a day per collection), and
+  the runner sends a throttled admin alert (`shop-truncated:ebay`, at most once a day: one eBay run serves every collection), and
   `/admin status` shows the number of cut searches.
 - **Title forms read** (allow-lists, since a false id sends a false DM):
   - `LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)` and

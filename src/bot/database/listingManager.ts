@@ -223,11 +223,13 @@ export const listingManager = {
             foreign.push(`${clipText(item.url, MAX_LOGGED_URL)} (${existing.collection})`);
             continue;
           }
-          // Its title now names this collection (eBay): it moves, and is compared again here.
+          // Its title now names this collection (eBay): it moves, and is compared again here,
+          // with a new availability period (another collection's alert was no alert for it).
           tx.update(listings)
             .set({
               collection,
-              matchStatus: 'pending',
+              availableSince: item.available ? now : null,
+              matchStatus: defaultMatchStatus(item.cardIds),
               similarity: null,
               matchCheckedAt: null,
               pictureCardId: null,

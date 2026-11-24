@@ -2082,6 +2082,28 @@ describe('series markers (2026-11-24 probe)', () => {
     });
   });
 
+  test('a series list with one series word names several collections', () => {
+    for (const title of [
+      'LEGO Minecraft Serie 1-2 Karte 45',
+      'LEGO Minecraft Serie 1 und 2 Karte 45',
+      'LEGO Minecraft Serie 1 & 2 Karte 45',
+      'LEGO Minecraft Serie 1+2 Karte 45',
+      'LEGO Minecraft Serie 1/2 Karte 45',
+      'LEGO Minecraft Serie 1, 2, 3 Karte 45',
+      'LEGO Minecraft Serie 2 und 3 Karte 45',
+      'LEGO Minecraft Serie 2/3 Karte 45',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ exclusion: 'several collections' });
+    }
+    // One series and a year, or a card number, stay one series.
+    expect(classifyTitle('LEGO Minecraft Serie 3 - 2026 Karte 12')).toEqual({
+      collection: 'lego-minecraft-3',
+    });
+    expect(classifyTitle('LEGO Minecraft Serie 1 Karte 45')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+  });
+
   test('a title naming no series is "no collection"', () => {
     expect(classifyTitle('LEGO Minecraft Sammelkarte / Trading Card Nr. 242')).toEqual({
       exclusion: 'no collection',
@@ -2142,6 +2164,35 @@ describe('one eBay run for every collection', () => {
       'lego minecraft tcc serie 3',
       'lego minecraft trading card on fire',
       'lego minecraft karten serie 3',
+    ]);
+  });
+
+  test("no name is read while another series' catalog is not loaded yet", async () => {
+    const ghast = {
+      itemId: 'v1|230000000001|0',
+      legacyItemId: '230000000001',
+      title: 'LEGO Minecraft Karte 104 - Ghast',
+      itemWebUrl: 'https://www.ebay.de/itm/230000000001',
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    };
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 1, itemSummaries: [ghast] }),
+    });
+    const run = (s1: Map<CardId, string>) =>
+      createEbayFetcher({
+        collections: EBAY_COLLECTIONS.filter((c) => c.id !== 'lego-minecraft-2'),
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        cardNames: (c) => (c === 'lego-minecraft-3' ? new Map([[cid('104'), 'Ghast']]) : s1),
+      }).fetchListings();
+    // Series 1 not synced: unsure, no id.
+    expect((await run(new Map())).listings).toEqual([]);
+    // Synced, without a Ghast at #104: series 3's.
+    expect((await run(new Map([[cid('1'), 'Steve']]))).listings.map((l) => l.cardIds)).toEqual([
+      ids('104'),
     ]);
   });
 });

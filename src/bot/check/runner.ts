@@ -660,9 +660,16 @@ async function checkShop(
       `Shop ${runShop}: ${result.truncated.length} search(es) cut at the page cap, later results are not seen: ${result.truncated.join('; ')}`
     );
   }
+  // A listing the admin mapped stays in the collection they put it in, kept fresh there,
+  // whatever its title names now.
+  const home = (l: Listing): CollectionId => {
+    const stored = listingManager.getByUrl(l.url);
+    return stored?.manualOverride ? stored.collection : (l.collection ?? adapter.collection);
+  };
+  const homes = shared ? new Map(result.listings.map((l) => [l.url, home(l)])) : undefined;
   for (const collection of covered) {
-    const found = shared
-      ? result.listings.filter((l) => (l.collection ?? adapter.collection) === collection)
+    const found = homes
+      ? result.listings.filter((l) => homes.get(l.url) === collection)
       : result.listings;
     await storeShopResult(
       deps,

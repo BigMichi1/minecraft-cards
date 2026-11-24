@@ -179,6 +179,8 @@ describe('listingManager', () => {
         cardIds: ids('45'),
         matchStatus: 'pending',
       });
+      // A new availability period: the old collection's alert is no alert for this one.
+      expect(listingManager.getByUrl(item.url)!.availableSince).toBe(2000);
     });
 
     test('an admin-mapped eBay listing stays in its collection', () => {

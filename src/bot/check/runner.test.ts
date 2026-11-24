@@ -354,6 +354,23 @@ describe('runCheck', () => {
       expect(s.shops.ebay?.error).toContain('all searches empty');
     });
 
+    test('an admin-mapped listing is kept fresh where the admin put it, whatever its title names', async () => {
+      await runCheck(depsWith([shared([item('7', 'lego-minecraft-3')])]));
+      listingManager.overrideCards(
+        'https://www.ebay.de/itm/7',
+        { collection: 'lego-minecraft-3', ids: ids('12') },
+        clock
+      );
+      clock += 7 * 24 * 60 * 60 * 1000;
+      await runCheck(depsWith([shared([item('7', 'lego-minecraft-1')])]));
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/7')).toMatchObject({
+        collection: 'lego-minecraft-3',
+        cardIds: ids('12'),
+        available: true,
+        lastSeenAt: clock,
+      });
+    });
+
     test('a listing whose title now names another collection moves there', async () => {
       await runCheck(depsWith([shared([item('9', 'lego-minecraft-3')])]));
       await runCheck(depsWith([shared([item('9', 'lego-minecraft-1')])]));

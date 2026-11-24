@@ -267,6 +267,11 @@ function hasRange(title: string): boolean {
 export type TitleExclusion =
   'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
 
+// A series word followed by a list of series numbers ("Serie 1-2", "Serie 1, 2, 3"); series
+// numbers have one or two digits, so "Serie 3 - 2026" is a year, no list.
+const SERIES_LIST =
+  /\b(?:Series?|Staffel|TCC)\s*\d{1,2}(?:\s*(?:[-–/&+,]|\bund\b|\band\b|\bu\.)\s*\d{1,2}(?!\d))+/i;
+
 /**
  * The collection a title names by its series marker (`Serie 1`, `Boom-Bastic`, `On Fire`), or
  * why none: several (a lot mixing series is ambiguous) or none (series 1, 2 and 3 used the same
@@ -276,6 +281,8 @@ export function classifyTitle(
   title: string,
   collections: readonly EbayCollection[] = EBAY_COLLECTIONS
 ): { collection: CollectionId } | { exclusion: 'several collections' | 'no collection' } {
+  // "Serie 1-2", "Serie 1 und 2", "Serie 2/3": one series word for several series.
+  if (SERIES_LIST.test(title)) return { exclusion: 'several collections' };
   const named = collections.filter((c) => c.series.test(title));
   if (named.length > 1) return { exclusion: 'several collections' };
   const [only] = named;
@@ -605,7 +612,7 @@ export function createEbayFetcher(
      * The collections read (default every one with eBay settings): their queries are searched,
      * and their titles stored. A title naming another known collection is `other series`.
      */
-    collections?: readonly EbayCollection[];
+    collections?: readonly Pick<EbayCollection, 'id' | 'queries'>[];
   } & AdapterOptions
 ): ShopFetcher {
   const fetchFn = opts.fetchFn ?? fetch;
@@ -863,6 +870,8 @@ export function createEbayFetcher(
       const otherNames = collections
         .filter((c) => c.id !== LEGACY_COLLECTION)
         .map((c) => namesOf(c.id));
+      // An other series' catalog not synced yet cannot rule a name out: no title read by name.
+      const namesKnown = otherNames.every((n) => n.size > 0);
       const byUrl = new Map<string, Listing>();
       const noId = new Set<string>();
       const excluded = new Set<string>();
@@ -903,7 +912,9 @@ export function createEbayFetcher(
               ? titleExclusion(title, collection)
               : 'other series';
           const byName =
-            reason === 'no series' && series3 ? nameMatchedCardIds(title, names, otherNames) : [];
+            reason === 'no series' && series3 && namesKnown
+              ? nameMatchedCardIds(title, names, otherNames)
+              : [];
           if (byName.length > 0) {
             logger.debug(
               `eBay: "${clip(title)}" names no series, read by catalog name as ${byName.join(', ')}`

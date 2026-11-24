@@ -395,12 +395,12 @@ async function checkShop(
     }
     for (const l of found) fetched.set(l.url, l);
     if (adapter.id === 'sammel-ente') {
-      const changed = catalogManager.updateNamesAndReferences(
+      const changed = catalogManager.updateReferences(
         adapter.collection,
         found.flatMap((l) => {
           const [cardId] = l.cardIds;
-          return l.cardIds.length === 1 && cardId !== undefined && l.cardName !== null
-            ? [{ cardId, name: l.cardName, imageUrl: l.imageUrl }]
+          return l.cardIds.length === 1 && cardId !== undefined
+            ? [{ cardId, imageUrl: l.imageUrl }]
             : [];
         })
       );

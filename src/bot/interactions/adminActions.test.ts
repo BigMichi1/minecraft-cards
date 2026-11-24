@@ -18,6 +18,7 @@ import {
 } from './adminActions';
 import { encodeConfirmId, encodeDismissId, imageFingerprint } from './buttonIds';
 import { cid } from '../../test/cardIds';
+import { setCatalogCards } from '../../test/catalog';
 
 const ADMIN = 'admin1';
 const REFERENCE = 'https://shop-sammel-ente.de/media/12.png';
@@ -145,14 +146,14 @@ describe('admin actions', () => {
     });
 
     test('a usable reference is the thumbnail', () => {
-      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      setCatalogCards('lego-minecraft-3', [
         { cardId: cid('12'), name: 'Squid', imageUrl: REFERENCE },
       ]);
       expect(adminListingEmbed(makeListing(), 't').toJSON().thumbnail!.url).toBe(REFERENCE);
     });
 
     test("another collection's listing never gets this collection's reference", () => {
-      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      setCatalogCards('lego-minecraft-3', [
         { cardId: cid('12'), name: 'Squid', imageUrl: REFERENCE },
       ]);
       const other = { ...makeListing(), collection: 'other-set' as CollectionId };
@@ -161,7 +162,7 @@ describe('admin actions', () => {
 
     test('a placeholder or missing reference is never the thumbnail', () => {
       expect(adminListingEmbed(makeListing(), 't').toJSON().thumbnail).toBeUndefined();
-      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      setCatalogCards('lego-minecraft-3', [
         {
           cardId: cid('12'),
           name: 'Squid',

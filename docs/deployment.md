@@ -72,7 +72,10 @@ next check; one still unsent after a day also logs a warning, once a day.
 
 ## First start
 
-The starter catalog (228 base cards, LE1-LE22, XXL1) is seeded on the first start.
-`/admin catalog import` is optional: use it when laststicker's checklist differs. Run
+The starter catalog (228 base cards, LE1-LE22, XXL1) is seeded on the first start, and the
+first check run syncs it from laststicker (`/admin catalog sync` runs that now).
+`/admin catalog add` covers a card laststicker lacks; `/admin catalog import` remains for a
+collection laststicker cannot serve (it never removes manual cards, and a synced collection's
+next sync brings laststicker's cards back). Run
 `/admin run` to check the shops once, and `/admin status` to see the last run and the
 listings on hold after a report.

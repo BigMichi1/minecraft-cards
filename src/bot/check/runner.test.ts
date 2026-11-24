@@ -34,6 +34,7 @@ import {
   formatWindow,
 } from './runner';
 import { cid, ids } from '../../test/cardIds';
+import { setCatalogCards } from '../../test/catalog';
 import type { CollectionId } from '../collections/ids';
 
 /** A collection outside the registry, to show a run keeps each adapter's collection apart. */
@@ -210,6 +211,48 @@ describe('runCheck', () => {
     }
   });
 
+  test('the catalog sync runs before the first shop, and a failing one stops nothing', async () => {
+    const order: string[] = [];
+    const shop: ShopAdapter = {
+      id: 'blue-ocean',
+      collection: 'lego-minecraft-3',
+      fetchListings: async () => {
+        order.push('shop');
+        return { listings: [blue12] };
+      },
+    };
+    await runCheck(
+      depsWith([shop], {
+        syncCatalogs: async () => {
+          order.push('sync');
+        },
+      })
+    );
+    expect(order).toEqual(['sync', 'shop']);
+    const s = await runCheck(
+      depsWith([shop], {
+        syncCatalogs: async () => {
+          throw new Error('laststicker down');
+        },
+      })
+    );
+    expect(order).toEqual(['sync', 'shop', 'shop']);
+    expect(s.error).toBeUndefined();
+  });
+
+  test('the catalog syncs even when nobody wants a card', async () => {
+    userManager.clearList('u1', 'lego-minecraft-3');
+    let synced = 0;
+    await runCheck(
+      depsWith([], {
+        syncCatalogs: async () => {
+          synced++;
+        },
+      })
+    );
+    expect(synced).toBe(1);
+  });
+
   test('no wanted cards means no fetch but the run is recorded', async () => {
     userManager.clearList('u1', 'lego-minecraft-3');
     const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));
@@ -218,7 +261,7 @@ describe('runCheck', () => {
     expect(runManager.last()).toEqual(s);
   });
 
-  test('sammel-ente listings update catalog names and reference images', async () => {
+  test('sammel-ente listings update reference images, never names', async () => {
     const ente: Listing = {
       ...blue12,
       shop: 'sammel-ente',
@@ -228,7 +271,7 @@ describe('runCheck', () => {
     };
     await runCheck(depsWith([ok('sammel-ente', [ente])]));
     const card = catalogManager.getCard('lego-minecraft-3', cid('12'))!;
-    expect(card.name).toBe('Creeper');
+    expect(card.name).toBeNull();
     expect(card.referenceImageUrl).toBe('https://ente/12.jpg');
   });
 
@@ -254,7 +297,7 @@ describe('runCheck', () => {
   });
 
   test("a listing is compared with its own collection's references only", async () => {
-    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+    setCatalogCards('lego-minecraft-3', [
       { cardId: cid('12'), name: 'Creeper', imageUrl: 'https://ente/12.jpg' },
     ]);
     db.insert(cards)
@@ -277,7 +320,7 @@ describe('runCheck', () => {
     expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
   });
 
-  test('a sammel-ente listing without a name or with several ids leaves the catalog alone', async () => {
+  test('a sammel-ente listing with several ids leaves the catalog alone', async () => {
     const nameless: Listing = {
       ...blue12,
       shop: 'sammel-ente',
@@ -291,11 +334,16 @@ describe('runCheck', () => {
       cardIds: [cid('12'), cid('13')],
       cardName: 'Two',
     };
-    await runCheck(depsWith([ok('sammel-ente', [nameless, several])]));
+    await runCheck(depsWith([ok('sammel-ente', [several])]));
     expect(catalogManager.getCard('lego-minecraft-3', cid('12'))).toMatchObject({
       name: null,
       referenceImageUrl: null,
     });
+    // A single card without a name still gives its picture.
+    await runCheck(depsWith([ok('sammel-ente', [nameless])]));
+    expect(catalogManager.getCard('lego-minecraft-3', cid('12'))?.referenceImageUrl).toBe(
+      'https://ente/x.jpg'
+    );
   });
 
   test('a failing prune of old alert rows is logged and the run goes on', async () => {
@@ -830,14 +878,16 @@ describe('runCheck', () => {
         collection: 'lego-minecraft-3',
         ids: ids('12', '45', '77', '160'),
       });
+      // #160 is a puzzle card, as the laststicker sync marks it.
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('160'), puzzle: true }]);
     });
     /** The admin alerts but the one for the sold-out references. */
     const notes = () => alerts.filter((a) => !a.startsWith('Shop sammel-ente: all'));
 
-    test('the sammel-ente "Puzzlekarte" names mark the puzzle cards in the catalog', async () => {
+    test('a sammel-ente "Puzzlekarte" name no longer marks a puzzle card', async () => {
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('160'), puzzle: false }]);
       await run([ok('sammel-ente', references)]);
-      expect(catalogManager.getCard('lego-minecraft-3', cid('160'))?.puzzle).toBe(true);
-      expect(catalogManager.getCard('lego-minecraft-3', cid('45'))?.puzzle).toBe(false);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('160'))?.puzzle).toBe(false);
     });
 
     test('rule 1: a picture deciding the title card confirms it and notifies', async () => {

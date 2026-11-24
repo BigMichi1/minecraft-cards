@@ -6,6 +6,7 @@ import { cards, listingCards, listings, runs, users, wantedCards } from '../data
 import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { cid } from '../../test/cardIds';
+import { setCatalogCards } from '../../test/catalog';
 import { catalogManager } from '../database/catalogManager';
 import logger from '../utils/logger';
 import { execute as executeWith, data } from './missing';
@@ -246,9 +247,7 @@ describe('/missing', () => {
     const now = Date.now();
     const older = now - 3 * 60 * 60 * 1000;
     const newer = now - 60 * 60 * 1000;
-    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
-      { cardId: cid('12'), name: 'Squid', imageUrl: null },
-    ]);
+    setCatalogCards('lego-minecraft-3', [{ cardId: cid('12'), name: 'Squid', imageUrl: null }]);
     await execute(fakeInteraction('u1', 'set', '12'));
     listingManager.upsertFromRun(
       'blue-ocean',

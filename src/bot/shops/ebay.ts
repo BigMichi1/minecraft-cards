@@ -179,7 +179,7 @@ const NUMBER_NAME_TYPE_PATTERN = new RegExp(
  * characters and mobs of the series 3 card names in the 2026-11-18 probe. An allow-list, so a
  * pack or count word (`Booster 5 Karte`, `Holo 3 Karte`) never reads as a card number.
  *
- * To add a word: take it from the card's name in the catalog (the sammel-ente name, `/missing
+ * To add a word: take it from the card's name in the catalog (laststicker's name, as `/missing
  * status` shows it), never a pack, count or variant word; add it here and to the equality test
  * in ebay.test.ts; and add a real title using it to the fixture (src/test/fixtures/
  * ebay-search.json) with its reviewed ids.
@@ -383,15 +383,16 @@ export const NAME_TITLE_WORDS: readonly string[] = [
   'trading',
   'ultra',
   // The one card type that names no other line: "Comickarte" and "Puzzlekarte" beside a
-  // character card may be another series' card ("Comic Steve" is series 1 card 3), and a puzzle
-  // card's own name carries "Puzzlekarte" already.
+  // character card may be another series' card ("Comic Steve" is series 1 card 3); puzzle cards
+  // carry laststicker's English names ("The Overworld 1"), so "Puzzlekarte" is never part of a
+  // catalog name either.
   'charakterkarte',
 ];
 const NAME_TITLE_WORD_SET = new Set(NAME_TITLE_WORDS);
 
 /**
  * Card ids of a title naming no series ("LEGO Minecraft Karte 131 - Ghast"), each confirmed by
- * its catalog name (`names`, the sammel-ente names) standing right beside its number: series 1
+ * its catalog name (`names`: laststicker's, or the admin's for a manual card) standing right beside its number: series 1
  * and 2 used the same title forms and numbers, so a number alone may be another series' card.
  * Only a title excluded for lacking a series word qualifies, and only without a pick list, range
  * or COUNT_WORDS word (so "Karten N - Name - Charakterkarte" never qualifies). Every number the
@@ -545,7 +546,8 @@ export function createEbayFetcher(
     clientSecret: string;
     fetchFn?: FetchFn;
     /**
-     * The card names (sammel-ente's) of the collection this fetcher is bound to
+     * The catalog names (laststicker's, or the admin's for a manual card) of the collection this
+     * fetcher is bound to
      * (`shops/adapters.ts` binds it), read once per fetch: a title without a series word counts
      * only by a name beside its number (nameMatchedCardIds). Without it, such titles stay
      * excluded.

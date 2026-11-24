@@ -1,7 +1,8 @@
 /**
  * Every customId format of the one-click confirm buttons, built and read in one place:
  * `right:<listing>` (a user's Right), `admin-confirm:<listing>:<cards>:<picture fingerprint>` and
- * `admin-dismiss:<listing>` (the admin's buttons). The router routes by the prefixes below.
+ * `admin-dismiss:<listing>` (the admin's buttons); and the catalog removal's
+ * `catalog-remove:<token>` / `catalog-keep:<token>`. The router routes by the prefixes below.
  */
 import { normalizeCardId, type CardId } from '../cards/cardId';
 import type { ConfirmTarget } from '../database/listingManager';
@@ -15,6 +16,8 @@ export const MAX_CUSTOM_ID = 100;
 export const RIGHT_PREFIX = 'right:';
 export const CONFIRM_PREFIX = 'admin-confirm:';
 export const DISMISS_PREFIX = 'admin-dismiss:';
+export const REMOVE_PREFIX = 'catalog-remove:';
+export const KEEP_PREFIX = 'catalog-keep:';
 
 const FINGERPRINT = /^[0-9a-z]{1,13}$/;
 
@@ -74,4 +77,23 @@ export function decodeConfirmId(customId: string): ConfirmId | null {
     cardIds.push(id);
   }
   return { listingId, cardIds, image: rawImage as ImageFingerprint };
+}
+
+export function encodeRemoveId(token: string): string {
+  return `${REMOVE_PREFIX}${token}`;
+}
+
+export function encodeKeepId(token: string): string {
+  return `${KEEP_PREFIX}${token}`;
+}
+
+/** Remove or Keep of a pending catalog removal, with its token; null for another id. */
+export function decodeRemovalId(customId: string): { remove: boolean; token: string } | null {
+  if (customId.startsWith(REMOVE_PREFIX)) {
+    return { remove: true, token: customId.slice(REMOVE_PREFIX.length) };
+  }
+  if (customId.startsWith(KEEP_PREFIX)) {
+    return { remove: false, token: customId.slice(KEEP_PREFIX.length) };
+  }
+  return null;
 }

@@ -30,6 +30,8 @@ import {
 } from './matcher/embedder';
 import { createDiscordSender } from './notify/sender';
 import { createShopAdapters } from './shops/adapters';
+import { syncCatalogs } from './catalog/sync';
+import { handleCatalogRemove } from './interactions/catalogRemove';
 import { errorMessage } from './utils/async';
 import { replyWithError } from './utils/interactionReply';
 import logger, { logError } from './utils/logger';
@@ -93,6 +95,8 @@ const { shutdown, isShuttingDown } = createShutdown({
 });
 
 const alertAdmin = (text: string) => dmAdmin(text);
+/** Throttled admin alerts of the catalog sync, in a check run and from `/admin catalog sync`. */
+const runAlert = throttledAlert(alertAdmin, Date.now);
 const runDeps: RunDeps = {
   adapters,
   embedder,
@@ -107,6 +111,7 @@ const runDeps: RunDeps = {
   retryReports: () => retryUnsentReports(dmAdminListing),
   // A failing reference picture is tried again once a day, across runs.
   referenceFailures: new Map(),
+  syncCatalogs: () => syncCatalogs({ now: Date.now, alert: runAlert }),
 };
 const scheduler = createScheduler(() => runCheck(runDeps), config.checkIntervalMs);
 stopScheduler = () => scheduler.stop();
@@ -116,7 +121,14 @@ stopScheduler = () => scheduler.stop();
 const commands: Record<string, ChatCommand> = {
   [adminCommand.data.name]: {
     execute: (i) =>
-      adminCommand.execute(i, { adminId: config.botAdminId, trigger: () => scheduler.trigger() }),
+      adminCommand.execute(i, {
+        adminId: config.botAdminId,
+        trigger: () => scheduler.trigger(),
+        syncCatalog: async (collection) =>
+          (
+            await syncCatalogs({ now: Date.now, alert: runAlert, only: collection, force: true })
+          )[0],
+      }),
   },
   [helpCommand.data.name]: helpCommand,
   [missingCommand.data.name]: { execute: (i) => missingCommand.execute(i, { enabledShops }) },
@@ -182,6 +194,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         'admin-dismiss': () => handleAdminDismiss(interaction, { adminId: config.botAdminId }),
         // No store argument: the module-level store is the one /admin catalog import fills.
         catalog: () => handleCatalogButton(interaction, { adminId: config.botAdminId }),
+        // No store argument: the module-level store is the one /admin catalog remove fills.
+        'catalog-remove': () => handleCatalogRemove(interaction, { adminId: config.botAdminId }),
         stock: () => stockCommand.handleStockButton(interaction, { enabledShops }),
       });
     } else if (interaction.isModalSubmit() && isReportModal(interaction.customId)) {

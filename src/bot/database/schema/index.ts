@@ -21,3 +21,6 @@ export type { ImageEmbedding } from './imageEmbeddings';
 
 export { adminAlerts } from './adminAlerts';
 export type { AdminAlert } from './adminAlerts';
+
+export { catalogSyncs } from './catalogSyncs';
+export type { CatalogSync } from './catalogSyncs';

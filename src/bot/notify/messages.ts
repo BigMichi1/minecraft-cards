@@ -43,7 +43,7 @@ export function kleinanzeigenSearchUrl(cardId: CardId): string {
   return `https://www.kleinanzeigen.de/s-lego-minecraft-karte-${cardId.toLowerCase()}/k0`;
 }
 
-const MAX_URL = 512;
+export const MAX_URL = 512;
 
 /** Discord rejects non-http(s) and over-long URLs; a bad one must never break a whole batch. */
 export function validUrl(url: string | null | undefined): string | null {

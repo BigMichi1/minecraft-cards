@@ -73,6 +73,12 @@ export interface RunDeps {
    * IMAGE_RETRY_MS. Without it every run tries again.
    */
   referenceFailures?: Map<string, number>;
+  /**
+   * Sync the catalogs that are due from laststicker (catalog/sync.ts), first in every run (also
+   * without wanted cards), before the shops read the names; its own failures are alerted there.
+   * A rejection is logged and the run goes on.
+   */
+  syncCatalogs?: () => Promise<unknown>;
 }
 
 /** A picture that could not be loaded is tried again at most once per day. */
@@ -395,12 +401,12 @@ async function checkShop(
     }
     for (const l of found) fetched.set(l.url, l);
     if (adapter.id === 'sammel-ente') {
-      const changed = catalogManager.updateNamesAndReferences(
+      const changed = catalogManager.updateReferences(
         adapter.collection,
         found.flatMap((l) => {
           const [cardId] = l.cardIds;
-          return l.cardIds.length === 1 && cardId !== undefined && l.cardName !== null
-            ? [{ cardId, name: l.cardName, imageUrl: l.imageUrl }]
+          return l.cardIds.length === 1 && cardId !== undefined
+            ? [{ cardId, imageUrl: l.imageUrl }]
             : [];
         })
       );
@@ -446,6 +452,12 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
   }
 
   try {
+    // Before the shops read the names; also when nobody wants a card, so a new catalog fills.
+    try {
+      await deps.syncCatalogs?.();
+    } catch (error) {
+      logError('catalog sync failed', error);
+    }
     const wanted = userManager.allWantedIds();
     if (wanted.size > 0) {
       const stored: StoredListing[] = [];

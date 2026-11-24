@@ -13,6 +13,7 @@ import {
   SINGLE_MESSAGE_LIMIT,
 } from './messages';
 import { cid } from '../../test/cardIds';
+import { setCatalogCards } from '../../test/catalog';
 
 const referenceUrl = 'https://ref/12.jpg';
 
@@ -81,7 +82,7 @@ describe('notification messages', () => {
   beforeEach(() => {
     db.delete(cards).run();
     catalogManager.seedIfEmpty();
-    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+    setCatalogCards('lego-minecraft-3', [
       { cardId: cid('12'), name: 'Squid', imageUrl: referenceUrl },
     ]);
   });
@@ -302,7 +303,7 @@ describe('notification messages', () => {
   });
 
   test('a placeholder reference is never shown as the thumbnail', () => {
-    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+    setCatalogCards('lego-minecraft-3', [
       { cardId: cid('LE10'), name: 'Exploding Creeper', imageUrl: 'https://ref/mnc3_leer.jpg' },
     ]);
     const e = embedJson(

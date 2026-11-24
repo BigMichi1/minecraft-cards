@@ -92,7 +92,7 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   after `je`, `2x`, `2 x` or a unit word (`Stück 5 - …`).
 
 - **Extending `CARD_NAME_WORDS`**: when a real `NAME N Karte` title is missed because its name
-  word is not in the list, take the word from that card's name in the catalog (the sammel-ente
+  word is not in the list, take the word from that card's name in the catalog (laststicker's
   name, as `/missing status` shows it), never a pack, count or variant word. Add it to
   `CARD_NAME_WORDS` in `src/bot/shops/ebay.ts` and to the equality test in `ebay.test.ts`, and
   add the real title to `src/test/fixtures/ebay-search.json` (without seller data) with its
@@ -105,9 +105,10 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
   single in the probe named its series.
 - **No series word, but the catalog name** (`nameMatchedCardIds`): a title without any series
-  word still gives a card when the name of that number in the eBay adapter's collection
-  (sammel-ente's, read at the start of each eBay fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
-  because series 3 #131 is "Ghast".
+  word still gives a card when the name of that number in the eBay adapter's collection (the
+  catalog name: laststicker's, or the admin's for a manual card, read at the start of each eBay
+  fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131, because series 3
+  #131 is "Ghast".
   - The number comes from the title forms above, a plain `N - Name`, or `LE`/`XXL` with any
     spacing (`LE 19 - Creeper` is LE19). The name follows it (spaces and at most one `-`, `–`,
     `—`, `:` or `|` between) or stands before it (`Wither Skeleton Karte 4`, `Karte #4`). Case,
@@ -117,23 +118,28 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     and only punctuation and the allowed words (`NAME_TITLE_WORDS`: `LEGO`, `Minecraft`,
     `Karte`, `Card`, `Trading`, `TCC`, `TCG`, `Einzelkarte`, `Ultra`, `Rare`, `Common`, `Neu`,
     `OVP`, `Nr`, `No`, `2026`, `Charakterkarte`) may be left; `Comickarte 3 - Steve` gives
-    nothing, and a puzzle card's name carries its `Puzzlekarte` itself. Any other word gives nothing: another
-    series (`Comic Karte 3 - Steve`, series 1 card 3 is "Comic Steve"; `Staffel 2`, `S1`),
-    another card's longer name (`Gold Ghast Karte 131`, `Karte 131 - Ghast (Gold)`: LE21 is
-    "Gold Ghast"), a second card without its number (`Karte 3 - Steve / Alex`), another product
-    (`Sticker`, `Movie`), or another number (`2025`). Several cards each beside their own name
-    give all of them, in any order.
+    nothing. Puzzle cards carry laststicker's English names ("The Overworld 1"), so a German
+    `Puzzlekarte Oberwelt 1` title no longer matches by name; they are never identified by
+    picture alone anyway. The catalog names come from laststicker; on 2026-11-24 they equalled
+    sammel-ente's apart from the 36 puzzle cards, and all 43 titles of the eBay fixture read the
+    same with them. Any other word gives nothing: another series (`Comic Karte 3 - Steve`,
+    series 1 card 3 is "Comic Steve"; `Staffel 2`, `S1`), another card's longer name
+    (`Gold Ghast Karte 131`, `Karte 131 - Ghast (Gold)`: LE21 is "Gold Ghast"), a second card
+    without its number (`Karte 3 - Steve / Alex`), another product (`Sticker`, `Movie`), or
+    another number (`2025`). Several cards each beside their own name give all of them, in any
+    order.
   - Titles with a pick list, range, variation or `COUNT_WORDS` word never qualify, so the common
     `Karten N - Name - Charakterkarte` form and `Holo`, `Foil` or `Sammelkarte` titles are not
     read by name.
   - A name several series 3 cards share counts beside each of their numbers: Ghast is #15, #102,
     #104 and #131 (laststicker and sammel-ente, 2026-11-24), so `LEGO Minecraft Karte 104 - Ghast`
-    (2026-11-19) is read as #104. A series 1 or 2 card with the same number and name, and nothing else in its title,
-    passes too; it starts `pending` and its picture is compared as for any title, so a clearly
-    other series 3 card becomes a `mismatch`, and an unclear picture an alert marked "number
-    unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with the series 1 and 2
-    catalogs loaded, is to place such a title by name only when no other series has that name at
-    that number (`docs/superpowers/specs/2026-11-19-multi-collection-design.md`).
+    (2026-11-19) is read as #104. A series 1 or 2 card with the same number and name, and
+    nothing else in its title, passes too; it starts `pending` and its picture is compared as for
+    any title, so a clearly other series 3 card becomes a `mismatch`, and an unclear picture an
+    alert marked "number unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with
+    the series 1 and 2 catalogs loaded, is to place such a title by name only when no other
+    series has that name at that number
+    (`docs/superpowers/specs/2026-11-19-multi-collection-design.md`).
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
   `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
   `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,
@@ -217,14 +223,14 @@ gesehen` on a page with a next page and `Du hast alle 235 Artikel gesehen` on th
 
 ## Not used
 
-| Shop                                                                                                   | Sells singles                               | Why not used                                                                                                 |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| [Kleinanzeigen](https://www.kleinanzeigen.de/s-lego-minecraft-karten/k0)                               | yes (private sellers)                       | No API, blocks bots, and its terms forbid scraping. Every alert carries a Kleinanzeigen search link instead. |
-| [stickerpoint.de](https://www.stickerpoint.de/blue-ocean-lego-minecraft-trading-cards-c-107_250.html)  | no, only packs, blisters, displays, bundles | Nothing to match against a missing card.                                                                     |
-| [stick-it-now.de](https://www.stick-it-now.de/)                                                        | no Minecraft at all                         | Old Panini / Topps stock only.                                                                               |
-| [Sammel-Ente trading and buying](https://sammel-ente.de/tausch-und-ankauf)                             | trade or purchase by e-mail                 | Not a shop page; handled by e-mail.                                                                          |
-| [mytradingcards.online](https://mytradingcards.online/marktplatz)                                      | private trades                              | A swap marketplace between collectors, not a shop; contact details are exchanged directly.                   |
-| [Tauschgnom](https://www.tauschgnom.de/)                                                               | private trades                              | Swap board with old LEGO listings only.                                                                      |
-| [laststicker.com](https://www.laststicker.com/cards/blue_ocean_lego_minecraft_on_fire/)                | no (checklist and trading)                  | Behind a Cloudflare bot check. Used by hand as the official checklist for `/admin catalog import`.           |
-| otto.de, Rossmann, Saturn / MediaMarkt                                                                 | no, only boosters / packs                   | Packs only.                                                                                                  |
-| [BrickReport](https://www.brickreport.io/sets/tradingcard-18-minecraft-trading-cards-series-3-on-fire) | no                                          | Card database, not a shop.                                                                                   |
+| Shop                                                                                                   | Sells singles                               | Why not used                                                                                                             |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [Kleinanzeigen](https://www.kleinanzeigen.de/s-lego-minecraft-karten/k0)                               | yes (private sellers)                       | No API, blocks bots, and its terms forbid scraping. Every alert carries a Kleinanzeigen search link instead.             |
+| [stickerpoint.de](https://www.stickerpoint.de/blue-ocean-lego-minecraft-trading-cards-c-107_250.html)  | no, only packs, blisters, displays, bundles | Nothing to match against a missing card.                                                                                 |
+| [stick-it-now.de](https://www.stick-it-now.de/)                                                        | no Minecraft at all                         | Old Panini / Topps stock only.                                                                                           |
+| [Sammel-Ente trading and buying](https://sammel-ente.de/tausch-und-ankauf)                             | trade or purchase by e-mail                 | Not a shop page; handled by e-mail.                                                                                      |
+| [mytradingcards.online](https://mytradingcards.online/marktplatz)                                      | private trades                              | A swap marketplace between collectors, not a shop; contact details are exchanged directly.                               |
+| [Tauschgnom](https://www.tauschgnom.de/)                                                               | private trades                              | Swap board with old LEGO listings only.                                                                                  |
+| [laststicker.com](https://www.laststicker.com/de/cards/blue_ocean_lego_minecraft_on_fire/)             | catalog only (once a day)                   | The catalog source: `/de/cards/<set>/` is fetched once a day (`catalog/laststicker.ts`), never `/cards/<set>/checklist`. |
+| otto.de, Rossmann, Saturn / MediaMarkt                                                                 | no, only boosters / packs                   | Packs only.                                                                                                              |
+| [BrickReport](https://www.brickreport.io/sets/tradingcard-18-minecraft-trading-cards-series-3-on-fire) | no                                          | Card database, not a shop.                                                                                               |

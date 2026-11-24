@@ -380,6 +380,16 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   #22 assumed otherwise). Step 3, with the series 1 and 2 catalogs loaded, places such a title by
   name only when no other series has that name at that number.
 
+## Notes from PR 2a for the later steps
+
+- PR 2b (references from laststicker scans): the reference picture depends on the card's
+  source: a manual card keeps the admin's picture (`referenceImageUrl`), a laststicker card uses
+  its scan (`laststickerImageUrl`, read by `catalogManager.laststickerPicture`) with sammel-ente's
+  as the fallback. Add one source-aware accessor instead of reading the columns at each caller.
+- Steps 3 and 4 (other id rules): `parseLaststickerPage` takes the collection's id rule
+  (`normalize`); `syncCollection` still uses `cardType` and the section name `Puzzlekarten`,
+  which become per-collection settings with the definitions.
+
 ## Left to the builder
 
 - Exact module layout inside each adapter, the migration's SQL (generated), names of helpers.

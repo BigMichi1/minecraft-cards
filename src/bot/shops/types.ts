@@ -25,8 +25,8 @@ interface ListingFields {
   url: string;
   title: string;
   /**
-   * sammel-ente and collect-it: the card name taken from the title. Only sammel-ente's names
-   * feed the catalog.
+   * sammel-ente and collect-it: the card name taken from the title, for the logs; catalog names
+   * come from the laststicker sync only.
    */
   cardName: string | null;
   imageUrl: string | null;

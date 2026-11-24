@@ -16,6 +16,7 @@ import { DiscordAPIError, HTTPError, RESTJSONErrorCodes } from 'discord.js';
 import type { PendingNotification } from '../database/listingManager';
 import { createDiscordSender, isDmClosed, isPayloadRejection } from './sender';
 import { cid, ids } from '../../test/cardIds';
+import { setCatalogCards } from '../../test/catalog';
 
 function seedListing(n: number): StoredListing {
   const [stored] = listingManager.upsertFromRun(
@@ -467,7 +468,7 @@ describe('createDiscordSender', () => {
     const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
     test('the reference thumbnail is fetched once across single messages', async () => {
-      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      setCatalogCards('lego-minecraft-3', [
         { cardId: cid('12'), name: 'Squid', imageUrl: reference },
       ]);
       const items = Array.from({ length: 3 }, (_, i) =>
@@ -489,7 +490,7 @@ describe('createDiscordSender', () => {
     });
 
     test('a number from the picture attaches the reference beside the listing picture', async () => {
-      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      setCatalogCards('lego-minecraft-3', [
         { cardId: cid('12'), name: 'Squid', imageUrl: reference },
       ]);
       const l: StoredListing = {

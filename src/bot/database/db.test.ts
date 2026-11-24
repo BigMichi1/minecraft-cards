@@ -16,6 +16,7 @@ import { db, initializeDatabase, sqlite } from './db';
 import {
   adminAlerts,
   cards,
+  catalogSyncs,
   imageEmbeddings,
   listingCards,
   listings,
@@ -40,6 +41,7 @@ describe('database schema', () => {
       runs,
       adminAlerts,
       imageEmbeddings,
+      catalogSyncs,
     ]) {
       db.delete(t).run();
     }
@@ -57,8 +59,18 @@ describe('database schema', () => {
       .values({ discordId: 'u1', collection: 'lego-minecraft-3', cardId: cid('12') })
       .run();
     db.insert(cards)
-      .values({ collection: 'lego-minecraft-3', cardId: cid('12'), type: 'base', updatedAt: 1 })
+      .values({
+        collection: 'lego-minecraft-3',
+        cardId: cid('12'),
+        type: 'base',
+        kind: 'Characterkarten',
+        variant: 'Basis Karte',
+        source: 'manual',
+        laststickerImageUrl: 'https://www.laststicker.com/i/cards/12125/12.jpg',
+        updatedAt: 1,
+      })
       .run();
+    db.insert(catalogSyncs).values({ collection: 'lego-minecraft-3', attemptedAt: 1 }).run();
     const { id } = db
       .insert(listings)
       .values({
@@ -101,6 +113,16 @@ describe('database schema', () => {
       collection: 'lego-minecraft-3',
       cardId: '12',
       type: 'base',
+      kind: 'Characterkarten',
+      variant: 'Basis Karte',
+      source: 'manual',
+      laststickerImageUrl: 'https://www.laststicker.com/i/cards/12125/12.jpg',
+      listedNotedAt: null,
+    });
+    expect(db.select().from(catalogSyncs).get()).toEqual({
+      collection: 'lego-minecraft-3',
+      attemptedAt: 1,
+      succeededAt: null,
     });
     expect(db.select().from(listings).get()).toMatchObject({
       id,
@@ -289,6 +311,43 @@ describe('database schema', () => {
         collection: 'lego-minecraft-3',
       });
       expect(old.query('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally {
+      old.close();
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+  test('migration 0006 marks stored "Puzzlekarte" names as puzzle cards', () => {
+    const dir = path.join(process.cwd(), 'src/bot/database/migrations');
+    const journal = JSON.parse(readFileSync(path.join(dir, 'meta/_journal.json'), 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) =>
+      readFileSync(path.join(dir, `${e.tag}.sql`), 'utf8').includes('`catalog_syncs`')
+    );
+    expect(at).toBeGreaterThan(0);
+    const before = mkdtempSync(path.join(tmpdir(), 'migrations-'));
+    mkdirSync(path.join(before, 'meta'));
+    writeFileSync(
+      path.join(before, 'meta/_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, at) })
+    );
+    for (const e of journal.entries.slice(0, at)) {
+      copyFileSync(path.join(dir, `${e.tag}.sql`), path.join(before, `${e.tag}.sql`));
+    }
+    const old = new Database(':memory:');
+    const oldDb = drizzle(old, { casing: 'snake_case' });
+    try {
+      migrate(oldDb, { migrationsFolder: before });
+      old.run(
+        `INSERT INTO cards (collection, card_id, type, name, updated_at) VALUES ('lego-minecraft-3', '154', 'base', 'Puzzlekarte Oberwelt 1', 1), ('lego-minecraft-3', '12', 'base', 'Squid', 1)`
+      );
+      migrate(oldDb, { migrationsFolder: dir });
+      expect(
+        old.query('SELECT card_id, puzzle_seen, source FROM cards ORDER BY card_id').all()
+      ).toEqual([
+        { card_id: '12', puzzle_seen: 0, source: 'laststicker' },
+        { card_id: '154', puzzle_seen: 1, source: 'laststicker' },
+      ]);
     } finally {
       old.close();
       rmSync(before, { recursive: true, force: true });

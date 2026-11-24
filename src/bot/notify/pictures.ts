@@ -58,7 +58,7 @@ function hostOf(url: string): string {
 /**
  * The picture state of one sender run: each warning logged once per reason, per-host outcomes
  * for the admin alert, and a download cache bounded by design. Only reference thumbnails keep
- * their bytes (a few shared sammel-ente pictures, fetched once per run); a listing picture keeps
+ * their bytes (reference pictures, mostly laststicker scans, shared across alerts and fetched once per run); a listing picture keeps
  * only its failure, so a failing host is not retried in the run and no listing bytes outlive
  * their message.
  */

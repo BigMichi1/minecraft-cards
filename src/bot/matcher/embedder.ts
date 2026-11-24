@@ -158,12 +158,15 @@ async function readCapped(response: Response, url: string, maxBytes: number): Pr
   return new Uint8Array(Buffer.concat(chunks));
 }
 
-/** The shops' and eBay's picture hosts; listing pictures come from scraped pages and the API. */
 /** laststicker's host: its pages and scans are paced (CLAUDE.md, shop requests). */
 export const LASTSTICKER_HOST = 'www.laststicker.com';
 /** Between two requests to laststicker. */
 export const LASTSTICKER_DELAY_MS = 1500;
 
+/**
+ * The picture hosts: the shops', eBay's and laststicker's (scans); listing pictures come from
+ * scraped pages and the API.
+ */
 export const IMAGE_HOSTS: ReadonlySet<string> = new Set([
   'shop-sammel-ente.de',
   'cdn.blue-ocean.de',
@@ -387,7 +390,9 @@ function isGone(error: unknown): boolean {
  * reference is `model_unavailable`. A laststicker scan that answers 404 or 410 is reported
  * through `onScanMissing` and its `fallbackUrl` loaded instead; without one the card is
  * `no_picture` (no reference, not retried this run). Any other failure of a scan never falls
- * back (a scan that exists but did not load this time must not be replaced). Any other error (the cache's database, a bug) is rethrown.
+ * back (a scan that exists but did not load this time must not be replaced); a fallback that
+ * fails to load is `image_unavailable`, the miss recorded all the same. Any other error (the
+ * cache's database, a bug) is rethrown.
  */
 export async function loadReferenceSet(
   catalog: ReferenceCatalog,

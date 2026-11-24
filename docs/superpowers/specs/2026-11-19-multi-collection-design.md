@@ -400,7 +400,8 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   cards have no laststicker scan and use sammel-ente's picture; Turbo Attax cards without a scan
   and without a fallback shop are `no_reference` (spec "Matcher").
 - The re-match keeps the old status in `listings.rematch_from` until the listing is compared
-  again; listings nobody wants keep it until they are.
+  again; listings that are unavailable or nobody wants keep it until they are compared. A final
+  status, an admin map or a bundle clears it.
 - Steps 3 and 4: a new collection with a laststicker set needs `referenceFallbackShop` only if a
   shop's pictures should stand in for missing scans.
 

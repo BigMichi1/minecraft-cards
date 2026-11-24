@@ -22,21 +22,28 @@ collection step 2, measured in "Measurement on laststicker scans" below):
 - **A manual card** (`/admin catalog add|edit`): the admin's picture, else the shop picture.
 - No picture at all: `no_picture`, the card's listings are `no_reference`.
 
-A card whose chosen reference changes (a new scan, a shop picture in use that changed) has its
-mismatches compared again. Every download from laststicker (scans for matching, thumbnails in
-DMs and `/card`) goes through one pacer: at most one request per 1500 ms (`pacedImageFetch`).
-The embeddings are cached by URL, so each scan is downloaded once; the first run after the
-switch loads about 234 scans, which takes about 6 minutes before its DMs.
+A card whose chosen reference changes has its mismatches compared again: a new or changed scan
+(sync), a shop picture in use that changed (sammel-ente's run), a scan that answers 404 or 410, a scan
+that loads again after its 7 days, a manual card's new picture and a release. Missing scans are
+named in one throttled admin alert (`scan-missing:<collection>`), with the cards left without
+any reference. Every picture download from laststicker (scans for matching, thumbnails in DMs
+and `/card`) goes through one pacer: at most one request per 1500 ms (`pacedImageFetch`); the
+set pages keep the sync's own 1500 ms. The embeddings are cached by URL, so each scan is
+downloaded once; the first run after the switch requests all 251 scans (234 load), about 6
+minutes before its DMs.
 
 sammel-ente's listings are compared like every other shop's.
 
 **The switch re-matched once.** Migration 0008 set every listing the admin had not mapped and
-that is no bundle back to `pending`, keeping its old status (`rematch_from`). Each run counts
-the ones it compared again: when any changed status, the admin gets one summary
-(`Reference switch: compared N listing(s) again, M changed: …`, up to 10 named) instead of a
-note per new mismatch, and `/admin run` shows `Re-match: N compared, M changed`. If that summary
-cannot be delivered, the new mismatches keep their own notes. Notifications stay recorded per
-listing and availability period, so nobody is notified twice.
+that is no bundle back to `pending`, keeping its old status when it was a judgement
+(`rematch_from`). Each run counts the ones it compared again: when any changed status or is a
+mismatch, the admin gets one summary (`Reference switch: compared N listing(s) again, M
+changed.`, every mismatch named first with its picture card, then up to 10 other changes)
+instead of a note per mismatch, and `/admin run` shows `Re-match: N compared, M changed`. A
+mismatch the summary has no room for, or a summary that cannot be delivered, keeps its own
+note. A listing that was a mismatch before the switch stays held back from users until it is
+compared again; a final status, an admin map or a bundle ends its re-match. Notifications stay
+recorded per listing and availability period, so nobody is notified twice.
 
 ## Defaults
 
@@ -184,7 +191,7 @@ time.
 
 ### Rules
 
-For single-card listings of every shop but sammel-ente (bundles are never compared):
+For single-card listings of every shop (bundles are never compared):
 
 1. **The picture decides the title card.** `confirmed`; the alert shows "✅ picture matches
    reference". This also confirms a puzzle or twin card the title names.
@@ -302,14 +309,16 @@ XXL1), so 234 scans loaded. Those 17 cards keep the sammel-ente picture as their
   decided). No two scans are twins (none at 0.9 or more; XXL1, #59's twin, has no scan).
 - More true pairs stay below 0.78 than against sammel-ente's pictures (2 % in 2026-11-17): the
   lowest are the set cards #192 to #207 (laststicker's scan differs from the shops' picture of
-  them), puzzle card #172 and the foil and ultra cards #8 and #87. They are alerted marked
+  them), puzzle card #172 and the ultra and foil cards #8 and #87. They are alerted marked
   "number unconfirmed", never sent as another card.
-- The fewest-errors points differ per shop (0.788, 0.799, 0.854) and buy fewer wrong pairs
-  only with more missed ones; no single value is better for all three. So the values stay:
-  0.78, 0.02 and 0.9.
+- The fewest-errors points differ per shop (0.788, 0.799, 0.854). For collect-it and eBay they
+  buy fewer wrong pairs only with more missed ones; for sammel-ente 0.788 drops 3 wrong pairs at
+  no cost, but no single value is better for all three. So the values stay: 0.78, 0.02 and 0.9.
 
 **Run again on the production set** (the scans plus sammel-ente's pictures for the 17 cards
-without one, as `referenceCatalog` chooses them; the first run left those 17 out). The rates
+without one, as `referenceCatalog` chooses them; the first run left those 17 out). For those 17,
+sammel-ente's "true pair" is its own picture against itself (1.0); collect-it lost 3 pictures
+(LE1, LE2, LE5) to timeouts, hence 228 pairs. The rates
 stay alike (wrong pairs at 0.78: sammel-ente 9 of 251, of them LE10~LE11 at 1.0, one shared
 picture, which the shared-picture rule keeps from being a reference; collect-it 11 of 228; eBay
 10 of 222), collect-it and eBay made no wrong decision (203 and 190 decided), and sammel-ente one
@@ -354,7 +363,7 @@ Remote pictures are bounded before they reach the model: downloads over 10 MB ar
 pictures over 10000 px on a side or more elongated than 10:1 are refused from their header,
 before decoding or resizing. Pictures are fetched only over https from the shop and eBay
 image hosts (`shop-sammel-ente.de`, `cdn.blue-ocean.de`, `www.blue-ocean.de`,
-`www.collect-it.de`, `i.ebayimg.com`); redirects are followed by hand, at most 3, and only to those hosts.
+`www.collect-it.de`, `i.ebayimg.com`, and laststicker's scans on `www.laststicker.com`); redirects are followed by hand, at most 3, and only to those hosts.
 
 ## Alerts: layout and pictures
 

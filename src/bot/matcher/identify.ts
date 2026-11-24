@@ -11,7 +11,9 @@ export const DECISION_GAP = 0.02;
 /**
  * Two reference pictures at least this alike show the same art: the picture cannot tell those
  * cards apart. Measured on 2026-11-18 over the 251 sammel-ente references: #59 and XXL1
- * (Charged Creeper) 0.945; the next most alike pair 0.866 (LE5 and LE13).
+ * (Charged Creeper) 0.945; the next most alike pair 0.866 (LE5 and LE13). With laststicker's
+ * scans (2026-11-24) #59's scan and XXL1's sammel-ente picture score below it, so the collection
+ * names the pair in `knownTwins`.
  */
 export const TWIN_SIMILARITY = 0.9;
 

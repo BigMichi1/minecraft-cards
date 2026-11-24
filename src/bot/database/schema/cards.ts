@@ -25,8 +25,9 @@ export const cards = sqliteTable(
     /** The card's laststicker scan as last synced: the reference picture of a laststicker card. */
     laststickerImageUrl: text(),
     /**
-     * When the scan last answered 404 (laststicker has none): the shop picture is the reference
-     * until SCAN_RETRY_MS later. Cleared when the sync stores another scan URL.
+     * When the scan last answered 404 or 410 (laststicker has none): the shop picture is the
+     * reference until SCAN_RETRY_MS later. Cleared when the sync stores another scan URL or the
+     * scan loads again (clearScanMissing).
      */
     laststickerScanMissingAt: integer(),
     /**

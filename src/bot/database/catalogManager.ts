@@ -109,7 +109,7 @@ type ChosenSource =
   | { source: 'laststicker'; fallbackUrl: string | null }
   | { source: 'shop' | 'manual'; fallbackUrl: null };
 
-/** A scan that answered 404 is tried again this long after (laststicker may add it). */
+/** A scan that answered 404 or 410 is tried again this long after (laststicker may add it). */
 export const SCAN_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** The stored pictures of a card that its reference is chosen from. */
@@ -132,7 +132,8 @@ const PICTURE_COLUMNS = {
 /**
  * The one rule for a card's reference picture: a manual card's is the admin's picture, else the
  * shop's; a laststicker card's is its scan (the shop picture as fallback), unless the scan
- * answered 404 within SCAN_RETRY_MS, then the shop picture. Null: no picture at all.
+ * answered 404 or 410 within SCAN_RETRY_MS (or none is synced yet), then the shop picture.
+ * Null: no picture at all.
  */
 function chooseReference(
   row: PictureColumns,
@@ -324,7 +325,10 @@ export const catalogManager = {
     return { ...card, puzzle: puzzleSeen };
   },
 
-  /** Record that the card's laststicker scan answered 404: the shop picture is used meanwhile. */
+  /**
+   * Record that the card's laststicker scan answered 404 or 410: the shop picture (if usable) is
+   * its reference meanwhile.
+   */
   markScanMissing(collection: CollectionId, cardId: CardId, now: number): void {
     db.update(cards).set({ laststickerScanMissingAt: now }).where(ofCard(collection, cardId)).run();
   },

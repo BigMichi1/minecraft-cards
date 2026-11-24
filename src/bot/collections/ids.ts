@@ -37,8 +37,9 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */
   readonly laststicker?: { readonly set: string };
   /**
-   * The shop whose listing picture is a card's reference when laststicker has no scan of it (404),
-   * or a manual card has no picture of the admin's; none: such a card has no reference.
+   * The shop whose listing picture is a card's reference when laststicker has no scan of it
+   * (404 or 410, or none synced yet), or a manual card has no picture of the admin's; none: such
+   * a card has no reference.
    */
   readonly referenceFallbackShop?: ShopId;
   /**

@@ -8,12 +8,14 @@
  * neighbouring panorama piece), min / median / max, the errors at IMAGE_MATCH_THRESHOLD and the
  * fewest-errors threshold. Then every picture is identified against all scans (identifyPicture,
  * the bot's rules 1 to 5 input) and the decided / right / wrong counts are printed, and every pair
- * of scans at least TWIN_SIMILARITY alike.
+ * of references (fallbacks included) at least TWIN_SIMILARITY alike.
  *
  * Usage: ./bin/mise run measure:laststicker
  *
  * Scans are downloaded at most one per 1500 ms (laststicker's pacing); a scan that cannot be
- * loaded (404: no scan) is listed and left out. Uses DEFAULT_IMAGE_MODEL from MODEL_CACHE_DIR
+ * loaded (404: no scan) is listed, and sammel-ente's picture of that card stands in
+ * (referenceFallbackShop), as referenceCatalog chooses it. The placeholder, shared and
+ * knownTwins rules are not applied. Uses DEFAULT_IMAGE_MODEL from MODEL_CACHE_DIR
  * (default ./models). Exits 1 when no pair could be scored.
  */
 import path from 'node:path';
@@ -182,7 +184,7 @@ for (const shop of shops) {
   const ids = [...pictures.keys()]
     .filter((id) => scanOf.has(id))
     .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
-  console.log(`single-card listings with a scan: ${ids.length}`);
+  console.log(`single-card listings with a reference: ${ids.length}`);
   if (ids.length < 2) continue;
   const trueSims: Scored = [];
   const falseSims: Scored = [];

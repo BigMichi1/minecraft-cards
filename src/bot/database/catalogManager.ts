@@ -9,7 +9,7 @@ import {
 import { parseChecklist } from '../cards/starterCatalog';
 import { COLLECTIONS } from '../collections/index';
 import type { CardSource, CollectionCards, CollectionId } from '../collections/ids';
-import type { LaststickerRow } from '../catalog/laststicker';
+import { CatalogLayoutError, type LaststickerRow } from '../catalog/laststicker';
 import type { MissingReference } from '../matcher/identify';
 import { db } from './db';
 import { cards, catalogSyncs, wantedCards } from './schema/index';
@@ -30,17 +30,39 @@ export interface CatalogCard {
 
 /** What a sync changed or found; every list sorted. */
 export interface SyncResult {
-  added: CardId[];
-  /** laststicker cards whose stored name changed. */
-  renamed: CardId[];
+  readonly added: readonly CardId[];
+  /** laststicker cards whose earlier, non-null name changed (a first name is no rename). */
+  readonly renamed: readonly CardId[];
   /** laststicker cards the rows lack: kept (they may be on missing lists), reported. */
-  vanished: CardId[];
-  /** Manual cards the rows list, not reported before (`listedNotedAt` is set now). */
-  nowListed: CardId[];
+  readonly vanished: readonly CardId[];
+  /**
+   * Manual cards the rows list whose note has not gone out (`listedNotedAt` null); the sync
+   * marks them noted (markListedNoted) once the admin alert is delivered.
+   */
+  readonly nowListed: readonly CardId[];
 }
 
+/** Why a manual-card command was refused. */
+export type ManualRefusal =
+  | 'unknown'
+  | 'not_manual'
+  /** The card is already in the catalog (add). */
+  | 'exists'
+  /** laststicker does not list the card (release). */
+  | 'not_listed';
+
 /** A manual-card change, or why it was not made. */
-export type ManualResult = { ok: true } | { ok: false; reason: 'unknown' | 'not_manual' };
+export type ManualResult<R extends ManualRefusal = 'unknown' | 'not_manual'> =
+  { ok: true } | { ok: false; reason: R };
+
+/** Options of syncCollection. */
+export interface SyncOptions {
+  /**
+   * More stored laststicker cards missing from the rows than this is taken for a partial page
+   * (CatalogLayoutError, nothing changes). Default: no limit.
+   */
+  maxVanished?: number;
+}
 
 /** laststicker's section of the puzzle cards (live page, 2026-11-24). */
 const PUZZLE_KIND = 'Puzzlekarten';
@@ -71,6 +93,8 @@ export interface ImportPreview {
   counts: Record<CardType, number>;
   added: CardId[];
   removed: CardId[];
+  /** Manual cards the paste lacks: kept, as an import never removes the admin's cards. */
+  keptManual: CardId[];
   removedStillWanted: { cardId: CardId; users: number }[];
 }
 
@@ -241,8 +265,8 @@ export const catalogManager = {
   },
 
   /**
-   * Update the reference picture of catalog cards (sammel-ente's run, until laststicker's scans
-   * take over); unknown and manual cards are skipped. An entry without a picture keeps the
+   * Update the reference picture of catalog cards (sammel-ente's run); unknown cards and manual
+   * cards with a picture are skipped (a manual card added without one takes the shop's once). An entry without a picture keeps the
    * stored one: a listing that lost its picture must not erase it. Names and puzzle flags come
    * from the laststicker sync only. Returns the cards whose reference picture URL changed, so
    * their mismatches are compared again.
@@ -261,7 +285,10 @@ export const catalogManager = {
           .from(cards)
           .where(ofCard(collection, e.cardId))
           .get();
-        if (!before || before.source === 'manual' || e.imageUrl === before.url) continue;
+        // A manual card keeps the admin's picture; one added without a picture takes the
+        // shop's once.
+        const manualWithPicture = before?.source === 'manual' && before.url !== null;
+        if (!before || manualWithPicture || e.imageUrl === before.url) continue;
         changed.push(e.cardId);
         db.update(cards)
           .set({ referenceImageUrl: e.imageUrl, updatedAt: now })
@@ -274,14 +301,17 @@ export const catalogManager = {
 
   /**
    * Apply a laststicker checklist to the collection, in one transaction: insert missing cards,
-   * set name, kind, variant and scan URL of every laststicker card (and the puzzle flag for
-   * `Puzzlekarten`, never cleared). Never deletes a card and never changes a manual card; a
-   * manual card the rows list is reported once (`nowListed`).
+   * set name, kind, variant and scan URL of every laststicker card (and the puzzle flag for a
+   * piece marker or the section `Puzzlekarten`, never cleared). Never deletes a card and never
+   * changes a manual card's name, picture or kind; a manual card the rows list is reported
+   * (`nowListed`) until markListedNoted. More stored cards missing than `maxVanished` is a
+   * CatalogLayoutError and changes nothing.
    */
   syncCollection(
     collection: CollectionId,
     rows: readonly LaststickerRow[],
-    now: number
+    now: number,
+    { maxVanished = Number.POSITIVE_INFINITY }: SyncOptions = {}
   ): SyncResult {
     return db.transaction((tx) => {
       const stored = new Map(
@@ -297,7 +327,9 @@ export const catalogManager = {
           .all()
           .map((r) => [r.cardId, r])
       );
-      const result: SyncResult = { added: [], renamed: [], vanished: [], nowListed: [] };
+      const added: CardId[] = [];
+      const renamed: CardId[] = [];
+      const nowListed: CardId[] = [];
       const listed = new Set<CardId>();
       for (const row of rows) {
         listed.add(row.cardId);
@@ -307,32 +339,37 @@ export const catalogManager = {
           kind: row.kind,
           variant: row.variant,
           laststickerImageUrl: row.pictureUrl,
-          ...(row.kind === PUZZLE_KIND ? { puzzleSeen: true } : {}),
+          ...(row.puzzle || row.kind === PUZZLE_KIND ? { puzzleSeen: true } : {}),
           updatedAt: now,
         };
         if (!before) {
           tx.insert(cards)
             .values({ collection, cardId: row.cardId, type: cardType(row.cardId), ...fields })
             .run();
-          result.added.push(row.cardId);
+          added.push(row.cardId);
         } else if (before.source === 'manual') {
-          if (before.listedNotedAt === null) {
-            tx.update(cards)
-              .set({ listedNotedAt: now })
-              .where(ofCard(collection, row.cardId))
-              .run();
-            result.nowListed.push(row.cardId);
-          }
+          if (before.listedNotedAt === null) nowListed.push(row.cardId);
         } else {
-          if (before.name !== null && before.name !== row.name) result.renamed.push(row.cardId);
+          if (before.name !== null && before.name !== row.name) renamed.push(row.cardId);
           tx.update(cards).set(fields).where(ofCard(collection, row.cardId)).run();
         }
       }
-      for (const [cardId, card] of stored) {
-        if (card.source === 'laststicker' && !listed.has(cardId)) result.vanished.push(cardId);
+      const vanished = [...stored]
+        .filter(([cardId, card]) => card.source === 'laststicker' && !listed.has(cardId))
+        .map(([cardId]) => cardId);
+      if (vanished.length > maxVanished) {
+        // Thrown inside the transaction: every write above is rolled back.
+        throw new CatalogLayoutError(
+          `laststicker: ${vanished.length} stored cards missing from laststicker, more than ${maxVanished}`
+        );
       }
-      for (const list of Object.values(result)) list.sort(compareCardIds);
-      return result;
+      const sorted = (list: CardId[]) => list.sort(compareCardIds);
+      return {
+        added: sorted(added),
+        renamed: sorted(renamed),
+        vanished: sorted(vanished),
+        nowListed: sorted(nowListed),
+      };
     });
   },
 
@@ -343,7 +380,7 @@ export const catalogManager = {
     name: string,
     pictureUrl: string | null,
     now: number
-  ): { ok: true } | { ok: false; reason: 'exists' } {
+  ): ManualResult<'exists'> {
     return db.transaction((tx) => {
       if (tx.select({ id: cards.cardId }).from(cards).where(ofCard(collection, cardId)).get()) {
         return { ok: false, reason: 'exists' } as const;
@@ -381,8 +418,23 @@ export const catalogManager = {
     });
   },
 
-  /** Hand a manual card to laststicker: its name and picture follow the next sync. */
-  releaseManual(collection: CollectionId, cardId: CardId, now: number): ManualResult {
+  /**
+   * Hand a manual card laststicker lists (a sync reported it, `listedNotedAt` set) to
+   * laststicker: the next sync sets its name, kind and scan, a sammel-ente run its reference
+   * picture. A card laststicker does not list is refused (`not_listed`): released, it would be
+   * reported as vanished every day.
+   */
+  releaseManual(
+    collection: CollectionId,
+    cardId: CardId,
+    now: number
+  ): ManualResult<'unknown' | 'not_manual' | 'not_listed'> {
+    const row = db
+      .select({ source: cards.source, at: cards.listedNotedAt })
+      .from(cards)
+      .where(ofCard(collection, cardId))
+      .get();
+    if (row?.source === 'manual' && row.at === null) return { ok: false, reason: 'not_listed' };
     return onManual(collection, cardId, () => {
       db.update(cards)
         .set({ source: 'laststicker', listedNotedAt: null, updatedAt: now })
@@ -396,6 +448,32 @@ export const catalogManager = {
     return onManual(collection, cardId, () => {
       db.delete(cards).where(ofCard(collection, cardId)).run();
     });
+  },
+
+  /** A manual card, or why the card is none (`unknown`, `not_manual`). */
+  manualCard(
+    collection: CollectionId,
+    cardId: CardId
+  ): { ok: true; card: CatalogCard } | { ok: false; reason: 'unknown' | 'not_manual' } {
+    const card = catalogManager.getCard(collection, cardId);
+    if (!card) return { ok: false, reason: 'unknown' };
+    if (card.source !== 'manual') return { ok: false, reason: 'not_manual' };
+    return { ok: true, card };
+  },
+
+  /** Record that the admin was told laststicker lists these manual cards. */
+  markListedNoted(collection: CollectionId, cardIds: readonly CardId[], now: number): void {
+    if (cardIds.length === 0) return;
+    db.update(cards)
+      .set({ listedNotedAt: now })
+      .where(
+        and(
+          eq(cards.collection, collection),
+          eq(cards.source, 'manual'),
+          inArray(cards.cardId, [...cardIds])
+        )
+      )
+      .run();
   },
 
   /** How many users have the card on their missing list. */
@@ -418,6 +496,17 @@ export const catalogManager = {
       .get()?.at;
   },
 
+  /** When the collection's last laststicker sync succeeded, if ever. */
+  syncSucceededAt(collection: CollectionId): number | undefined {
+    return (
+      db
+        .select({ at: catalogSyncs.succeededAt })
+        .from(catalogSyncs)
+        .where(eq(catalogSyncs.collection, collection))
+        .get()?.at ?? undefined
+    );
+  },
+
   markSyncAttempt(collection: CollectionId, now: number): void {
     db.insert(catalogSyncs)
       .values({ collection, attemptedAt: now })
@@ -435,8 +524,18 @@ export const catalogManager = {
   previewImport({ collection, ids }: CollectionCards): ImportPreview {
     const next = new Set(ids);
     const current = catalogManager.knownIds(collection);
+    const manual = new Set(
+      db
+        .select({ cardId: cards.cardId })
+        .from(cards)
+        .where(and(eq(cards.collection, collection), eq(cards.source, 'manual')))
+        .all()
+        .map((r) => r.cardId)
+    );
     const added = [...next].filter((id) => !current.has(id)).sort(compareCardIds);
-    const removed = [...current].filter((id) => !next.has(id)).sort(compareCardIds);
+    const lacking = [...current].filter((id) => !next.has(id)).sort(compareCardIds);
+    const removed = lacking.filter((id) => !manual.has(id));
+    const keptManual = lacking.filter((id) => manual.has(id));
     const counts: Record<CardType, number> = { base: 0, le: 0, xxl: 0 };
     for (const id of next) counts[cardType(id)]++;
 
@@ -454,7 +553,7 @@ export const catalogManager = {
         if (users) removedStillWanted.push({ cardId, users });
       }
     }
-    return { counts, added, removed, removedStillWanted };
+    return { counts, added, removed, keptManual, removedStillWanted };
   },
 
   /** Insert added ids and delete removed ones from `cards`; wanted lists are untouched. */

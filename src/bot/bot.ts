@@ -95,7 +95,7 @@ const { shutdown, isShuttingDown } = createShutdown({
 });
 
 const alertAdmin = (text: string) => dmAdmin(text);
-/** Throttled admin alerts outside a check run's own (catalog sync). */
+/** Throttled admin alerts of the catalog sync, in a check run and from `/admin catalog sync`. */
 const runAlert = throttledAlert(alertAdmin, Date.now);
 const runDeps: RunDeps = {
   adapters,
@@ -124,8 +124,10 @@ const commands: Record<string, ChatCommand> = {
       adminCommand.execute(i, {
         adminId: config.botAdminId,
         trigger: () => scheduler.trigger(),
-        syncCatalog: (collection) =>
-          syncCatalogs({ now: Date.now, alert: runAlert, only: collection, force: true }),
+        syncCatalog: async (collection) =>
+          (
+            await syncCatalogs({ now: Date.now, alert: runAlert, only: collection, force: true })
+          )[0],
       }),
   },
   [helpCommand.data.name]: helpCommand,

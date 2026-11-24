@@ -49,10 +49,21 @@ describe('parseLaststickerPage', () => {
       name: 'Alex',
       kind: 'Characterkarten',
       variant: 'Basis Karte',
+      puzzle: false,
       pictureUrl: 'https://www.laststicker.com/i/cards/12125/1.jpg',
     });
     const byId = new Map(parsed.rows.map((r) => [r.cardId, r]));
-    expect(byId.get(cid('154'))).toMatchObject({ name: 'The Overworld 1', kind: 'Puzzlekarten' });
+    expect(byId.get(cid('154'))).toMatchObject({
+      name: 'The Overworld 1',
+      kind: 'Puzzlekarten',
+      puzzle: true,
+    });
+    // The piece marker and the section agree on every row: 36 puzzle cards, #154-#189.
+    const puzzles = parsed.rows.filter((r) => r.puzzle);
+    expect(puzzles.map((r) => r.cardId)).toEqual(
+      Array.from({ length: 36 }, (_, i) => cid(String(154 + i)))
+    );
+    expect(puzzles.every((r) => r.kind === 'Puzzlekarten')).toBe(true);
     expect(byId.get(cid('104'))).toMatchObject({ name: 'Ghast', variant: 'Lava Karte' });
     expect(byId.get(cid('LE10'))!.pictureUrl).toBe(
       'https://www.laststicker.com/i/cards/12125/le10.jpg'
@@ -62,6 +73,21 @@ describe('parseLaststickerPage', () => {
       variant: 'Limitierte XXL Karte',
       pictureUrl: 'https://www.laststicker.com/i/cards/12125/xxl1.jpg',
     });
+  });
+
+  test('a piece marker makes a puzzle card whatever the section is called', () => {
+    const { rows } = parseLaststickerPage(
+      page([
+        ['154', '<a>The Overworld</a><div><div class="pz"></div>1</div>', 'Puzzles', 'Basis Karte'],
+      ])
+    );
+    expect(rows[0]).toMatchObject({ name: 'The Overworld 1', puzzle: true });
+  });
+
+  test("the collection's id rule reads the numbers", () => {
+    const rule = (raw: string) => (raw === 'L-7' ? cid('LE7') : null);
+    const { rows } = parseLaststickerPage(page([cells('L-7', 'A')]), rule);
+    expect(rows[0]!.cardId).toBe(cid('LE7'));
   });
 
   test('names are trimmed and HTML-decoded', () => {
@@ -76,6 +102,16 @@ describe('parseLaststickerPage', () => {
     ['an unreadable number', page([cells('Nr. X', 'A')]), 'row 1: no card number "Nr. X"'],
     ['a duplicate number', page([cells('1', 'A'), cells('001', 'B')]), 'card 1 twice'],
     ['an empty name', page([cells('1', ' ')]), 'row 1: no name'],
+    [
+      'an empty section',
+      page([['1', '<a>A</a>', ' ', 'Basis Karte']]),
+      'row 1: no section or type',
+    ],
+    [
+      'an empty type',
+      page([['1', '<a>A</a>', 'Characterkarten', '']]),
+      'row 1: no section or type',
+    ],
     ['no set id', page([cells('1', 'A')], { tooltip: 'x' }), 'no set id'],
   ])('%s is a CatalogLayoutError', (_, html, message) => {
     expect(() => parseLaststickerPage(html)).toThrow(CatalogLayoutError);

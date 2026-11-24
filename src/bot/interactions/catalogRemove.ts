@@ -3,18 +3,16 @@ import type { ButtonInteraction } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import type { CollectionId } from '../collections/ids';
 import { collectionName } from '../collections/index';
-import { catalogManager, type ManualResult } from '../database/catalogManager';
+import { catalogManager, type ManualRefusal } from '../database/catalogManager';
+import { decodeRemovalId, encodeKeepId, encodeRemoveId } from './buttonIds';
 import { replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
 import type { AdminDeps } from './adminActions';
 
 const TTL_MS = 10 * 60_000;
 const EXPIRED = 'This removal expired, run the command again.';
-export const REMOVE_PREFIX = 'catalog-remove:';
-export const KEEP_PREFIX = 'catalog-keep:';
-
 /** A manual card the admin asked to remove, waiting for Remove or Keep. */
-interface PendingRemoval {
+export interface PendingRemoval {
   readonly collection: CollectionId;
   readonly cardId: CardId;
 }
@@ -52,25 +50,28 @@ export const removeStore = createRemoveStore(Date.now);
 export function removeRow(token: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`${REMOVE_PREFIX}${token}`)
+      .setCustomId(encodeRemoveId(token))
       .setLabel('Remove')
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId(`${KEEP_PREFIX}${token}`)
+      .setCustomId(encodeKeepId(token))
       .setLabel('Keep')
       .setStyle(ButtonStyle.Secondary)
   );
 }
 
-/** Why a manual-card change was refused, as the admin reads it. */
-export function manualRefusal(
-  result: Exclude<ManualResult, { ok: true }>,
-  cardId: CardId,
-  inCollection: string
-): string {
-  return result.reason === 'not_manual'
-    ? `#${cardId} comes from laststicker; only manual cards can be changed here.`
-    : `No card #${cardId} in ${inCollection}.`;
+/** Why a manual-card command was refused, as the admin reads it. */
+export function manualRefusal(reason: ManualRefusal, cardId: CardId, inCollection: string): string {
+  switch (reason) {
+    case 'not_manual':
+      return `#${cardId} comes from laststicker; only manual cards can be changed here.`;
+    case 'unknown':
+      return `No card #${cardId} in ${inCollection}.`;
+    case 'exists':
+      return `#${cardId} is already in ${inCollection}.`;
+    case 'not_listed':
+      return `#${cardId} is not on laststicker yet; release it once a sync reports it there.`;
+  }
 }
 
 /**
@@ -82,31 +83,46 @@ export async function handleCatalogRemove(
   { adminId }: AdminDeps,
   store: RemoveStore = removeStore
 ): Promise<void> {
+  // What happened before a failure, so its message says the right thing.
+  let done: string | null = null;
   try {
     if (i.user.id !== adminId) {
       await i.reply({ content: 'Only the bot admin can use this.', flags: MessageFlags.Ephemeral });
       return;
     }
-    const remove = i.customId.startsWith(REMOVE_PREFIX);
-    const token = i.customId.slice((remove ? REMOVE_PREFIX : KEEP_PREFIX).length);
-    const entry = store.take(token);
-    if (!entry) {
+    const decoded = decodeRemovalId(i.customId);
+    const entry = decoded ? store.take(decoded.token) : undefined;
+    if (!decoded || !entry) {
       await i.update({ content: EXPIRED, components: [] });
       return;
     }
-    if (!remove) {
+    if (!decoded.remove) {
+      done = `#${entry.cardId} was kept`;
       await i.update({ content: `Kept #${entry.cardId}.`, components: [] });
       return;
     }
     const result = catalogManager.removeManual(entry.collection, entry.cardId);
+    if (result.ok) done = `#${entry.cardId} was removed`;
     await i.update({
       content: result.ok
         ? `Removed #${entry.cardId}.`
-        : manualRefusal(result, entry.cardId, collectionName(entry.collection)),
+        : manualRefusal(result.reason, entry.cardId, collectionName(entry.collection)),
       components: [],
     });
   } catch (error) {
     logError(`[CATALOG REMOVE] ${i.customId} failed`, error);
+    if (done) {
+      // The work is done; only the message could not be updated: a plain note, no error embed.
+      try {
+        await i.reply({
+          content: `${done}, but this message could not be updated.`,
+          flags: MessageFlags.Ephemeral,
+        });
+      } catch (noteError) {
+        logError('[CATALOG REMOVE] the note about the failed message update failed', noteError);
+      }
+      return;
+    }
     await replyWithError(i, 'Error', 'Removing the card failed. Run the command again.');
   }
 }

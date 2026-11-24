@@ -61,6 +61,9 @@ export function buildPreviewText(collection: CollectionId, preview: ImportPrevie
     joinWithinLimit('Added: ', added.length > 0 ? added : ['none'], 600),
     joinWithinLimit('Removed: ', removed.length > 0 ? removed : ['none'], 600),
   ];
+  if (preview.keptManual.length > 0) {
+    lines.push(joinWithinLimit('Manual cards kept: ', preview.keptManual, 300));
+  }
   if (removedStillWanted.length > 0) {
     lines.push(
       joinWithinLimit(

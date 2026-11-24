@@ -5,6 +5,7 @@ import { catalogManager } from '../database/catalogManager';
 import { db, initializeDatabase } from '../database/db';
 import { cards, users, wantedCards } from '../database/schema/index';
 import { cid } from '../../test/cardIds';
+import { encodeKeepId, encodeRemoveId } from './buttonIds';
 import { createRemoveStore, handleCatalogRemove, removeRow } from './catalogRemove';
 
 let clock = 0;
@@ -43,6 +44,7 @@ describe('handleCatalogRemove', () => {
     const ids = removeRow('t1')
       .toJSON()
       .components.map((c) => ('custom_id' in c ? c.custom_id : null));
+    expect(ids).toEqual([encodeRemoveId('t1'), encodeKeepId('t1')]);
     expect(ids).toEqual(['catalog-remove:t1', 'catalog-keep:t1']);
   });
 
@@ -71,12 +73,35 @@ describe('handleCatalogRemove', () => {
       { content: 'Only the bot admin can use this.', flags: MessageFlags.Ephemeral },
     ]);
     expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.source).toBe('manual');
+    // The other user's press did not use the token up.
+    await handleCatalogRemove(fakeButton(`catalog-remove:${other}`), deps, store);
+    expect(updates.at(-1)!.content).toBe('Removed #229.');
+  });
+
+  test('a message that cannot be updated after the removal says the card was removed', async () => {
+    const store = createRemoveStore(() => clock);
+    const token = store.put('lego-minecraft-3', cid('229'));
+    const button = {
+      ...fakeButton(`catalog-remove:${token}`),
+      update: async () => {
+        throw new Error('Unknown interaction');
+      },
+    } as unknown as ButtonInteraction;
+    await handleCatalogRemove(button, deps, store);
+    expect(catalogManager.getCard('lego-minecraft-3', cid('229'))).toBeUndefined();
+    expect(replies).toEqual([
+      {
+        content: '#229 was removed, but this message could not be updated.',
+        flags: MessageFlags.Ephemeral,
+      },
+    ]);
   });
 
   test('a card that is no longer manual is not removed, and says why', async () => {
     const store = createRemoveStore(() => clock);
     const token = store.put('lego-minecraft-3', cid('229'));
-    catalogManager.releaseManual('lego-minecraft-3', cid('229'), 2);
+    catalogManager.markListedNoted('lego-minecraft-3', [cid('229')], 2);
+    catalogManager.releaseManual('lego-minecraft-3', cid('229'), 3);
     await handleCatalogRemove(fakeButton(`catalog-remove:${token}`), deps, store);
     expect(updates[0]!.content).toBe(
       '#229 comes from laststicker; only manual cards can be changed here.'

@@ -451,13 +451,14 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
   }
 
   try {
+    // Before the shops read the names; also when nobody wants a card, so a new catalog fills.
+    try {
+      await deps.syncCatalogs?.();
+    } catch (error) {
+      logError('catalog sync failed', error);
+    }
     const wanted = userManager.allWantedIds();
     if (wanted.size > 0) {
-      try {
-        await deps.syncCatalogs?.();
-      } catch (error) {
-        logError('catalog sync failed', error);
-      }
       const stored: StoredListing[] = [];
       const fetched = new Map<string, Listing>();
       for (const adapter of deps.adapters) {

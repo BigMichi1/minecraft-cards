@@ -11,6 +11,9 @@ import {
   encodeRightId,
   imageFingerprint,
   parseListingId,
+  decodeRemovalId,
+  encodeKeepId,
+  encodeRemoveId,
 } from './buttonIds';
 import { cid } from '../../test/cardIds';
 
@@ -103,5 +106,15 @@ describe('Confirm ids', () => {
     'admin-confirm:5:12:abcdefghijklmn',
   ])('rejects %p', (id) => {
     expect(decodeConfirmId(id)).toBeNull();
+  });
+});
+
+describe('catalog removal ids', () => {
+  test('carry the token after their prefix and are read back', () => {
+    expect(encodeRemoveId('abc')).toBe('catalog-remove:abc');
+    expect(encodeKeepId('abc')).toBe('catalog-keep:abc');
+    expect(decodeRemovalId('catalog-remove:abc')).toEqual({ remove: true, token: 'abc' });
+    expect(decodeRemovalId('catalog-keep:abc')).toEqual({ remove: false, token: 'abc' });
+    expect(decodeRemovalId('catalog-save:abc')).toBeNull();
   });
 });

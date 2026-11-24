@@ -1,6 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { MessageFlags, PermissionFlagsBits } from 'discord.js';
-import type { ChatInputCommandInteraction } from 'discord.js';
+import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import { STARTER_CHECKLIST } from '../cards/starterCatalog';
 import type { RunSummary } from '../check/runner';
 import { catalogManager } from '../database/catalogManager';
@@ -24,6 +24,7 @@ import logger from '../utils/logger';
 import { data, execute as adminExecute, formatSummary, type AdminContext } from './admin';
 import { UNKNOWN_COLLECTION } from './collectionOption';
 import { importStore } from '../interactions/catalogImport';
+import { handleCatalogRemove } from '../interactions/catalogRemove';
 import type { CollectionId } from '../collections/ids';
 import { cid, ids } from '../../test/cardIds';
 
@@ -124,13 +125,11 @@ describe('/admin', () => {
       trigger: async () => summary,
       syncCatalog: async (collection) => {
         syncCalls.push(collection);
-        return [
-          {
-            collection,
-            ok: true,
-            result: { added: ids('LE23'), renamed: [], vanished: [], nowListed: [] },
-          },
-        ];
+        return {
+          collection,
+          ok: true,
+          result: { added: ids('LE23'), renamed: [], vanished: [], nowListed: [] },
+        };
       },
     };
   });
@@ -468,7 +467,11 @@ describe('/admin', () => {
       await add({ card: 'nope', name: 'X' });
       expect(lastReply().content).toBe('Not a card number: nope');
       await add({ card: 'LE24', name: 'X', picture: 'not a url' });
-      expect(lastReply().content).toBe('Not a valid picture URL.');
+      expect(lastReply().content).toBe(
+        'Not a valid picture URL (http or https, at most 512 characters): not a url'
+      );
+      await add({ card: 'LE24', name: '   ' });
+      expect(lastReply().content).toBe('A card needs a name.');
       expect(catalogManager.getCard('lego-minecraft-3', cid('LE24'))).toBeUndefined();
     });
 
@@ -484,9 +487,30 @@ describe('/admin', () => {
       );
       await adminExecute(fakeAdmin('catalog', 'edit', { card: '999', name: 'X' }), ctx);
       expect(lastReply().content).toBe('No card #999 in LEGO Minecraft Serie 3 "On Fire".');
+      await adminExecute(fakeAdmin('catalog', 'edit', { card: '229', picture: 'nope' }), ctx);
+      expect(lastReply().content).toBe(
+        'Not a valid picture URL (http or https, at most 512 characters): nope'
+      );
+      await adminExecute(
+        fakeAdmin('catalog', 'edit', { card: '229', picture: 'https://m/2.jpg' }),
+        ctx
+      );
+      expect(lastReply().content).toBe('#229 now: Better.');
+      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.referenceImageUrl).toBe(
+        'https://m/2.jpg'
+      );
+      await adminExecute(fakeAdmin('catalog', 'release', { card: '229' }), ctx);
+      expect(lastReply().content).toBe(
+        '#229 is not on laststicker yet; release it once a sync reports it there.'
+      );
+      catalogManager.markListedNoted('lego-minecraft-3', ids('229'), 2);
       await adminExecute(fakeAdmin('catalog', 'release', { card: '229' }), ctx);
       expect(lastReply().content).toBe('#229 now follows laststicker from the next sync.');
       expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.source).toBe('laststicker');
+      for (const sub of ['remove', 'release']) {
+        await adminExecute(fakeAdmin('catalog', sub, { card: '999' }), ctx);
+        expect(lastReply().content).toBe('No card #999 in LEGO Minecraft Serie 3 "On Fire".');
+      }
     });
 
     test('remove asks first, naming how many users have the card', async () => {
@@ -499,10 +523,40 @@ describe('/admin', () => {
       );
       expect(lastReply().components).toHaveLength(1);
       expect(catalogManager.getCard('lego-minecraft-3', cid('229'))).toBeDefined();
+      // The button the reply carries works with the store the command filled.
+      const row = lastReply().components![0] as {
+        toJSON(): { components: { custom_id: string }[] };
+      };
+      const removeId = row.toJSON().components[0]!.custom_id;
+      const updates: { content?: string }[] = [];
+      await handleCatalogRemove(
+        {
+          customId: removeId,
+          user: { id: 'admin' },
+          update: async (p: { content?: string }) => {
+            updates.push(p);
+          },
+        } as unknown as ButtonInteraction,
+        { adminId: 'admin' }
+      );
+      expect(updates[0]!.content).toBe('Removed #229.');
+      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))).toBeUndefined();
       await adminExecute(fakeAdmin('catalog', 'remove', { card: '12' }), ctx);
       expect(lastReply().content).toBe(
         '#12 comes from laststicker; only manual cards can be changed here.'
       );
+    });
+
+    test('a sync with nothing to sync says so', async () => {
+      ctx = { ...ctx, syncCatalog: async () => undefined };
+      await adminExecute(fakeAdmin('catalog', 'sync'), ctx);
+      expect(lastReply().content).toBe('Nothing to sync: this collection has no laststicker set.');
+    });
+
+    test('the import preview names the manual cards it keeps', async () => {
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 1);
+      await adminExecute(fakeAdmin('catalog', 'import', { list: STARTER_CHECKLIST }), ctx);
+      expect(lastReply().content).toContain('Manual cards kept: 229');
     });
 
     test('an unknown collection is refused before anything runs', async () => {

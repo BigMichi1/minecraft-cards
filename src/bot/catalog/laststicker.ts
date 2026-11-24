@@ -8,8 +8,10 @@ import { clipText } from '../utils/messageLimit';
 const MAX_VALUE = 200;
 
 /**
- * A laststicker page that is not a readable checklist: no table (a bot wall, maintenance), a
- * row that does not parse, or a number the card id rule rejects. A sync that meets it changes
+ * A laststicker page that is not a complete, readable checklist: no table (a bot wall,
+ * maintenance), no set id, no rows, a row that does not parse (too few cells, no name, section
+ * or type), a number the card id rule rejects, or a card listed twice; also a sync that would
+ * leave too many stored cards out (catalogManager.syncCollection). A sync that meets it changes
  * nothing.
  */
 export class CatalogLayoutError extends Error {
@@ -21,15 +23,26 @@ export class CatalogLayoutError extends Error {
 
 /** One checklist row: laststicker's number, name, section (`kind`) and type (`variant`). */
 export interface LaststickerRow {
-  cardId: CardId;
-  name: string;
-  kind: string;
-  variant: string;
+  readonly cardId: CardId;
+  readonly name: string;
+  readonly kind: string;
+  readonly variant: string;
+  /** A puzzle card: the row carries a piece (`<div class="pz">`). */
+  readonly puzzle: boolean;
   /** The card's scan; laststicker answers 404 for a card it has not scanned. */
-  pictureUrl: string;
+  readonly pictureUrl: string;
 }
 
-/** The set page; robots.txt allows `/de/cards/<set>/` (never `/cards/<set>/checklist`). */
+/** A parsed set page. */
+export interface LaststickerSet {
+  readonly setId: number;
+  readonly rows: readonly LaststickerRow[];
+}
+
+/**
+ * The set page. robots.txt (checked 2026-11-24) allows `/de/cards/<set>/` and disallows
+ * `/cards/<set>/checklist`, so the bot never fetches the latter.
+ */
 export function laststickerSetUrl(set: string): string {
   return `https://www.laststicker.com/de/cards/${set}/`;
 }
@@ -47,7 +60,10 @@ const clip = (value: string) => JSON.stringify(clipText(value, MAX_VALUE));
  * "The Overworld" and `1` give "The Overworld 1". Any row that does not parse is a
  * CatalogLayoutError, so a partial read never reaches the catalog.
  */
-export function parseLaststickerPage(html: string): { setId: number; rows: LaststickerRow[] } {
+export function parseLaststickerPage(
+  html: string,
+  normalize: (raw: string) => CardId | null = normalizeCardId
+): LaststickerSet {
   const $ = cheerio.load(html);
   const table = $('#checklist');
   if (table.length === 0) throw new CatalogLayoutError('laststicker: no checklist table');
@@ -63,24 +79,31 @@ export function parseLaststickerPage(html: string): { setId: number; rows: Lasts
       throw new CatalogLayoutError(`laststicker: row ${row} has ${tds.length} cells`);
     }
     const number = tds.eq(0).text().trim();
-    const cardId = normalizeCardId(number);
+    const cardId = normalize(number);
     if (!cardId)
       throw new CatalogLayoutError(`laststicker: row ${row}: no card number ${clip(number)}`);
     if (seen.has(cardId)) throw new CatalogLayoutError(`laststicker: card ${cardId} twice`);
     seen.add(cardId);
     const title = tds.eq(1);
     const link = title.find('a').first();
-    const piece = title.children('div').text().trim();
+    const pieceBox = title.children('div');
+    const piece = pieceBox.text().trim();
     const name = [(link.length > 0 ? link : title).text().trim(), piece]
       .filter(Boolean)
       .join(' ')
       .replace(/\s+/g, ' ');
     if (!name) throw new CatalogLayoutError(`laststicker: row ${row}: no name`);
+    const kind = tds.eq(2).text().trim();
+    const variant = tds.eq(3).text().trim();
+    if (!kind || !variant) {
+      throw new CatalogLayoutError(`laststicker: row ${row}: no section or type`);
+    }
     rows.push({
       cardId,
       name,
-      kind: tds.eq(2).text().trim(),
-      variant: tds.eq(3).text().trim(),
+      kind,
+      variant,
+      puzzle: pieceBox.find('.pz').length > 0,
       pictureUrl: pictureUrl(setId, cardId),
     });
   });
@@ -92,6 +115,6 @@ export function parseLaststickerPage(html: string): { setId: number; rows: Lasts
 export async function fetchLaststickerSet(
   set: string,
   fetchFn: FetchFn = fetch
-): Promise<{ setId: number; rows: LaststickerRow[] }> {
+): Promise<LaststickerSet> {
   return parseLaststickerPage(await fetchText(laststickerSetUrl(set), fetchFn));
 }

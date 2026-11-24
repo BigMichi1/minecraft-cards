@@ -7,7 +7,7 @@ import { catalogManager, parseKnownCardList } from './catalogManager';
 import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
 import { cid, ids } from '../../test/cardIds';
 import { setCatalogCards } from '../../test/catalog';
-import type { LaststickerRow } from '../catalog/laststicker';
+import { CatalogLayoutError, type LaststickerRow } from '../catalog/laststicker';
 import type { CollectionId } from '../collections/ids';
 
 /** A collection outside the registry, to show reads stay inside their own collection. */
@@ -288,11 +288,17 @@ describe('catalogManager', () => {
     });
   });
   describe('syncCollection', () => {
-    const row = (id: string, name: string, kind = 'Characterkarten'): LaststickerRow => ({
+    const row = (
+      id: string,
+      name: string,
+      kind = 'Characterkarten',
+      puzzle = false
+    ): LaststickerRow => ({
       cardId: cid(id),
       name,
       kind,
       variant: 'Basis Karte',
+      puzzle,
       pictureUrl: `https://www.laststicker.com/i/cards/12125/${id.toLowerCase()}.jpg`,
     });
     const starterRows = () => starter.map((id) => row(id, `Card ${id}`));
@@ -356,13 +362,18 @@ describe('catalogManager', () => {
       });
     });
 
-    test('a manual card the rows list keeps name and picture and is reported once', () => {
+    test('a manual card the rows list keeps name and picture and is reported until noted', () => {
       catalogManager.seedIfEmpty();
       catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', 'https://m/229.jpg', 5);
       const rows = [...starterRows(), row('229', 'Theirs')];
       expect(catalogManager.syncCollection('lego-minecraft-3', rows, 10).nowListed).toEqual(
         ids('229')
       );
+      // Not noted yet (the admin's DM may have failed): reported again.
+      expect(catalogManager.syncCollection('lego-minecraft-3', rows, 15).nowListed).toEqual(
+        ids('229')
+      );
+      catalogManager.markListedNoted('lego-minecraft-3', ids('229'), 16);
       expect(catalogManager.syncCollection('lego-minecraft-3', rows, 20).nowListed).toEqual([]);
       expect(catalogManager.getCard('lego-minecraft-3', cid('229'))).toMatchObject({
         name: 'Mine',
@@ -373,6 +384,52 @@ describe('catalogManager', () => {
       expect(catalogManager.syncCollection('lego-minecraft-3', starterRows(), 30).vanished).toEqual(
         []
       );
+    });
+
+    test('the piece marker alone marks a puzzle card', () => {
+      catalogManager.seedIfEmpty();
+      const rows = starterRows().map((r) =>
+        r.cardId === '154' ? row('154', 'The Overworld 1', 'Puzzles', true) : r
+      );
+      catalogManager.syncCollection('lego-minecraft-3', rows, 10);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('154'))?.puzzle).toBe(true);
+    });
+
+    test('rows leaving out more than the tolerance change nothing', () => {
+      catalogManager.seedIfEmpty();
+      const rows = starterRows().slice(0, 240);
+      const sync = (maxVanished: number) =>
+        catalogManager.syncCollection('lego-minecraft-3', rows, 10, { maxVanished });
+      expect(() => sync(5)).toThrow(CatalogLayoutError);
+      expect(() => sync(5)).toThrow('11 stored cards missing from laststicker, more than 5');
+      expect(catalogManager.getCard('lego-minecraft-3', cid('1'))?.name).toBeNull();
+      expect(sync(11).vanished).toHaveLength(11);
+    });
+
+    test('a released card is taken over by the next sync', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', 'https://m/229.jpg', 5);
+      const rows = [...starterRows(), row('229', 'Theirs')];
+      catalogManager.syncCollection('lego-minecraft-3', rows, 10);
+      catalogManager.markListedNoted('lego-minecraft-3', ids('229'), 11);
+      expect(catalogManager.releaseManual('lego-minecraft-3', cid('229'), 12)).toEqual({
+        ok: true,
+      });
+      const result = catalogManager.syncCollection('lego-minecraft-3', rows, 20);
+      expect(result.renamed).toEqual(ids('229'));
+      expect(result.nowListed).toEqual([]);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))).toMatchObject({
+        name: 'Theirs',
+        kind: 'Characterkarten',
+        source: 'laststicker',
+        // The admin's picture stays until a sammel-ente run gives one.
+        referenceImageUrl: 'https://m/229.jpg',
+      });
+      expect(
+        catalogManager.updateReferences('lego-minecraft-3', [
+          { cardId: cid('229'), imageUrl: 'https://se/229.jpg' },
+        ])
+      ).toEqual(ids('229'));
     });
 
     test("another collection's cards are untouched", () => {
@@ -403,6 +460,60 @@ describe('catalogManager', () => {
       });
     });
 
+    test('release needs laststicker to list the card', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 5);
+      expect(catalogManager.releaseManual('lego-minecraft-3', cid('229'), 6)).toEqual({
+        ok: false,
+        reason: 'not_listed',
+      });
+      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.source).toBe('manual');
+    });
+
+    test('manualCard reads a manual card, or says why not', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 5);
+      expect(catalogManager.manualCard('lego-minecraft-3', cid('229'))).toMatchObject({
+        ok: true,
+        card: { name: 'Extra', source: 'manual' },
+      });
+      expect(catalogManager.manualCard('lego-minecraft-3', cid('12'))).toEqual({
+        ok: false,
+        reason: 'not_manual',
+      });
+      expect(catalogManager.manualCard('lego-minecraft-3', cid('999'))).toEqual({
+        ok: false,
+        reason: 'unknown',
+      });
+    });
+
+    test('a manual card without a picture takes the sammel-ente one, then keeps it', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 5);
+      catalogManager.updateReferences('lego-minecraft-3', [
+        { cardId: cid('229'), imageUrl: 'https://se/229.jpg' },
+      ]);
+      catalogManager.updateReferences('lego-minecraft-3', [
+        { cardId: cid('229'), imageUrl: 'https://se/229-new.jpg' },
+      ]);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.referenceImageUrl).toBe(
+        'https://se/229.jpg'
+      );
+    });
+
+    test('a catalog import never removes a manual card', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 5);
+      const preview = catalogManager.previewImport({
+        collection: 'lego-minecraft-3',
+        ids: starter,
+      });
+      expect(preview.removed).toEqual([]);
+      expect(preview.keptManual).toEqual(ids('229'));
+      catalogManager.applyImport({ collection: 'lego-minecraft-3', ids: starter });
+      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.source).toBe('manual');
+    });
+
     test('edit, remove and release act on manual cards only', () => {
       catalogManager.seedIfEmpty();
       catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 5);
@@ -426,8 +537,10 @@ describe('catalogManager', () => {
       expect(catalogManager.removeManual('lego-minecraft-3', cid('12'))).toEqual(notManual);
       expect(catalogManager.releaseManual('lego-minecraft-3', cid('12'), 6)).toEqual(notManual);
       expect(catalogManager.removeManual('lego-minecraft-3', cid('999'))).toEqual(unknown);
-      expect(catalogManager.releaseManual('lego-minecraft-3', cid('229'), 7)).toEqual({ ok: true });
-      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.source).toBe('laststicker');
+      expect(catalogManager.releaseManual('lego-minecraft-3', cid('229'), 7)).toEqual({
+        ok: false,
+        reason: 'not_listed',
+      });
     });
 
     test('remove deletes the card but keeps it on wanted lists; wantedCount counts users', () => {
@@ -453,6 +566,10 @@ describe('catalogManager', () => {
       expect(db.select().from(catalogSyncs).all()).toEqual([
         { collection: 'lego-minecraft-3', attemptedAt: 20, succeededAt: 25 },
       ]);
+      // A later failed attempt keeps the last success.
+      catalogManager.markSyncAttempt('lego-minecraft-3', 30);
+      expect(catalogManager.syncSucceededAt('lego-minecraft-3')).toBe(25);
+      expect(catalogManager.syncAttemptedAt('lego-minecraft-3')).toBe(30);
     });
   });
 });

@@ -240,7 +240,7 @@ describe('runCheck', () => {
     expect(s.error).toBeUndefined();
   });
 
-  test('no wanted cards: no catalog sync either', async () => {
+  test('the catalog syncs even when nobody wants a card', async () => {
     userManager.clearList('u1', 'lego-minecraft-3');
     let synced = 0;
     await runCheck(
@@ -250,7 +250,7 @@ describe('runCheck', () => {
         },
       })
     );
-    expect(synced).toBe(0);
+    expect(synced).toBe(1);
   });
 
   test('no wanted cards means no fetch but the run is recorded', async () => {

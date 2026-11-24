@@ -10,11 +10,11 @@ import type { ChatInputCommandInteraction, SlashCommandStringOption } from 'disc
 import { formatCardList, normalizeCardId } from '../cards/cardId';
 import { formatSyncOutcome, type SyncOutcome } from '../catalog/sync';
 import { manualRefusal, removeRow, removeStore } from '../interactions/catalogRemove';
-import { validUrl } from '../notify/messages';
+import { MAX_URL, validUrl } from '../notify/messages';
 import { parseChecklist } from '../cards/starterCatalog';
 import type { PictureCounts, RunSummary } from '../check/runner';
 import { PICTURE_REJECTIONS, type PictureRejection } from '../matcher/matchStatus';
-import { catalogManager, parseKnownCardList, type ManualResult } from '../database/catalogManager';
+import { catalogManager, parseKnownCardList, type ManualRefusal } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import type { AdminDeps } from '../interactions/adminActions';
@@ -31,8 +31,11 @@ const LIST_OPTION_MAX_LENGTH = 6000;
 
 export interface AdminContext extends AdminDeps {
   trigger: () => Promise<RunSummary | 'busy' | 'stopping'>;
-  /** Sync the collection's catalog from laststicker now (`/admin catalog sync`). */
-  syncCatalog: (collection: CollectionId) => Promise<SyncOutcome[]>;
+  /**
+   * Sync the collection's catalog from laststicker now (`/admin catalog sync`); undefined when
+   * it has no laststicker set.
+   */
+  syncCatalog: (collection: CollectionId) => Promise<SyncOutcome | undefined>;
 }
 
 /** `#XXL123` with room to spare; a card id is never longer. */
@@ -132,11 +135,17 @@ export const data = new SlashCommandBuilder()
       )
   );
 
-/** A picture option: its URL when valid, `null` when not given, `false` when invalid. */
-function readPicture(interaction: ChatInputCommandInteraction): string | null | false {
+/** A picture option: its URL when valid, `null` when not given, the refusal when invalid. */
+function readPicture(
+  interaction: ChatInputCommandInteraction
+): { url: string | null } | { refusal: string } {
   const raw = interaction.options.getString('picture');
-  if (raw === null) return null;
-  return validUrl(raw.trim()) ?? false;
+  if (raw === null) return { url: null };
+  const url = validUrl(raw.trim());
+  if (url) return { url };
+  return {
+    refusal: `Not a valid picture URL (http or https, at most ${MAX_URL} characters): ${clipText(raw.trim(), 200)}`,
+  };
 }
 
 /** `/admin catalog sync|add|edit|remove|release` for one collection. */
@@ -149,9 +158,11 @@ async function catalogCardCommand(
   const inCollection = collectionName(collection);
   if (sub === 'sync') {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    const outcomes = await ctx.syncCatalog(collection);
+    const outcome = await ctx.syncCatalog(collection);
     await interaction.editReply({
-      content: clipText(outcomes.map(formatSyncOutcome).join('\n') || 'Nothing to sync.'),
+      content: outcome
+        ? formatSyncOutcome(outcome)
+        : 'Nothing to sync: this collection has no laststicker set.',
     });
     return;
   }
@@ -162,45 +173,47 @@ async function catalogCardCommand(
     return;
   }
   const now = Date.now();
-  const refused = (result: Exclude<ManualResult, { ok: true }>) =>
-    interaction.reply(ephemeral(manualRefusal(result, cardId, inCollection)));
+  const refused = (reason: ManualRefusal) =>
+    interaction.reply(ephemeral(manualRefusal(reason, cardId, inCollection)));
   switch (sub) {
     case 'add': {
       const name = interaction.options.getString('name', true).trim();
-      const picture = readPicture(interaction);
-      if (picture === false) {
-        await interaction.reply(ephemeral('Not a valid picture URL.'));
+      if (!name) {
+        await interaction.reply(ephemeral('A card needs a name.'));
         return;
       }
-      const result = catalogManager.addManual(collection, cardId, name, picture, now);
-      await interaction.reply(
-        ephemeral(
-          result.ok
-            ? `Added #${cardId} ${name} to ${inCollection} (manual).`
-            : `#${cardId} is already in ${inCollection}.`
-        )
-      );
+      const picture = readPicture(interaction);
+      if ('refusal' in picture) {
+        await interaction.reply(ephemeral(picture.refusal));
+        return;
+      }
+      const result = catalogManager.addManual(collection, cardId, name, picture.url, now);
+      if (!result.ok) {
+        await refused(result.reason);
+        return;
+      }
+      await interaction.reply(ephemeral(`Added #${cardId} ${name} to ${inCollection} (manual).`));
       return;
     }
     case 'edit': {
       const name = interaction.options.getString('name')?.trim();
       const picture = readPicture(interaction);
-      if (picture === false) {
-        await interaction.reply(ephemeral('Not a valid picture URL.'));
+      if ('refusal' in picture) {
+        await interaction.reply(ephemeral(picture.refusal));
         return;
       }
-      if (!name && picture === null) {
+      if (!name && picture.url === null) {
         await interaction.reply(ephemeral('Nothing to change: give name or picture.'));
         return;
       }
       const result = catalogManager.editManual(
         collection,
         cardId,
-        { ...(name ? { name } : {}), ...(picture ? { pictureUrl: picture } : {}) },
+        { ...(name ? { name } : {}), ...(picture.url ? { pictureUrl: picture.url } : {}) },
         now
       );
       if (!result.ok) {
-        await refused(result);
+        await refused(result.reason);
         return;
       }
       const card = catalogManager.getCard(collection, cardId);
@@ -208,11 +221,12 @@ async function catalogCardCommand(
       return;
     }
     case 'remove': {
-      const card = catalogManager.getCard(collection, cardId);
-      if (!card || card.source !== 'manual') {
-        await refused({ ok: false, reason: card ? 'not_manual' : 'unknown' });
+      const manual = catalogManager.manualCard(collection, cardId);
+      if (!manual.ok) {
+        await refused(manual.reason);
         return;
       }
+      const { card } = manual;
       const users = catalogManager.wantedCount(collection, cardId);
       await interaction.reply({
         content: `Remove manual card #${cardId}${card.name ? ` ${card.name}` : ''}? ${users} user(s) have it on their missing list.`,
@@ -224,7 +238,7 @@ async function catalogCardCommand(
     case 'release': {
       const result = catalogManager.releaseManual(collection, cardId, now);
       if (!result.ok) {
-        await refused(result);
+        await refused(result.reason);
         return;
       }
       await interaction.reply(ephemeral(`#${cardId} now follows laststicker from the next sync.`));

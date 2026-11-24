@@ -28,7 +28,7 @@ export const legoMinecraft3: CollectionDefinition<'lego-minecraft-3'> = {
         // Most single cards ("LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)").
         'lego minecraft karten serie 3',
       ],
-      // "Serie 3", "Series 3", "Serie3", "On Fire".
+      // "Serie 3", "Series 3", "Serie3", "Staffel 3", "TCC 3", "On Fire".
       series: /\b(?:Series?|Staffel)\s*3\b|\bTCC\s*3\b|\bOn\s*Fire\b/i,
     },
   },

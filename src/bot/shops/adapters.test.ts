@@ -37,6 +37,8 @@ describe('createShopAdapters', () => {
     );
     const ebay = value.filter((a) => a.id === 'ebay');
     expect(ebay).toHaveLength(1);
+    // The run's skipped counts are filed under series 3, the summary's `shops`.
+    expect(ebay[0]!.collection).toBe('lego-minecraft-3');
     expect(ebay[0]!.collections).toEqual([
       'lego-minecraft-1',
       'lego-minecraft-2',
@@ -84,6 +86,10 @@ describe('createShopAdapters', () => {
     );
     const global = { ...legoMinecraft1, shops: { ebay: { queries: ['q'], series: /Serie 1/gi } } };
     expect(() => createShopAdapters(creds, undefined, { collections: [global] })).toThrow(
+      'must not use the g or y flag'
+    );
+    const sticky = { ...legoMinecraft1, shops: { ebay: { queries: ['q'], series: /Serie 1/y } } };
+    expect(() => createShopAdapters(creds, undefined, { collections: [sticky] })).toThrow(
       'must not use the g or y flag'
     );
   });

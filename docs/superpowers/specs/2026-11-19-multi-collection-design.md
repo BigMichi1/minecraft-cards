@@ -254,7 +254,7 @@ One adapter run covers all collections, so items found by several queries are fe
 - Each collection names its queries (`lego minecraft karten serie 1`, `turbo attax 2026`, …).
 - Each item's title is classified by the collections' **series markers**: Minecraft series 1
   (`Serie 1`, `Series 1`, `TCC 1`), series 2 (`Serie 2`, `Boom-Bastic`), series 3 (`Serie 3`,
-  `On Fire`, today's pattern), Turbo Attax 2026 (`Turbo Attax` and `2026`, and no other year).
+  `On Fire`, today's pattern; 3b added `Staffel 3` and `TCC 3`), Turbo Attax 2026 (`Turbo Attax` and `2026`, and no other year).
   A title matching exactly one collection belongs to it; none or several gives no ids
   (`skippedExcluded`, reason `no series` / `several collections`).
 - The title id forms, `COUNT_WORDS`, pick-list, range and variation rules apply as today, read
@@ -429,14 +429,18 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   each listing with its collection (`Listing.collection`). An adapter covering several
   collections (`ShopAdapter.collections`) is stored per collection by the runner, and its
   fetch error, cut searches and unloaded card lists alert once under the shop
-  (`shop-error:ebay`, `shop-truncated:ebay`, `shop-names:ebay`); storing stays per collection.
+  (`shop-error:ebay`, `shop-truncated:ebay`, `shop-names:ebay:<collections>`); storing stays per collection.
   `checkAdapters` refuses a shared adapter that overlaps another or does not cover its own
   `collection`, under which the run's skipped counts are filed.
 - An unmapped eBay listing whose title names another collection moves there
   (`upsertFromRun(…, { moveFromOtherCollections: true })`), as `pending` with a new
   availability period; admin-mapped ones stay where the admin put them and are kept fresh
   there. A listing the run saw is never marked gone in another collection (`seenUrls`).
-- A series list with one series word (`Serie 1-2`) names several collections.
+- A series list with one series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`) names several
+  collections; only series numbers 1 to 3 form a list, so `Serie 3 - 12 - Steve` is card #12.
+  Series 3's marker also takes `Staffel 3` and `TCC 3`, as series 1's and 2's do.
+- A collection whose own searches all return nothing is a shop error of that collection
+  (`emptySearches`); the others are stored.
 - Series 3's name check refuses a name series 1 or 2 has at that number, and reads no title by
   name while their card list is not loaded; picture candidates and the name check stay series
   3 only. Step 4 (Turbo Attax) adds its marker (`Turbo Attax` and

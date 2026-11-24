@@ -45,7 +45,10 @@ export interface LaststickerSetOptions {
 /** How eBay is searched for a collection, and how its titles are told from other series'. */
 export interface EbayCollectionSettings {
   readonly queries: readonly string[];
-  /** A title naming the collection; a title matching several collections' gives no ids. */
+  /**
+   * A title naming the collection; a title matching several collections' gives no ids. No `g`
+   * or `y` flag (`test` would keep state between titles; refused at start).
+   */
   readonly series: RegExp;
 }
 

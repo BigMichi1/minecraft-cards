@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
+import type { CollectionId } from '../collections/ids';
 import {
   CARD_NAME_WORDS,
   COUNT_WORDS,
@@ -17,6 +18,13 @@ import {
 /** The fetcher tests read the series 3 fixture: series 3's searches and markers only. */
 const SERIES_3_ONLY = EBAY_COLLECTIONS.filter((c) => c.id === 'lego-minecraft-3');
 const S3_QUERIES = SERIES_3_ONLY[0]!.queries;
+/** Series 1's and 2's card lists, loaded, with no name series 3 has at the same number. */
+const OTHER_SERIES_NAMES = new Map([[cid('250'), 'Platzhalter']]);
+/** Catalog names: `names` for series 3, OTHER_SERIES_NAMES for the other series. */
+const s3Names =
+  (names: ReadonlyMap<CardId, string>) =>
+  (c: CollectionId): ReadonlyMap<CardId, string> =>
+    c === 'lego-minecraft-3' ? names : OTHER_SERIES_NAMES;
 import type { CardId } from '../cards/cardId';
 import { HttpError } from '../utils/http';
 import { parseSammelEntePage } from './sammelEnte';
@@ -884,8 +892,8 @@ function makeFetch(
     /** Token answer body; defaults to the fixture. */
     tokenBody?: string;
     searchStatus?: number;
-    /** Body of the n-th search request (0-based); defaults to the fixture. */
-    searchBody?: (n: number) => string;
+    /** Body of the n-th search request (0-based), and its URL; defaults to the fixture. */
+    searchBody?: (n: number, url: string) => string;
   } = {}
 ): {
   fetchFn: FetchFn;
@@ -902,7 +910,8 @@ function makeFetch(
         status: options.tokenStatus ?? 200,
       });
     }
-    const body = options.searchBody?.(state.searchUrls.length) ?? readFixture('ebay-search.json');
+    const body =
+      options.searchBody?.(state.searchUrls.length, url) ?? readFixture('ebay-search.json');
     state.searchUrls.push(url);
     return new Response(body, { status: options.searchStatus ?? 200 });
   };
@@ -1089,7 +1098,8 @@ describe('createEbayFetcher', () => {
         clientSecret: 's',
         fetchFn: fake.fetchFn,
         sleep: noSleep,
-        cardNames: () => {
+        cardNames: (c) => {
+          if (c !== 'lego-minecraft-3') return OTHER_SERIES_NAMES;
           reads++;
           return new Map([
             [cid('131'), 'Ghast'],
@@ -1141,7 +1151,7 @@ describe('createEbayFetcher', () => {
       }
     }
     expect(names.size).toBeGreaterThan(20);
-    const run = async (cardNames?: () => ReadonlyMap<CardId, string>) =>
+    const run = async (cardNames?: (c: CollectionId) => ReadonlyMap<CardId, string>) =>
       createEbayFetcher({
         collections: SERIES_3_ONLY,
         clientId: 'id',
@@ -1152,7 +1162,7 @@ describe('createEbayFetcher', () => {
       }).fetchListings();
     // The fixture's three titles without a series word are a promo pack, a Panini pick list and
     // a 2021 "Trading Cards" title: none is read by name.
-    expect(await run(() => names)).toEqual(await run());
+    expect(await run(s3Names(names))).toEqual(await run(s3Names(new Map())));
   });
 
   test('without catalog names, a title without a series word stays excluded', async () => {
@@ -2068,13 +2078,27 @@ describe('series markers (2026-11-24 probe)', () => {
     expect(classifyTitle('LEGO Minecraft Serie 1 - 68 - Yeti - Skin Karte')).toEqual({
       collection: 'lego-minecraft-1',
     });
-    expect(classifyTitle('LEGO Minecraft Serie 1 - 2 - Steve - Skin Karte')).toEqual({
-      collection: 'lego-minecraft-1',
-    });
-    // A series list stays one, also before "Karte".
-    expect(classifyTitle('LEGO Minecraft Serie 1 - 2 Karte 45')).toEqual({
-      exclusion: 'several collections',
-    });
+    for (const title of [
+      'LEGO Minecraft Serie 3 - 12 Karte Steve',
+      'LEGO Minecraft Serie 3 - 7 Karte',
+      'LEGO Minecraft Serie 3 / 45 Steve Karte',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
+    }
+    // A series list stays one, also before "Karte" and before a dash and a word; "Serie 1 - 2 -
+    // Steve" may be series 1 #2 or a list: unclear, so no ids.
+    for (const title of [
+      'LEGO Minecraft Serie 1 - 2 Karte 45',
+      'LEGO Minecraft Serie 1 & 2 - Karte 45',
+      'LEGO Minecraft Serie 1-2 - Karte 45',
+      'LEGO Minecraft Serie 1 und 2 - Trading Card 45',
+      'LEGO Minecraft Serie 1, 2 - Karte 45',
+      'LEGO Minecraft TCC 1 & 2 - Karte 45',
+      'LEGO Minecraft Serie 2 & 3 - Karte 12',
+      'LEGO Minecraft Serie 1 - 2 - Steve - Skin Karte',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ exclusion: 'several collections' });
+    }
   });
 
   test('Staffel 3 and TCC 3 name series 3', () => {
@@ -2177,6 +2201,22 @@ describe('the name rule across series', () => {
 });
 
 describe('one eBay run for every collection', () => {
+  /** A one-item search answer. */
+  const oneItem = (title: string) =>
+    JSON.stringify({
+      total: 1,
+      itemSummaries: [
+        {
+          itemId: 'v1|250000000001|0',
+          legacyItemId: '250000000001',
+          title,
+          itemWebUrl: 'https://www.ebay.de/itm/250000000001',
+          price: { value: '1.00', currency: 'EUR' },
+          buyingOptions: ['FIXED_PRICE'],
+        },
+      ],
+    });
+
   test("the default run searches every collection's queries once, in registry order", () => {
     expect([...EBAY_QUERIES]).toEqual([
       'lego minecraft karten serie 1',
@@ -2241,6 +2281,7 @@ describe('one eBay run for every collection', () => {
       clientSecret: 's',
       fetchFn: fake.fetchFn,
       sleep: noSleep,
+      cardNames: () => new Map(),
     }).fetchListings();
     expect(listings.map((l) => [l.collection, l.cardIds])).toEqual([
       ['lego-minecraft-1', ids('134')],
@@ -2249,5 +2290,60 @@ describe('one eBay run for every collection', () => {
     ]);
     // Without catalog names nothing was read by name; series 1 and 2 are named for the alert.
     expect(namesUnknown).toEqual(['lego-minecraft-1', 'lego-minecraft-2']);
+  });
+
+  test('without series 3, or without catalog names, no unloaded card list is reported', async () => {
+    const fake = makeFetch({
+      searchBody: () => oneItem('LEGO Minecraft Serie 1 Trading Card 4 - X - Skin Karte'),
+    });
+    const run = (over: Partial<Parameters<typeof createEbayFetcher>[0]>) =>
+      createEbayFetcher({
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        ...over,
+      }).fetchListings();
+    const s1 = EBAY_COLLECTIONS.filter((c) => c.id === 'lego-minecraft-1');
+    expect(
+      (await run({ collections: s1, cardNames: () => new Map() })).namesUnknown
+    ).toBeUndefined();
+    expect((await run({})).namesUnknown).toBeUndefined();
+  });
+
+  test('a collection whose own searches all return nothing is reported, the others read', async () => {
+    const fake = makeFetch({
+      searchBody: (_n, url) =>
+        ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'].includes(
+          new URL(url).searchParams.get('q') ?? ''
+        )
+          ? JSON.stringify({ total: 0, itemSummaries: [] })
+          : oneItem('LEGO Minecraft On Fire Karte 12'),
+    });
+    const result = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    }).fetchListings();
+    expect(result.emptySearches).toEqual(['lego-minecraft-1']);
+    expect(result.listings.map((l) => l.collection)).toEqual(['lego-minecraft-3']);
+  });
+
+  test('the fetcher places titles with the markers it is given', async () => {
+    const fake = makeFetch({
+      searchBody: () => oneItem('LEGO Minecraft FOO Karte 12'),
+    });
+    const s1 = EBAY_COLLECTIONS.find((c) => c.id === 'lego-minecraft-1')!;
+    const { listings } = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      collections: [{ ...s1, series: /\bFOO\b/i }],
+    }).fetchListings();
+    expect(listings.map((l) => [l.collection, l.cardIds])).toEqual([
+      ['lego-minecraft-1', ids('12')],
+    ]);
   });
 });

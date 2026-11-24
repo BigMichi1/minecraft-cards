@@ -16,7 +16,7 @@
  *
  * Usage: ./bin/mise run measure:laststicker [-- --collection lego-minecraft-1]
  *   --collection  the collection (default lego-minecraft-3): its set, its sammel-ente and
- *                 collect-it categories, eBay for series 3 only
+ *                 collect-it categories, and its own eBay searches when it has eBay settings
  *
  * Scans are downloaded at most one per 1500 ms (laststicker's pacing); a scan that cannot be
  * loaded (404: no scan) is listed, and sammel-ente's picture of that card stands in

@@ -361,10 +361,64 @@ describe('runCheck', () => {
       const names = alerts.filter((a) => a.includes('not read by card name'));
       expect(names).toHaveLength(1);
       expect(names[0]).toContain('LEGO Minecraft Serie 1');
-      expect(runManager.lastAlertAt('shop-names:ebay')).toBeDefined();
+      expect(runManager.lastAlertAt('shop-names:ebay:lego-minecraft-1')).toBeDefined();
+    });
+
+    test('a collection whose searches all came back empty keeps its listings, the others are stored', async () => {
+      await runCheck(
+        depsWith([shared([item('1', 'lego-minecraft-1'), item('3', 'lego-minecraft-3')])])
+      );
+      clock += 7 * 24 * 60 * 60 * 1000;
+      const s = await runCheck(
+        depsWith([shared([item('3', 'lego-minecraft-3')], { emptySearches: ['lego-minecraft-1'] })])
+      );
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/1')!.available).toBe(true);
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/3')!.lastSeenAt).toBe(clock);
+      expect(s.collections?.['lego-minecraft-1']?.ebay?.error).toContain('returned no items');
+      expect(s.shops.ebay?.error).toBeUndefined();
+      expect(runManager.lastAlertAt('shop-error:ebay:lego-minecraft-1')).toBeDefined();
+    });
+
+    test('an admin-mapped listing in a collection the run does not cover is left alone, with no foreign alert', async () => {
+      const s2: Listing = item('9', 'lego-minecraft-3');
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-2', [s2], clock);
+      listingManager.overrideCards(
+        s2.url,
+        { collection: 'lego-minecraft-2', ids: ids('12') },
+        clock
+      );
+      const before = listingManager.getByUrl(s2.url)!.lastSeenAt;
+      const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+      try {
+        await runCheck(depsWith([shared([s2])]));
+        expect(
+          warn.mock.calls.some((c: unknown[]) =>
+            String(c[0]).includes('does not cover, left unchanged')
+          )
+        ).toBe(true);
+      } finally {
+        warn.mockRestore();
+      }
+      expect(listingManager.getByUrl(s2.url)).toMatchObject({
+        collection: 'lego-minecraft-2',
+        lastSeenAt: before,
+      });
+      expect(alerts.filter((a) => a.includes('stored under another collection'))).toEqual([]);
+    });
+
+    test("in a shared run, another shop's listing under that URL still raises the foreign alert", async () => {
+      const url = 'https://www.ebay.de/itm/10';
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-1', [{ ...blue12, url }], clock);
+      await runCheck(depsWith([shared([item('10', 'lego-minecraft-3')])]));
+      const foreign = alerts.filter((a) => a.includes('stored under another collection'));
+      expect(foreign).toHaveLength(1);
+      expect(foreign[0]).toContain('stored by another shop or mapped during this run');
+      expect(runManager.lastAlertAt('shop-foreign:ebay:lego-minecraft-3')).toBeDefined();
     });
 
     test('a failure placing the listings is a shop error of every collection, not a run error', async () => {
+      await runCheck(depsWith([shared([item('1', 'lego-minecraft-1')])]));
+      clock += 7 * 24 * 60 * 60 * 1000;
       const read = spyOn(listingManager, 'getByUrl').mockImplementation(() => {
         throw new Error('database is locked');
       });
@@ -380,6 +434,8 @@ describe('runCheck', () => {
       expect(s.collections?.['lego-minecraft-1']?.ebay?.error).toContain('database is locked');
       expect(alerts.filter((a) => a.startsWith('Shop ebay check failed'))).toHaveLength(1);
       expect(runManager.lastAlertAt('shop-error:ebay')).toBeDefined();
+      // Nothing stored this run: the listing stays available.
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/1')!.available).toBe(true);
     });
 
     test('a moved listing alerts the new collection once, and not the old one again', async () => {

@@ -69,8 +69,9 @@ export interface FetchResult {
   /**
    * eBay items whose title cannot offer a single card of the collection it names: several series
    * or none (unless its catalog name confirms a series 3 number, see nameMatchedCardIds), a
-   * pick list, a number range, or a listing with variations. Not "without card number". sammel-ente and collect-it:
-   * card titles of another series than the category's.
+   * collection this run does not read (`other series`), a pick list, a number range, or a
+   * listing with variations. Not "without card number". sammel-ente and collect-it: card titles
+   * of another series than the category's.
    */
   skippedExcluded?: number;
   /** Product boxes or items without a usable link or title. */
@@ -85,6 +86,11 @@ export interface FetchResult {
    * was read by catalog name this run (nameMatchedCardIds). The runner alerts the admin.
    */
   namesUnknown?: readonly CollectionId[];
+  /**
+   * eBay: the collections whose own searches all returned no items. The runner stores nothing
+   * for them this run (a shop error of that collection), so their listings are not marked gone.
+   */
+  emptySearches?: readonly CollectionId[];
 }
 
 /**
@@ -104,7 +110,10 @@ export interface ShopFetcher {
  */
 export interface ShopAdapter extends ShopFetcher {
   readonly collection: CollectionId;
-  /** The collections a shared run covers (eBay): none twice, `collection` among them. */
+  /**
+   * Present means a shared run (eBay), even with one collection: keys by the shop alone, moves
+   * between collections. The collections it covers, none twice, `collection` among them.
+   */
   readonly collections?: readonly CollectionId[];
 }
 

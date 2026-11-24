@@ -196,6 +196,7 @@ describe('listingManager', () => {
         { status: 'confirmed', similarity: 0.93, picture: { cardId: cid('12'), similarity: 0.93 } },
         1500
       );
+      listingManager.markMismatchNoted(l!.id, 1600);
       listingManager.upsertFromRun('ebay', 'lego-minecraft-1', [item], 2000, {
         moveFromOtherCollections: true,
       });
@@ -207,6 +208,10 @@ describe('listingManager', () => {
         pictureCardId: null,
         rematchFrom: null,
       });
+      // An old mismatch note was the other collection's: a mismatch here is noted again.
+      expect(
+        db.select().from(listings).where(eq(listings.url, item.url)).get()!.mismatchNotedAt
+      ).toBeNull();
       // A bundle that moves is a bundle there.
       const bundle = { ...item, url: 'https://www.ebay.de/itm/4', cardIds: ids('12', '13') };
       listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [bundle], 1000);

@@ -39,7 +39,9 @@ Minecraft TCC 1`, the product number in the URL), which need their own parser (P
 (`lego minecraft karten serie 1`, `lego minecraft tcc serie 1`; `lego minecraft karten serie 2`,
 `lego minecraft boom bastic karte`; the series 3 ones below) and its series marker. The run
 searches all of them once, places each title by marker (exactly one collection; several or none
-give no ids, series 3's name check apart) and tags each listing with its collection. A probe of
+give no ids, series 3's name check apart) and tags each listing with its collection. A
+collection whose own searches all return nothing is a shop error of that collection (its stored
+listings are left alone); the others are stored as usual. A probe of
 the series 1 and 2 searches (536 items; 40 of them, without seller data, in
 `src/test/fixtures/ebay-search-series-1-2.json`) found:
 
@@ -138,11 +140,13 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
 - **One collection per title**: ids come only from a title that names exactly one collection's
   series (series 3: `Serie 3`, `Series 3`, `Serie3`, `Staffel 3`, `TCC 3`, `On Fire`), and are
   that collection's. A title naming several series gives no ids, as does a series list with one
-  series word (`Serie 1-2`, `Serie 1 und 2`, `Serie 2/3`; a card number after it, as in
-  `Serie 3 - 12 - Steve`, is no list): a mixed lot is ambiguous. A title with no series word gives no ids either,
-  even in the clear `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms
-  (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
-  single in the probe named its series.
+  series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 2/3`, and the unclear `Serie 1 - 2
+  - Steve`): a mixed lot is ambiguous. Only series numbers 1 to 3 form a list, so a number of
+two digits after a series (`Serie 3 - 12 - Steve`) is a card number. A title with no series
+word gives no ids either, even in the clear `Karten N - Name - Charakterkarte` form: series 1
+and 2 used the same forms
+(`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
+    single in the probe named its series.
 - **No series word, but the catalog name** (`nameMatchedCardIds`): a title without any series
   word still gives a card when the name of that number in the eBay adapter's collection (the
   catalog name: laststicker's, or the admin's for a manual card, read at the start of each eBay
@@ -175,7 +179,8 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     (2026-11-19) is read as #104, unless series 1 or 2 has the same name at that number: such a
     title cannot be placed and gives no id. The series 1 and 2 catalogs are read at the start of
     each eBay run; while one is not loaded yet (no laststicker sync so far), no title is read by
-    name at all, and the admin gets a throttled alert (`shop-names:ebay`).
+    name at all, and the admin gets a throttled alert (`shop-names:ebay:<collections>`). The
+    other series' names are checked whether the run reads those series or not.
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
   `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
   `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,

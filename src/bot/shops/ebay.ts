@@ -271,11 +271,13 @@ function hasRange(title: string): boolean {
 export type TitleExclusion =
   'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
 
-// A series word followed by a list of series numbers ("Serie 1-2", "Serie 1, 2, 3"). Only the
-// series numbers there are (1 to 3) count, and one followed by more digits or by a dash and a
-// name is no series: "Serie 3 - 2026" is a year, "Serie 3 - 12 - Steve" card #12.
+// A series word followed by a list of series numbers ("Serie 1-2", "Serie 1 & 2 - Karte 45").
+// Only the series numbers there are (1 to 3; raise it with a new numbered series) count, and
+// one followed by another digit is a card number or a year, not a series number: "Serie 3 -
+// 12 - Steve" is card #12, "Serie 3 - 2026" a year. "Serie 1 - 2 - Steve" counts as a list:
+// unclear, so no ids.
 const SERIES_LIST =
-  /\b(?:Series?|Staffel|TCC)\s*[1-3](?:\s*(?:[-–/&+,]|\bund\b|\band\b|\bu\.)\s*[1-3](?!\d|\s*[-–]\s*[A-Za-zÄÖÜäöüß]))+/i;
+  /\b(?:Series?|Staffel|TCC)\s*[1-3](?:\s*(?:[-–/&+,]|\bund\b|\band\b|\bu\.)\s*[1-3](?!\d))+/i;
 
 /**
  * The collection a title names by its series marker (`Serie 1`, `Boom-Bastic`, `On Fire`), or
@@ -488,7 +490,7 @@ export function nameMatchedCardIds(
 
 // The numbers a single-card title may carry without naming a card: the series ("Serie 3",
 // "Series3") and a year ("2026").
-const SERIES_OR_YEAR = /\b(?:Series?|Staffel)\s*\d+\b|\b(?:19|20)\d{2}\b/gi;
+const SERIES_OR_YEAR = /\b(?:Series?|Staffel|TCC)\s*\d+\b|\b(?:19|20)\d{2}\b/gi;
 
 /**
  * Whether a title naming no card id may still offer one series 3 single card, so its picture
@@ -497,8 +499,11 @@ const SERIES_OR_YEAR = /\b(?:Series?|Staffel)\s*\d+\b|\b(?:19|20)\d{2}\b/gi;
  * series and a year. A number the id patterns do not read is a count as often as a card
  * ("6 TradingCards ... 1 special Card"), so such a title is not left to the picture.
  */
-export function isPictureCandidate(title: string): boolean {
-  if (titleExclusion(title) !== null) return false;
+export function isPictureCandidate(
+  title: string,
+  collections: readonly EbayCollection[] = EBAY_COLLECTIONS
+): boolean {
+  if (titleExclusion(title, LEGACY_COLLECTION, collections) !== null) return false;
   if (ANY_COUNT_WORD.test(title)) return false;
   return !/\d/.test(title.replace(SERIES_OR_YEAR, ' '));
 }
@@ -877,13 +882,16 @@ export function createEbayFetcher(
       // Series 3's names, and the other series' to refuse a name they have at that number.
       const series3 = collections.some((c) => c.id === LEGACY_COLLECTION);
       const names = series3 ? namesOf(LEGACY_COLLECTION) : new Map<CardId, string>();
-      const others = collections
+      // Every other known series, read in this run or not, may have the name at that number.
+      const others = known
         .filter((c) => c.id !== LEGACY_COLLECTION)
         .map((c) => ({ id: c.id, names: namesOf(c.id) }));
       const otherNames = others.map((o) => o.names);
       // An other series' catalog not synced yet cannot rule a name out: no title read by name
       // (the runner alerts the admin, `namesUnknown`).
-      const namesUnknown = series3 ? others.filter((o) => o.names.size === 0) : [];
+      // Without catalog names at all, nothing is read by name anyway, and nothing is reported.
+      const namesUnknown =
+        series3 && opts.cardNames ? others.filter((o) => o.names.size === 0) : [];
       if (namesUnknown.length > 0) {
         logger.warn(
           `eBay: no title is read by catalog name while the card list of ${namesUnknown.map((c) => c.id).join(', ')} is not loaded`
@@ -902,9 +910,11 @@ export function createEbayFetcher(
       const pace = async () => {
         if (requests++ > 0) await sleep(delayMs);
       };
+      const perQuery = new Map<string, number>();
       for (const query of queries) {
         const items = await search(query, pace, truncated);
         itemsSeen += items.length;
+        perQuery.set(query, items.length);
         for (const item of items) {
           const url = listingUrl(item);
           const title = item.title;
@@ -947,9 +957,10 @@ export function createEbayFetcher(
             logger.debug(`eBay: skipped "${clip(title)}" (${reason})`);
             continue;
           }
-          const cardIds = extractCardIdsFromTitle(title, collection);
+          // Placed and not excluded above: the title forms read its numbers.
+          const cardIds = readCardIds(title);
           // isPictureCandidate is series 3's only (it needs a title naming series 3).
-          if (cardIds.length === 0 && isPictureCandidate(title)) {
+          if (cardIds.length === 0 && isPictureCandidate(title, known)) {
             // No card id, but one single card: passed on without ids for the picture to decide.
             byUrl.set(url, toListing(item, url, title, 'picture', LEGACY_COLLECTION));
             continue;
@@ -967,6 +978,11 @@ export function createEbayFetcher(
       if (itemsSeen === 0) {
         throw new ShopLayoutError(`eBay: all ${queries.length} searches returned no items`);
       }
+      // A collection whose own searches all came back empty is a query or API problem there:
+      // the runner leaves its stored listings alone (shop error of that collection).
+      const emptySearches = collections
+        .filter((c) => c.queries.every((q) => (perQuery.get(q) ?? 0) === 0))
+        .map((c) => c.id);
       return {
         listings: [...byUrl.values()],
         skippedNoId: noId.size,
@@ -974,6 +990,7 @@ export function createEbayFetcher(
         skippedInvalid: invalid.size,
         ...(truncated.length > 0 ? { truncated } : {}),
         ...(namesUnknown.length > 0 ? { namesUnknown: namesUnknown.map((c) => c.id) } : {}),
+        ...(emptySearches.length > 0 ? { emptySearches } : {}),
       };
     },
   };

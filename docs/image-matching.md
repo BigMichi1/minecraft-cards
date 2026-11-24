@@ -243,6 +243,38 @@ and "Lego Minecraft Karte Serie 3 Chast Ultra Rare" (best #131 Ghast at 0.644, r
 0.78). The only other-card decision was collect-it #59 against XXL1 (twins, above). Rejected
 decisions after the fixes: eBay 31 undecided; collect-it 44 undecided, 1 twin.
 
+## Measurement on laststicker scans (2026-11-24)
+
+Before laststicker's scans became the references (multi-collection step 2),
+`./bin/mise run measure:laststicker` compared them with the shop pictures of series 3, model
+`Xenova/dinov2-small`, the bot's values (`IMAGE_MATCH_THRESHOLD` 0.78, `DECISION_GAP` 0.02,
+`TWIN_SIMILARITY` 0.9):
+
+- **true pairs**: a single-card listing of card _n_ (title naming one card) against scan _n_;
+- **false pairs**: the same picture against the scan of the next card id that shop has;
+- **identification**: every picture against all scans (`identifyPicture`, rules 1 to 5 input).
+
+laststicker lists 251 cards; 17 scans answer 404 (LE3 to LE12, LE16 to LE19, LE21, LE22,
+XXL1), so 234 scans loaded. Those 17 cards keep the sammel-ente picture as their reference
+(`referenceFallbackShop`).
+
+| Shop        | Pairs | True min | True median | False max | Missed at 0.78 | Wrong at 0.78 | Decided | Wrong decisions |
+| ----------- | ----- | -------- | ----------- | --------- | -------------- | ------------- | ------- | --------------- |
+| sammel-ente | 234   | 0.510    | 0.900       | 0.796     | 19 (8 %)       | 4 (1.7 %)     | 215     | 0               |
+| collect-it  | 226   | 0.530    | 0.904       | 0.866     | 19 (8 %)       | 11 (4.9 %)    | 205     | 0               |
+| eBay        | 216   | 0.479    | 0.966       | 0.843     | 27 (13 %)      | 9 (4.2 %)     | 189     | 0               |
+
+- The wrong-card rate at 0.78 stays within what the earlier measurements accepted (blue-ocean
+  3 %, collect-it 5 %), and the identification made no wrong decision in 676 pictures (609
+  decided). No two scans are twins (none at 0.9 or more; XXL1, #59's twin, has no scan).
+- More true pairs stay below 0.78 than against sammel-ente's pictures (2 % in 2026-11-17): the
+  lowest are the set cards #192 to #207 (laststicker's scan differs from the shops' picture of
+  them), puzzle card #172 and the foil and ultra cards #8 and #87. They are alerted marked
+  "number unconfirmed", never sent as another card.
+- The fewest-errors points differ per shop (0.788, 0.799, 0.854) and buy fewer wrong pairs
+  only with more missed ones; no single value is better for all three. So the values stay:
+  0.78, 0.02 and 0.9.
+
 ## Data quality finding
 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",

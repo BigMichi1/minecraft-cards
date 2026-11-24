@@ -188,7 +188,8 @@ listing and files no report. The admin's "❌ Wrong" report DM carries "✅ Conf
 on), except that it keeps `availableSince`, so nobody who had the alert is notified again; it is
 refused when the cards or the picture (a fingerprint in the button) changed since the DM, or
 when the listing is a `mismatch` or `pending`: a confirmation is never compared again. Dismiss is `/admin clear`. Only the admin can press
-either.
+either. Both admin DMs attach the listing picture and reference like user alerts
+(`withPictures` in `interactions/adminActions.ts`), resent once without them when Discord refuses.
 
 **Puzzle cards** come from data: sammel-ente names them "Puzzlekarte <picture> <piece>"
 ("#154 Puzzlekarte Oberwelt 1"). A card is a puzzle card when its current name says so or any

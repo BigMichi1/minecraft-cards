@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { MessageFlags } from 'discord.js';
-import type { ButtonInteraction } from 'discord.js';
+import { EmbedBuilder } from 'discord.js';
+import type { ButtonInteraction, MessageCreateOptions } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
 import { cards, listingCards, listings, reports } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
@@ -10,6 +11,7 @@ import {
   adminListingEmbed,
   handleAdminConfirm,
   handleAdminDismiss,
+  withPictures,
 } from './adminActions';
 import { cid } from '../../test/cardIds';
 
@@ -254,6 +256,61 @@ describe('admin actions', () => {
     test('of a missing listing', async () => {
       await handleAdminDismiss(fakeButton('admin-dismiss:999999'), { adminId: ADMIN });
       expect(replies).toEqual([ephemeralText('This listing no longer exists.')]);
+    });
+  });
+
+  describe('withPictures', () => {
+    const PICTURE = 'https://www.collect-it.de/media/image/product/1/md/14.jpg';
+    const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    const message = (): MessageCreateOptions => ({
+      embeds: [new EmbedBuilder().setTitle('t').setImage(PICTURE)],
+    });
+    const download = async () => JPEG;
+
+    test('attaches the listing picture to the admin DM', async () => {
+      const sent: MessageCreateOptions[] = [];
+      await withPictures(async (m) => void sent.push(m), download)(message());
+      expect(sent).toHaveLength(1);
+      expect((sent[0]!.files as any[]).map((f) => f.name)).toEqual(['picture-1.jpg']);
+      expect((sent[0]!.embeds![0] as any).toJSON().image.url).toBe('attachment://picture-1.jpg');
+    });
+
+    test('a DM refused with pictures is resent once without them', async () => {
+      const sent: MessageCreateOptions[] = [];
+      let calls = 0;
+      await withPictures(async (m) => {
+        calls++;
+        if (calls === 1) throw new Error('413 Request entity too large');
+        sent.push(m);
+      }, download)(message());
+      expect(calls).toBe(2);
+      expect(sent[0]!.files).toBeUndefined();
+      expect((sent[0]!.embeds![0] as any).toJSON().image.url).toBe(PICTURE);
+    });
+
+    test('a DM that fails without pictures attached is not resent', async () => {
+      let calls = 0;
+      const send = withPictures(
+        async () => {
+          calls++;
+          throw new Error('DMs closed');
+        },
+        async () => {
+          throw new Error('404');
+        }
+      );
+      await expect(send(message())).rejects.toThrow('DMs closed');
+      expect(calls).toBe(1);
+    });
+
+    test('the error of the plain resend is the one raised', async () => {
+      let calls = 0;
+      const send = withPictures(async () => {
+        calls++;
+        throw new Error(calls === 1 ? 'too large' : 'DMs closed');
+      }, download);
+      await expect(send(message())).rejects.toThrow('DMs closed');
+      expect(calls).toBe(2);
     });
   });
 });

@@ -9,12 +9,15 @@ import {
   EmbedBuilder,
   MessageFlags,
 } from 'discord.js';
-import type { APIEmbedField, ButtonInteraction } from 'discord.js';
+import type { APIEmbedField, ButtonInteraction, MessageCreateOptions } from 'discord.js';
 import { normalizeCardId, type CardId } from '../cards/cardId';
 import { catalogManager } from '../database/catalogManager';
 import { imageFingerprint, listingManager, type StoredListing } from '../database/listingManager';
+import { downloadImage } from '../matcher/embedder';
 import { validUrl } from '../notify/messages';
-import { logError } from '../utils/logger';
+import { attachPictures, PictureRun, type DownloadFn } from '../notify/pictures';
+import logger, { logError } from '../utils/logger';
+import { errorMessage } from '../utils/async';
 import { replyWithError } from '../utils/interactionReply';
 import { clipText } from '../utils/messageLimit';
 
@@ -31,6 +34,32 @@ interface AdminDeps {
 }
 
 const ephemeral = (content: string) => ({ content, flags: MessageFlags.Ephemeral as const });
+
+type SendFn = (msg: MessageCreateOptions) => Promise<void>;
+
+const defaultDownload: DownloadFn = (url, maxBytes) => downloadImage(url, fetch, maxBytes);
+
+/**
+ * `send` with the embed pictures attached, as user alerts are: Discord's proxy shows no
+ * collect-it pictures, and the admin confirms by the picture. A picture that cannot be attached
+ * keeps its URL; a DM refused with pictures is resent once without them, and the error of that
+ * resend is the one raised.
+ */
+export function withPictures(send: SendFn, download: DownloadFn = defaultDownload): SendFn {
+  return async (message) => {
+    const attached = await attachPictures(message, new PictureRun(download));
+    if (attached === message) {
+      await send(message);
+      return;
+    }
+    try {
+      await send(attached);
+    } catch (error) {
+      logger.warn(`Admin DM with pictures failed, sending without: ${errorMessage(error)}`);
+      await send(message);
+    }
+  };
+}
 
 /**
  * The listing as the admin sees it: `lead` fields first, then cards, shop and URL, the listing

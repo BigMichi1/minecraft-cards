@@ -196,6 +196,28 @@ describe('/card', () => {
     expect(last()).toEqual({ content: 'eBay is not enabled.', embeds: [], components: [] });
   });
 
+  test("a shop the card's collection does not use is not enabled there", async () => {
+    catalogManager.syncCollection(
+      'lego-minecraft-2',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Oberwelt Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      1
+    );
+    const enabled = {
+      enabledShops: new Map([['lego-minecraft-2' as const, ['sammel-ente'] as const]]),
+    };
+    await execute(command('12', 'blue-ocean', 'lego-minecraft-2'), ctx(enabled));
+    expect(last()).toEqual({ content: 'blue-ocean is not enabled.', embeds: [], components: [] });
+  });
+
   test('a shop value that is no shop is refused', async () => {
     await execute(command('12', 'amazon'), ctx());
     expect(last()).toEqual({ content: 'Unknown shop: amazon', embeds: [], components: [] });

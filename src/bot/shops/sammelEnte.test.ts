@@ -126,7 +126,18 @@ describe('createSammelEnteFetcher', () => {
       },
     });
     expect(adapter.id).toBe('sammel-ente');
-    const { listings } = await adapter.fetchListings();
+    const result = await adapter.fetchListings();
+    const { listings } = result;
+    // The series filter keeps every series 3 card of the saved pages, and excludes none.
+    expect(result.skippedExcluded).toBeUndefined();
+    expect(listings).toHaveLength(
+      new Set(
+        [
+          ...parseSammelEntePage(readFixture('sammel-ente-p1.html'), null).listings,
+          ...parseSammelEntePage(readFixture('sammel-ente-p11.html'), null).listings,
+        ].map((l) => l.url)
+      ).size
+    );
     expect(calls).toHaveLength(11);
     expect(calls[0]).toBe('https://shop-sammel-ente.de/Minecraft/Serie-3/?p=1');
     expect(calls[10]).toBe('https://shop-sammel-ente.de/Minecraft/Serie-3/?p=11');
@@ -225,5 +236,20 @@ describe('series 1', () => {
       '<div class="card product-box"><a class="product-name" href="/a">LEGO Minecraft Serie1 | #001 Steve</a></div>' +
       '<div class="card product-box"><a class="product-name" href="/b">LEGO Minecraft Serie 1 TCC | #002 Alex</a></div>';
     expect(parseSammelEntePage(html, 'Serie 1').listings).toHaveLength(2);
+  });
+
+  test("another series on a later page is counted with the first page's", async () => {
+    const card = (n: number, s: number) =>
+      `<div class="card product-box"><a class="product-name" href="/c${n}">LEGO Minecraft Serie ${s} | #00${n} Card</a></div>`;
+    const page1 = `${card(1, 1)}<a href="?p=2">2</a>`;
+    const page2 = `${card(2, 1)}${card(3, 3)}`;
+    const { fetchFn } = fakeFetch({ '?p=1': page1, '?p=2': page2 });
+    const settings = {
+      category: 'https://shop-sammel-ente.de/Minecraft/Serie-1/',
+      series: 'Serie 1',
+    };
+    const result = await createSammelEnteFetcher(settings, fetchFn, { delayMs: 0 }).fetchListings();
+    expect(result.listings).toHaveLength(2);
+    expect(result.skippedExcluded).toBe(1);
   });
 });

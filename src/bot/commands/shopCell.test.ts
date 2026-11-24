@@ -214,6 +214,28 @@ describe('shopCells', () => {
     expect(at([unseen])).toMatchObject({ listing: unseen, stale: true, offers: [unseen] });
   });
 
+  test("staleness reads the listing's own collection from the run", () => {
+    // Seen by the latest check: fresh, if that check is the series 1 one.
+    const s1 = listing('ebay', ids('12'), {
+      ...euro(10),
+      collection: 'lego-minecraft-1',
+      lastSeenAt: T + 10,
+    });
+    const at = (summary: RunSummary) =>
+      shopCells(
+        ctx({
+          collection: 'lego-minecraft-1',
+          latest: { summary: { ...summary, startedAt: T + 10 }, newerUnreadable: false },
+          listings: [s1],
+        })
+      )(cid('12'), 'ebay');
+    expect(
+      at({ ...runOf([]), collections: { 'lego-minecraft-1': { ebay: { listings: 1 } } } })
+    ).toMatchObject({ stale: false });
+    // Only series 3's eBay ran: series 1's check did not, so the listing may be old.
+    expect(at(runOf(ALL))).toMatchObject({ stale: true });
+  });
+
   test('a stored listing of a shop whose check failed is stale', () => {
     const l = listing('blue-ocean', ids('12'));
     const c = shopCells(

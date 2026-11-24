@@ -108,6 +108,31 @@ describe('buildStockPage', () => {
     );
   });
 
+  test("another collection's page reads its own shop results from the run", () => {
+    const page = buildStockPage(
+      input({
+        collection: 'lego-minecraft-1',
+        latest: {
+          summary: {
+            startedAt: T,
+            finishedAt: T,
+            shops: { 'blue-ocean': { listings: 3 } },
+            collections: { 'lego-minecraft-1': { 'sammel-ente': { listings: 283 } } },
+            notified: 0,
+            dmFailures: 0,
+          },
+          newerUnreadable: false,
+        },
+        enabledShops: ['sammel-ente', 'collect-it'],
+        lastSuccess: { 'collect-it': null },
+      })
+    );
+    // series 3's blue-ocean result is no series 1 result.
+    expect(page.content.split('\n')[1]).toBe(
+      `Last check <t:${S}:R> · ✅ sammel-ente · ⚪ blue-ocean n/a · ⚠️ collect-it not checked, no success in 7 days · ⚪ eBay n/a`
+    );
+  });
+
   test('without a readable run every enabled cell is `?`', () => {
     const none = buildStockPage(
       input({ latest: { summary: undefined, newerUnreadable: false }, enabledShops: ['ebay'] })

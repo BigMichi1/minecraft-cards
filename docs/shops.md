@@ -52,8 +52,11 @@ changes or a new one is suggested.
     Otherwise `skippedNoId`, as are a URL with a card number but a title without `Nummer`, a
     category product with a single's picture but neither number (a renamed single), and a
     single's picture (series part and card number) at a URL of no known form.
-  - **Unreadable products** (excluded or without id) keep their stored listings (neither
-    refreshed nor marked gone), no listing of their collection is marked gone that run (a
+  - **Stock:** "Auf Lager" is in stock, "Nicht verfügbar" sold out (733 and 1 on 2026-11-24); a
+    card box showing neither is unreadable (`skippedInvalid`), never read as sold out.
+  - **Unreadable products** (excluded, without id or without a stock marker) keep their stored listings (neither
+    refreshed nor marked gone), no listing of their collection (nor of a series their title or
+    picture names) is marked gone that run (a
     product whose URL changed form leaves its old URL unseen), and they raise a throttled
     `shop-unreadable:blue-ocean` alert.
   - **The walk must read exactly the total** page 1 names (unique product URLs plus boxes
@@ -68,8 +71,12 @@ changes or a new one is suggested.
     sold out there (series 3 had 3 singles left on 2026-11-24): its listings are marked gone,
     with a throttled sold-out alert while the window still holds a run with listings. No recent
     successful run, an unreadable run row or entry, or a failed lookup keep it a shop error (the
-    alert says so); it clears once a check reads a card of it, or once no listing of it is
-    available any more (then it is stored empty, and its peak of 0 is readable from then on).
+    alert says so); it clears once a check reads a card of it, or, for a series read before, once no stored
+    listing of it is available any more (then it is stored empty, and its peak of 0 is readable
+    from then on). A series never read stays an alerted shop error. A series that had 5 or more listings
+    and vanished stays an alerted shop error too, its listings kept, until blue-ocean lists a
+    card of it again; if blue-ocean stopped selling it, remove that collection's
+    `shops['blue-ocean']` settings.
     eBay's empty searches are never read as a sell-out.
 
 ## eBay details

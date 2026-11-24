@@ -142,7 +142,10 @@ export interface BlueOceanPage {
   readonly isCategoryPage: boolean;
   readonly skippedNoId: number;
   readonly skippedExcluded: number;
+  /** Boxes without a link, and card boxes showing neither stock marker. */
   readonly skippedInvalid: number;
+  /** Boxes without a link (counted toward the walk total; they have no URL). */
+  readonly linkless: number;
   /**
    * The collections of which this page holds a product that could not be read (excluded, without
    * a card id, or a single picture at an unknown URL): not a sell-out of theirs.
@@ -169,8 +172,8 @@ const PRODUCT_TOTAL = />\s*(\d{1,3}(?:\.\d{3})+|\d+) Produkte\s*</;
  * `skippedExcluded` counts products whose title or picture contradicts their URL's collection;
  * `skippedNoId` series 1 and 2 singles whose title number is missing or differs from the URL's
  * number, a category URL without a card number, and products at an unknown URL with a single's
- * picture (`012_…_tcc-01_de.jpg`: a changed URL form); `skippedInvalid` boxes without a link. Every
- * excluded or id-less product's URL is in `unreadableUrls`. `collections` are the ones read; the
+ * picture (`012_…_tcc-01_de.jpg`: a changed URL form); `skippedInvalid` boxes without a link and card
+ * boxes showing neither stock marker. Every excluded, id-less or stock-less product's URL is in `unreadableUrls`. `collections` are the ones read; the
  * others of the registry still exclude by title and picture.
  */
 export function parseBlueOceanPage(
@@ -191,6 +194,7 @@ export function parseBlueOceanPage(
   let skippedNoId = 0;
   let skippedExcluded = 0;
   let skippedInvalid = 0;
+  let linkless = 0;
 
   $(LINK).each((_, el) => {
     const link = $(el);
@@ -201,6 +205,7 @@ export function parseBlueOceanPage(
     const href = link.attr('href');
     if (!href) {
       skippedInvalid++;
+      linkless++;
       return;
     }
     const url = new URL(href, ORIGIN).toString();
@@ -242,7 +247,9 @@ export function parseBlueOceanPage(
 
     if (contradicts(collection, title, picture, known)) {
       logger.warn(`blue-ocean: "${title}" (${href}) names another series than its URL's, skipping`);
+      // The series the title or picture names may have moved its product here: keep it too.
       unreadable.add(collection.id);
+      for (const other of collections) if (names(other, title, picture)) unreadable.add(other.id);
       unreadableUrls.push(url);
       skippedExcluded++;
       return;
@@ -263,6 +270,17 @@ export function parseBlueOceanPage(
       return;
     }
     const pictureId = numbered ? idFromNumberedPicture(picture) : idFromSeries3Picture(picture);
+    // Every card box says "Auf Lager" or "Nicht verfügbar" (2026-11-24: 733 and 1); one with
+    // neither (a reworded label, a box the selector misses) is unreadable, not sold out.
+    const boxText = box.text();
+    const inStock = boxText.includes('Auf Lager');
+    if (!inStock && !boxText.includes('Nicht verfügbar')) {
+      logger.warn(`blue-ocean: "${title}" (${href}) shows no stock marker, skipping`);
+      unreadable.add(collection.id);
+      unreadableUrls.push(url);
+      skippedInvalid++;
+      return;
+    }
 
     listings.push({
       shop: 'blue-ocean',
@@ -278,7 +296,7 @@ export function parseBlueOceanPage(
           .first()
           .attr('aria-label')
       ),
-      available: box.text().includes('Auf Lager'),
+      available: inStock,
       format: 'shop',
       auctionEndsAt: null,
       idConflict: pictureId !== null && pictureId !== cardId,
@@ -293,6 +311,7 @@ export function parseBlueOceanPage(
     skippedNoId,
     skippedExcluded,
     skippedInvalid,
+    linkless,
     unreadable,
     unreadableUrls,
     productUrls,
@@ -319,6 +338,7 @@ export function createBlueOceanFetcher(
       let skippedNoId = 0;
       let skippedExcluded = 0;
       let skippedInvalid = 0;
+      let linkless = 0;
       const unreadable = new Set<CollectionId>();
       let total: number | null = null;
       let exhausted = false;
@@ -354,6 +374,7 @@ export function createBlueOceanFetcher(
         skippedNoId += parsed.skippedNoId;
         skippedExcluded += parsed.skippedExcluded;
         skippedInvalid += parsed.skippedInvalid;
+        linkless += parsed.linkless;
         for (const c of parsed.unreadable) unreadable.add(c);
       }
       if (!exhausted) {
@@ -361,7 +382,7 @@ export function createBlueOceanFetcher(
       }
       // A walk reading fewer or more products than the total missed some (an empty page in the
       // middle, products shifting between pages): its gone listings would be wrong.
-      const read = seen.size + skippedInvalid;
+      const read = seen.size + linkless;
       if (read !== total) {
         throw new ShopLayoutError(
           `blue-ocean: the walk read ${read} products, the category names ${total}`

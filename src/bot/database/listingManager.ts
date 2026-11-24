@@ -565,19 +565,14 @@ export const listingManager = {
       .run();
   },
 
-  /** How many listings of `shop` in `collection` are available now. */
-  availableCount(shop: ShopId, collection: CollectionId): number {
-    return db
-      .select({ id: listings.id })
+  /** How many listings of `shop` in `collection` are stored, and how many of them available. */
+  listingCounts(shop: ShopId, collection: CollectionId): { stored: number; available: number } {
+    const rows = db
+      .select({ available: listings.available })
       .from(listings)
-      .where(
-        and(
-          eq(listings.shop, shop),
-          eq(listings.collection, collection),
-          eq(listings.available, true)
-        )
-      )
-      .all().length;
+      .where(and(eq(listings.shop, shop), eq(listings.collection, collection)))
+      .all();
+    return { stored: rows.length, available: rows.filter((r) => r.available).length };
   },
 
   getByUrl(url: string): StoredListing | undefined {

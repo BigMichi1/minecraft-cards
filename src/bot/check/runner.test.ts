@@ -515,7 +515,7 @@ describe('runCheck', () => {
         const s = await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
         expect(listingManager.getByUrl(last.url)!.available).toBe(true);
         expect(s.shops['blue-ocean']?.error).toBe(
-          'no card of LEGO Minecraft Serie 3 "On Fire" on any page (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or no listing of it is available)'
+          'no card of LEGO Minecraft Serie 3 "On Fire" on any page (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or no stored listing of it is available)'
         );
 
         const again = card('4', 'lego-minecraft-3');
@@ -589,8 +589,19 @@ describe('runCheck', () => {
         expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', clock)).toBe(0);
       });
 
+      test('a collection never read before stays a shop error with an alert, never silently sold out', async () => {
+        const s = await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
+        expect(s.shops['blue-ocean']?.error).toContain('no readable recent listing counts');
+        expect(runManager.lastAlertAt('shop-error:blue-ocean:lego-minecraft-3')).toBeDefined();
+        clock += 60 * 60 * 1000;
+        await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
+        expect(
+          runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', clock)
+        ).toBeUndefined();
+      });
+
       test('a failing available-listing count keeps it a shop error', async () => {
-        const count = spyOn(listingManager, 'availableCount').mockImplementation(() => {
+        const count = spyOn(listingManager, 'listingCounts').mockImplementation(() => {
           throw new Error('database is locked');
         });
         const logged = spyOn(logger, 'log').mockImplementation(() => logger);

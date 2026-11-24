@@ -483,8 +483,8 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   shop error of that collection whose listings stay untouched, unless blue-ocean says it may have
   sold out (`mayHaveSoldOut`: no product of it seen but unreadable), nothing is placed in it and
   its recent peak was below 5 listings (`EMPTY_COLLECTION_FLOOR`; no recent successful run, an
-  unreadable run row or entry, or a failed lookup keep it an error, unless no listing of it is
-  available any more): then it sold out, is stored
+  unreadable run row or entry, or a failed lookup keep it an error, unless it was read before and
+  no stored listing of it is available any more): then it sold out, is stored
   empty and the admin is told (`shop-soldout`). eBay never reports a sell-out.
 
 ## Left to the builder

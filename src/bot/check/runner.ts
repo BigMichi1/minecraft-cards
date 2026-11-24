@@ -635,10 +635,15 @@ function recentPeak(
   }
 }
 
-/** True when `shop` has no available listing in `collection`; a failed lookup is logged, false. */
+/**
+ * True when `shop` has stored listings in `collection` and none is available: a collection it
+ * read before that has nothing left to lose. A collection it never read is not (its first empty
+ * walk must be alerted). A failed lookup is logged, false.
+ */
 function availableNone(shop: ShopId, collection: CollectionId): boolean {
   try {
-    return listingManager.availableCount(shop, collection) === 0;
+    const counts = listingManager.listingCounts(shop, collection);
+    return counts.stored > 0 && counts.available === 0;
   } catch (error) {
     logError(`shop ${shop} (${collection}): counting the available listings failed`, error);
     return false;
@@ -762,8 +767,8 @@ async function checkShop(
     const peak = soldOutPossible
       ? recentPeak(adapter.id, collection, deps.now(), 'kept as a shop error', true)
       : undefined;
-    // Without readable recent counts, a collection with no available listing left has nothing to
-    // lose: it is stored empty, so its peak (0) is readable again from the next run on.
+    // Without readable recent counts, a collection read before with no available listing left
+    // has nothing to lose: it is stored empty, so its peak (0) is readable again from then on.
     const nothingAvailable =
       soldOutPossible && peak === undefined && availableNone(adapter.id, collection);
     const soldOut =
@@ -775,7 +780,7 @@ async function checkShop(
           ? `all searches of ${collectionName(collection)} returned no usable items`
           : `no card of ${collectionName(collection)} on any page`) +
         (soldOutPossible && peak === undefined
-          ? ' (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or no listing of it is available)'
+          ? ' (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or no stored listing of it is available)'
           : '');
       const homes = [...(placement?.homes.values() ?? [])];
       const dropped = homes.filter((c) => c === collection).length;

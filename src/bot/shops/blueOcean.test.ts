@@ -73,6 +73,7 @@ describe('parseBlueOceanPage', () => {
       skippedNoId: 0,
       skippedExcluded: 0,
       skippedInvalid: 0,
+      linkless: 0,
       unreadable: new Set(),
       unreadableUrls: [],
       productUrls: [],
@@ -242,8 +243,24 @@ describe('parseBlueOceanPage across collections', () => {
         skippedNoId: 0,
       });
       // The URL's collection is not read as sold out, and the listing is kept.
-      expect(parsed.unreadable.size).toBe(1);
+      expect(parsed.unreadable.size).toBeGreaterThan(0);
       expect(parsed.unreadableUrls).toHaveLength(1);
+    }
+  });
+
+  test('an excluded product keeps the series it names from marking listings gone too', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const parsed = parseBlueOceanPage(
+        box(
+          '/nr.-12-steve-lego-minecraft-tcc-on-fire-2dd00088-12',
+          'Nr. 12 Steve LEGO Minecraft TCC 1 "On Fire"',
+          'https://x.test/012_lego_minecraft_tcc-01_de.jpg'
+        )
+      );
+      expect([...parsed.unreadable].sort()).toEqual(['lego-minecraft-1', 'lego-minecraft-3']);
+    } finally {
+      warn.mockRestore();
     }
   });
 
@@ -362,6 +379,21 @@ describe('parseBlueOceanPage across collections', () => {
       expect(parsed).toMatchObject({ listings: [], skippedNoId: 1, skippedExcluded: 0 });
       expect([...parsed.unreadable]).toEqual(['lego-minecraft-1']);
       expect(parsed.unreadableUrls).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a card box with neither stock marker is unreadable, not sold out', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const parsed = parseBlueOceanPage(
+        box(`${S2}/nummer-012-i-steve`, 'Nummer 012 I Steve', 'x.jpg', 'Sofort lieferbar')
+      );
+      expect(parsed).toMatchObject({ listings: [], skippedInvalid: 1, linkless: 0 });
+      expect([...parsed.unreadable]).toEqual(['lego-minecraft-2']);
+      expect(parsed.unreadableUrls).toHaveLength(1);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('no stock marker'))).toBe(true);
     } finally {
       warn.mockRestore();
     }

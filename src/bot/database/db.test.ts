@@ -250,14 +250,18 @@ describe('database schema', () => {
 
       expect(
         old
-          .query('SELECT collection, card_id, name, reference_image_url, puzzle_seen FROM cards')
+          .query(
+            'SELECT collection, card_id, name, reference_image_url, shop_image_url, puzzle_seen FROM cards'
+          )
           .all()
       ).toEqual([
         {
           collection: 'lego-minecraft-3',
           card_id: '12',
           name: 'Squid',
-          reference_image_url: 'https://s/12.jpg',
+          // The sammel-ente picture, moved by 0007: a laststicker card's reference is its scan.
+          reference_image_url: null,
+          shop_image_url: 'https://s/12.jpg',
           puzzle_seen: 1,
         },
       ]);
@@ -347,6 +351,59 @@ describe('database schema', () => {
       ).toEqual([
         { card_id: '12', puzzle_seen: 0, source: 'laststicker' },
         { card_id: '154', puzzle_seen: 1, source: 'laststicker' },
+      ]);
+    } finally {
+      old.close();
+      rmSync(before, { recursive: true, force: true });
+    }
+  });
+  test('migration 0007 moves the shop picture of laststicker cards to shop_image_url', () => {
+    const dir = path.join(process.cwd(), 'src/bot/database/migrations');
+    const journal = JSON.parse(readFileSync(path.join(dir, 'meta/_journal.json'), 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) =>
+      readFileSync(path.join(dir, `${e.tag}.sql`), 'utf8').includes('`shop_image_url`')
+    );
+    expect(at).toBeGreaterThan(0);
+    const before = mkdtempSync(path.join(tmpdir(), 'migrations-'));
+    mkdirSync(path.join(before, 'meta'));
+    writeFileSync(
+      path.join(before, 'meta/_journal.json'),
+      JSON.stringify({ ...journal, entries: journal.entries.slice(0, at) })
+    );
+    for (const e of journal.entries.slice(0, at)) {
+      copyFileSync(path.join(dir, `${e.tag}.sql`), path.join(before, `${e.tag}.sql`));
+    }
+    const old = new Database(':memory:');
+    const oldDb = drizzle(old, { casing: 'snake_case' });
+    try {
+      migrate(oldDb, { migrationsFolder: before });
+      old.run(
+        `INSERT INTO cards (collection, card_id, type, reference_image_url, source, updated_at) VALUES
+         ('lego-minecraft-3', '1', 'base', 'https://shop-sammel-ente.de/a.jpg', 'laststicker', 1),
+         ('lego-minecraft-3', '229', 'base', 'https://m/x.jpg', 'manual', 1)`
+      );
+      migrate(oldDb, { migrationsFolder: dir });
+      expect(
+        old
+          .query(
+            'SELECT card_id, reference_image_url, shop_image_url, laststicker_scan_missing_at FROM cards ORDER BY card_id'
+          )
+          .all()
+      ).toEqual([
+        {
+          card_id: '1',
+          reference_image_url: null,
+          shop_image_url: 'https://shop-sammel-ente.de/a.jpg',
+          laststicker_scan_missing_at: null,
+        },
+        {
+          card_id: '229',
+          reference_image_url: 'https://m/x.jpg',
+          shop_image_url: null,
+          laststicker_scan_missing_at: null,
+        },
       ]);
     } finally {
       old.close();

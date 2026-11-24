@@ -1,4 +1,5 @@
 import type { CardId } from '../cards/cardId';
+import type { ShopId } from '../shops/types';
 
 /**
  * Collection ids and types, kept free of runtime imports so the database schema can use them.
@@ -35,6 +36,11 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   readonly starterChecklist?: string;
   /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */
   readonly laststicker?: { readonly set: string };
+  /**
+   * The shop whose listing picture is a card's reference when laststicker has no scan of it (404),
+   * or a manual card has no picture of the admin's; none: such a card has no reference.
+   */
+  readonly referenceFallbackShop?: ShopId;
 }
 
 /**

@@ -802,7 +802,10 @@ describe('runCheck', () => {
       runCheck(depsWith(shops, { embedder: angled, ...over }));
     beforeEach(() => {
       // A catalog every card of which has a reference: the set is complete (R1).
-      catalogManager.applyImport('lego-minecraft-3', ids('12', '45', '77', '160'));
+      catalogManager.applyImport({
+        collection: 'lego-minecraft-3',
+        ids: ids('12', '45', '77', '160'),
+      });
     });
     /** The admin alerts but the one for the sold-out references. */
     const notes = () => alerts.filter((a) => !a.startsWith('Shop sammel-ente: all'));
@@ -929,7 +932,11 @@ describe('runCheck', () => {
 
     test('an admin-mapped listing is never identified again', async () => {
       await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])]);
-      listingManager.overrideCards(blue12.url, 'lego-minecraft-3', [cid('12')], clock);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        clock
+      );
       const before = embedded.length;
       await run([ok('sammel-ente', references), ok('blue-ocean', [blueAt(61)])]);
       expect(embedded.length).toBe(before);
@@ -948,7 +955,10 @@ describe('runCheck', () => {
         ...reference(id, name),
         imageUrl: leer,
       });
-      catalogManager.applyImport('lego-minecraft-3', ids('12', '45', '77', '160', 'LE10', 'LE11'));
+      catalogManager.applyImport({
+        collection: 'lego-minecraft-3',
+        ids: ids('12', '45', '77', '160', 'LE10', 'LE11'),
+      });
       userManager.setList('u1', 'lego-minecraft-3', '12, LE10');
       const blueLE10: Listing = {
         ...blue12,
@@ -1119,7 +1129,10 @@ describe('runCheck', () => {
       });
 
       test('a catalog card without a usable reference: no picture-only card, no mismatch', async () => {
-        catalogManager.applyImport('lego-minecraft-3', ids('12', '45', '77', '99', '160'));
+        catalogManager.applyImport({
+          collection: 'lego-minecraft-3',
+          ids: ids('12', '45', '77', '99', '160'),
+        });
         const candidate = candidateAt(58);
         await run([
           ok('sammel-ente', references),
@@ -1178,10 +1191,10 @@ describe('runCheck', () => {
       test('placeholder and shared references are named once per run (R10)', async () => {
         const warn = spyOn(logger, 'warn');
         try {
-          catalogManager.applyImport(
-            'lego-minecraft-3',
-            ids('12', '45', '77', '160', 'LE10', 'LE11')
-          );
+          catalogManager.applyImport({
+            collection: 'lego-minecraft-3',
+            ids: ids('12', '45', '77', '160', 'LE10', 'LE11'),
+          });
           const leer = (id: string): Listing => ({
             ...reference(id, `C${id}`),
             imageUrl: 'https://ente/mnc3_leer.jpg',
@@ -1259,7 +1272,11 @@ describe('runCheck', () => {
     test('/admin map after a mismatch notifies exactly once on the next run (T5)', async () => {
       const shops = () => [ok('sammel-ente', references), ok('blue-ocean', [blueAt(60)])];
       expect((await run(shops())).notified).toBe(0);
-      listingManager.overrideCards(blue12.url, 'lego-minecraft-3', [cid('12')], clock);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        clock
+      );
       expect((await run(shops())).notified).toBe(1);
       expect((await run(shops())).notified).toBe(0);
     });

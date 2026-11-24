@@ -105,6 +105,9 @@ describe('userManager', () => {
     expect(userManager.getList('u1', OTHER)).toEqual(ids('12'));
     userManager.setList('u1', 'lego-minecraft-3', '1');
     expect(userManager.getList('u1', OTHER)).toEqual(ids('12'));
+    userManager.addToList('u1', 'lego-minecraft-3', '45');
+    expect(userManager.getList('u1', OTHER)).toEqual(ids('12'));
+    expect(userManager.getList('u1', 'lego-minecraft-3')).toEqual(ids('1', '45'));
     userManager.removeFromList('u1', 'lego-minecraft-3', '12');
     expect(userManager.getList('u1', OTHER)).toEqual(ids('12'));
     userManager.clearList('u1', 'lego-minecraft-3');

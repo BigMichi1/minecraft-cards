@@ -19,6 +19,15 @@ export function collectionById(id: CollectionId): CollectionDefinition {
   return DEFINITIONS[id];
 }
 
+/**
+ * The display name of a collection, or its id when no definition exists (a row the database
+ * holds for an id this build does not define).
+ */
+export function collectionName(id: CollectionId): string {
+  const known: Partial<Record<string, CollectionDefinition>> = DEFINITIONS;
+  return known[id]?.name ?? id;
+}
+
 /** Slash command choices for the `collection` option. */
 export function collectionChoices(): { name: string; value: CollectionId }[] {
   return COLLECTIONS.map((c) => ({ name: c.name, value: c.id }));

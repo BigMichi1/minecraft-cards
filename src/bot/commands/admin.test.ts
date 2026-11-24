@@ -22,6 +22,8 @@ import { userManager } from '../database/userManager';
 import type { Listing } from '../shops/types';
 import logger from '../utils/logger';
 import { data, execute as adminExecute, formatSummary, type AdminContext } from './admin';
+import { importStore } from '../interactions/catalogImport';
+import type { CollectionId } from '../collections/ids';
 import { cid, ids } from '../../test/cardIds';
 
 const blue12: Listing = {
@@ -178,9 +180,42 @@ describe('/admin', () => {
         }),
         ctx
       );
-      expect(spy.mock.calls[0]!.slice(0, 3)).toEqual([blue12.url, 'lego-minecraft-3', ids('8')]);
+      expect(spy.mock.calls[0]!.slice(0, 2)).toEqual([
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('8') },
+      ]);
+      expect(lastReply().content).toBe('Listing now maps to LEGO Minecraft Serie 3 "On Fire": 8');
     } finally {
       spy.mockRestore();
+    }
+  });
+
+  test('map refuses to move a listing to another collection, naming the one it is in', async () => {
+    listingManager.upsertFromRun('blue-ocean', 'other-set' as CollectionId, [blue12], 1000);
+    await adminExecute(fakeAdmin(undefined, 'map', { url: blue12.url, cards: '8' }), ctx);
+    expect(lastReply().content).toBe(
+      'Nothing changed: the listing is in collection other-set; moving a listing to another collection is not supported yet.'
+    );
+    expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+      collection: 'other-set',
+      cardIds: ids('12'),
+      manualOverride: false,
+    });
+  });
+
+  test('catalog import previews and stores the chosen collection', async () => {
+    const put = spyOn(importStore, 'put');
+    const preview = spyOn(catalogManager, 'previewImport');
+    try {
+      await adminExecute(fakeAdmin('catalog', 'import', { list: '1, 2' }), ctx);
+      expect(put.mock.calls[0]).toEqual(['lego-minecraft-3', ids('1', '2')]);
+      expect(preview.mock.calls[0]).toEqual([
+        { collection: 'lego-minecraft-3', ids: ids('1', '2') },
+      ]);
+      expect(lastReply().content).toStartWith('Collection: LEGO Minecraft Serie 3 "On Fire"\n');
+    } finally {
+      put.mockRestore();
+      preview.mockRestore();
     }
   });
 

@@ -72,8 +72,41 @@ describe('catalogManager', () => {
       { cardId: cid('999'), name: 'Changed', imageUrl: null },
     ]);
     expect(catalogManager.getCard(OTHER, cid('999'))?.name).toBe('Other');
-    catalogManager.applyImport('lego-minecraft-3', ids('1'));
+    catalogManager.applyImport({ collection: 'lego-minecraft-3', ids: ids('1') });
     expect(catalogManager.knownIds(OTHER)).toEqual(new Set(ids('999')));
+  });
+
+  test("previewImport counts only the collection's own wanted entries", () => {
+    catalogManager.seedIfEmpty();
+    db.insert(users).values({ discordId: 'u1', createdAt: 1 }).run();
+    db.insert(wantedCards)
+      .values({ discordId: 'u1', collection: OTHER, cardId: cid('LE22') })
+      .run();
+    const p = catalogManager.previewImport({
+      collection: 'lego-minecraft-3',
+      ids: [...base228, ...le1to21, cid('XXL1')],
+    });
+    expect(p.removed).toEqual(ids('LE22'));
+    expect(p.removedStillWanted).toEqual([]);
+  });
+
+  test("a picture another collection also uses is still this collection's reference", () => {
+    catalogManager.seedIfEmpty();
+    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      { cardId: cid('12'), name: 'Squid', imageUrl: 'https://shared/12.jpg' },
+    ]);
+    db.insert(cards)
+      .values({
+        collection: OTHER,
+        cardId: cid('12'),
+        type: 'base',
+        referenceImageUrl: 'https://shared/12.jpg',
+        updatedAt: 1,
+      })
+      .run();
+    expect(catalogManager.referenceCatalog('lego-minecraft-3').usable).toEqual([
+      { cardId: cid('12'), referenceImageUrl: 'https://shared/12.jpg', puzzle: false },
+    ]);
   });
 
   test('seedIfEmpty seeds the starter catalog once', () => {
@@ -94,13 +127,13 @@ describe('catalogManager', () => {
       .run();
 
     const next = [...base228, ...le1to21, ...ids('LE23', 'XXL1')];
-    const p = catalogManager.previewImport('lego-minecraft-3', next);
+    const p = catalogManager.previewImport({ collection: 'lego-minecraft-3', ids: next });
     expect(p.added).toEqual([cid('LE23')]);
     expect(p.removed).toEqual([cid('LE22')]);
     expect(p.removedStillWanted).toEqual([{ cardId: cid('LE22'), users: 1 }]);
     expect(p.counts).toEqual({ base: 228, le: 22, xxl: 1 });
 
-    catalogManager.applyImport('lego-minecraft-3', next);
+    catalogManager.applyImport({ collection: 'lego-minecraft-3', ids: next });
     expect(catalogManager.knownIds('lego-minecraft-3').has(cid('LE22'))).toBe(false);
     expect(catalogManager.knownIds('lego-minecraft-3').has(cid('LE23'))).toBe(true);
     expect(userWanted('u1')).toContain('LE22');

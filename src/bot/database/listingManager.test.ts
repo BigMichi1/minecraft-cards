@@ -124,7 +124,11 @@ describe('listingManager', () => {
 
     test('overrideCards sets the collection, and a rescrape keeps cards and collection', () => {
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
-      const mapped = listingManager.overrideCards(blue12.url, 'lego-minecraft-3', ids('45'), 2000);
+      const mapped = listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('45') },
+        2000
+      );
       expect(mapped).toMatchObject({ collection: 'lego-minecraft-3', cardIds: ids('45') });
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 3000);
       expect(listingManager.getByUrl(blue12.url)).toMatchObject({
@@ -237,7 +241,11 @@ describe('listingManager', () => {
   describe('admin mapping', () => {
     test('/admin map cards survive the next scrape of the same listing', () => {
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 6000);
-      listingManager.overrideCards(blue12.url, 'lego-minecraft-3', ids('8'), 6500);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('8') },
+        6500
+      );
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 7000);
       expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual(ids('8'));
     });
@@ -248,14 +256,22 @@ describe('listingManager', () => {
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.recordNotified('u1', l.id, l.availableSince!);
       listingManager.setOnHold(l.id);
-      listingManager.overrideCards(blue12.url, 'lego-minecraft-3', ids('12'), 7500);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('12') },
+        7500
+      );
       expect(listingManager.getById(l.id)!.onHold).toBe(false);
       expect(listingManager.pendingNotifications().get('u1')).toHaveLength(1);
     });
 
     test('a mapped listing stays confirmed when its picture changes', () => {
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
-      listingManager.overrideCards(blue12.url, 'lego-minecraft-3', ids('12'), 1500);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: ids('12') },
+        1500
+      );
       listingManager.upsertFromRun(
         'blue-ocean',
         'lego-minecraft-3',
@@ -387,8 +403,7 @@ describe('listingManager', () => {
     db.update(reports).set({ resolvedAt: null }).run();
     const o = listingManager.overrideCards(
       blue12.url,
-      'lego-minecraft-3',
-      [cid('5'), cid('3')],
+      { collection: 'lego-minecraft-3', ids: [cid('5'), cid('3')] },
       9000
     )!;
     expect(o).toMatchObject({
@@ -398,7 +413,9 @@ describe('listingManager', () => {
       availableSince: 9000,
     });
     expect(db.select().from(reports).get()!.resolvedAt).toBe(9000);
-    expect(listingManager.overrideCards('nope', 'lego-minecraft-3', [cid('1')], 1)).toBeUndefined();
+    expect(
+      listingManager.overrideCards('nope', { collection: 'lego-minecraft-3', ids: [cid('1')] }, 1)
+    ).toBeUndefined();
     expect(listingManager.clearHold('nope')).toBeUndefined();
   });
 
@@ -487,7 +504,11 @@ describe('listingManager', () => {
     const l = listingManager.getByUrl(blue12.url)!;
     listingManager.setMatch(l.id, { status: 'unconfirmed', similarity: 0.4, picture: null }, 1500);
     expect(
-      listingManager.overrideCards(blue12.url, 'lego-minecraft-3', [cid('12')], 2000)
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        2000
+      )
     ).toMatchObject({
       matchStatus: 'confirmed',
       similarity: null,
@@ -612,7 +633,11 @@ describe('listingManager', () => {
 
     test('an admin-mapped listing may be confirmed whatever its status', () => {
       const l = unconfirmed12();
-      listingManager.overrideCards(blue12.url, 'lego-minecraft-3', [cid('12')], 2000);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        2000
+      );
       db.update(listings).set({ matchStatus: 'pending' }).where(eq(listings.id, l.id)).run();
       expect(confirm(l.id, ['12']).kind).toBe('confirmed');
     });
@@ -858,7 +883,11 @@ describe('listingManager', () => {
         1001
       );
       expect(
-        listingManager.overrideCards(blue12.url, 'lego-minecraft-3', [cid('45')], 2000)
+        listingManager.overrideCards(
+          blue12.url,
+          { collection: 'lego-minecraft-3', ids: [cid('45')] },
+          2000
+        )
       ).toMatchObject({
         cardIds: ['45'],
         matchStatus: 'confirmed',
@@ -867,7 +896,11 @@ describe('listingManager', () => {
       });
 
       listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 1000);
-      listingManager.overrideCards(candidate.url, 'lego-minecraft-3', [cid('12')], 2000);
+      listingManager.overrideCards(
+        candidate.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        2000
+      );
       listingManager.upsertFromRun(
         'ebay',
         'lego-minecraft-3',
@@ -883,7 +916,11 @@ describe('listingManager', () => {
 
     test('setMatch on a mapped candidate never touches its cards', () => {
       listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [candidate], 1000);
-      listingManager.overrideCards(candidate.url, 'lego-minecraft-3', [cid('12')], 2000);
+      listingManager.overrideCards(
+        candidate.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        2000
+      );
       listingManager.setMatch(
         stored().id,
         { status: 'unconfirmed', similarity: null, picture: null },
@@ -915,7 +952,11 @@ describe('listingManager', () => {
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
       listingManager.setMatch(l.id, mismatch45, 1001);
-      listingManager.overrideCards(blue12.url, 'lego-minecraft-3', [cid('12')], 1500);
+      listingManager.overrideCards(
+        blue12.url,
+        { collection: 'lego-minecraft-3', ids: [cid('12')] },
+        1500
+      );
       expect(listingManager.pendingMismatchNotes()).toEqual([]);
     });
 

@@ -9,6 +9,7 @@ import {
 import { parseChecklist } from '../cards/starterCatalog';
 import { COLLECTIONS } from '../collections/index';
 import type { CollectionId } from '../collections/ids';
+import type { CollectionCards } from '../collections/types';
 import type { MissingReference } from '../matcher/identify';
 import { db } from './db';
 import { cards, wantedCards } from './schema/index';
@@ -86,7 +87,7 @@ export function parseKnownCardList(
   return { ok: true, ids: parsed.ids };
 }
 
-function insertCards(collection: CollectionId, ids: CardId[]): void {
+function insertCards(collection: CollectionId, ids: readonly CardId[]): void {
   const now = Date.now();
   for (const cardId of ids) {
     db.insert(cards)
@@ -235,7 +236,7 @@ export const catalogManager = {
     return changed;
   },
 
-  previewImport(collection: CollectionId, ids: CardId[]): ImportPreview {
+  previewImport({ collection, ids }: CollectionCards): ImportPreview {
     const next = new Set(ids);
     const current = catalogManager.knownIds(collection);
     const added = [...next].filter((id) => !current.has(id)).sort(compareCardIds);
@@ -261,8 +262,9 @@ export const catalogManager = {
   },
 
   /** Insert added ids and delete removed ones from `cards`; wanted lists are untouched. */
-  applyImport(collection: CollectionId, ids: CardId[]): void {
-    const { added, removed } = catalogManager.previewImport(collection, ids);
+  applyImport(next: CollectionCards): void {
+    const { collection } = next;
+    const { added, removed } = catalogManager.previewImport(next);
     db.transaction(() => {
       insertCards(collection, added);
       for (const cardId of removed) {

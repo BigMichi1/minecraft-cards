@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { MessageFlags, type ButtonInteraction } from 'discord.js';
 import { catalogManager } from '../database/catalogManager';
+import type { CollectionId } from '../collections/ids';
 import { db, initializeDatabase } from '../database/db';
 import { cards } from '../database/schema/index';
 import { createImportStore, handleCatalogButton } from './catalogImport';
@@ -60,11 +61,21 @@ describe('handleCatalogButton', () => {
     catalogManager.seedIfEmpty();
   });
 
+  test("save applies the import to the token's collection only", async () => {
+    const other = 'other-set' as CollectionId;
+    const store = createImportStore(() => clock);
+    const token = store.put(other, [cid('1')]);
+    await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
+    expect(catalogManager.knownIds(other)).toEqual(new Set(ids('1')));
+    expect(catalogManager.knownIds('lego-minecraft-3').size).toBe(251);
+    expect(updates[0].content).toBe('Catalog of other-set saved.');
+  });
+
   test('save applies the import once', async () => {
     const store = createImportStore(() => clock);
     const token = store.put('lego-minecraft-3', [cid('1'), cid('2')]);
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
-    expect(updates[0].content).toBe('Catalog saved.');
+    expect(updates[0].content).toBe('Catalog of LEGO Minecraft Serie 3 "On Fire" saved.');
     expect([...catalogManager.knownIds('lego-minecraft-3')].sort()).toEqual(ids('1', '2'));
     await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
     expect(updates[1].content).toBe('This import expired, run the command again.');
@@ -80,7 +91,7 @@ describe('handleCatalogButton', () => {
       await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
       expect(replies[0].embeds[0].toJSON().description).toContain('Press Save again');
       await handleCatalogButton(fakeButton(`catalog-save:${token}`), { adminId: 'admin' }, store);
-      expect(updates.at(-1).content).toBe('Catalog saved.');
+      expect(updates.at(-1).content).toBe('Catalog of LEGO Minecraft Serie 3 "On Fire" saved.');
     } finally {
       apply.mockRestore();
     }

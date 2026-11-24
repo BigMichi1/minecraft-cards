@@ -21,6 +21,7 @@ import { ephemeral, replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
 import { DISCORD_MESSAGE_LIMIT, joinWithinLimit } from '../utils/messageLimit';
 import type { CollectionId } from '../collections/ids';
+import { collectionName } from '../collections/index';
 import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
 
 const LIST_OPTION_MAX_LENGTH = 6000;
@@ -145,9 +146,19 @@ function mapCards(url: string, collection: CollectionId, cardsInput: string): st
       ? 'No card numbers found. Example: 12, LE8'
       : joinWithinLimit('Nothing changed. Unknown or invalid: ', [...new Set(parsed.invalid)]);
   }
-  const listing = listingManager.overrideCards(url, collection, parsed.ids, Date.now());
+  const stored = listingManager.getByUrl(url);
+  if (!stored) return 'No stored listing with that URL.';
+  // A listing moved to a collection its shop is not checked for would never be updated again
+  // (listingManager.overrideCards), so moves wait for per-collection shops.
+  if (stored.collection !== collection) {
+    return `Nothing changed: the listing is in collection ${stored.collection}; moving a listing to another collection is not supported yet.`;
+  }
+  const listing = listingManager.overrideCards(url, { collection, ids: parsed.ids }, Date.now());
   if (!listing) return 'No stored listing with that URL.';
-  return joinWithinLimit('Listing now maps to: ', formatCardList(listing.cardIds).split(', '));
+  return joinWithinLimit(
+    `Listing now maps to ${collectionName(collection)}: `,
+    formatCardList(listing.cardIds).split(', ')
+  );
 }
 
 async function importCatalog(
@@ -177,7 +188,7 @@ async function importCatalog(
       .setStyle(ButtonStyle.Secondary)
   );
   await interaction.reply({
-    content: buildPreviewText(catalogManager.previewImport(collection, ids)),
+    content: buildPreviewText(collection, catalogManager.previewImport({ collection, ids })),
     components: [row],
     flags: MessageFlags.Ephemeral,
   });

@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
 import type { CollectionId } from '../collections/ids';
+import type { CollectionCards } from '../collections/types';
 import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
 import { isConfirmable, type MatchResult, type MatchStatus } from '../matcher/matchStatus';
 import type {
@@ -151,7 +152,7 @@ function defaultMatchStatus(shop: ShopId, cardIds: CardId[]): MatchStatus {
   return cardIds.length > 1 ? 'bundle' : 'pending';
 }
 
-function writeCards(tx: Tx, listingId: number, cardIds: CardId[]): void {
+function writeCards(tx: Tx, listingId: number, cardIds: readonly CardId[]): void {
   tx.delete(listingCards).where(eq(listingCards.listingId, listingId)).run();
   for (const cardId of new Set(cardIds))
     tx.insert(listingCards).values({ listingId, cardId }).run();
@@ -472,20 +473,18 @@ export const listingManager = {
   },
 
   /**
-   * Manual card mapping: puts the listing in `collection` with `cardIds`; survives rescrapes,
-   * counts as confirmed by the admin, lifts the hold, resolves reports, re-opens notification
-   * for the new cards.
+   * Manual card mapping: puts the listing in `cards.collection` with `cards.ids`; survives
+   * rescrapes, counts as confirmed by the admin, lifts the hold, resolves reports, re-opens
+   * notification for the new cards. Moving a listing to a collection its shop is not checked
+   * for freezes it (no run of that shop updates it or marks it unavailable), so `/admin map`
+   * only maps within the listing's own collection for now.
    */
-  overrideCards(
-    url: string,
-    collection: CollectionId,
-    cardIds: CardId[],
-    now: number
-  ): StoredListing | undefined {
+  overrideCards(url: string, cards: CollectionCards, now: number): StoredListing | undefined {
+    const { collection } = cards;
     return db.transaction((tx) => {
       const row = tx.select().from(listings).where(eq(listings.url, url)).get();
       if (!row) return undefined;
-      writeCards(tx, row.id, cardIds);
+      writeCards(tx, row.id, cards.ids);
       tx.update(listings)
         .set({
           collection,

@@ -29,6 +29,8 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   readonly name: string;
   /** A checklist (`parseChecklist` form) seeded into an empty catalog at start, if any. */
   readonly starterChecklist?: string;
+  /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */
+  readonly laststicker?: { readonly set: string };
 }
 
 /**

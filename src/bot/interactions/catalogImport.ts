@@ -5,6 +5,7 @@ import { catalogManager, type ImportPreview } from '../database/catalogManager';
 import { replyWithError } from '../utils/interactionReply';
 import { errorMessage } from '../utils/async';
 import logger, { logError } from '../utils/logger';
+import type { AdminDeps } from './adminActions';
 import { joinWithinLimit } from '../utils/messageLimit';
 
 const TTL_MS = 10 * 60_000;
@@ -67,7 +68,7 @@ export function buildPreviewText(preview: ImportPreview): string {
 /** Handle `catalog-save:<token>` / `catalog-cancel:<token>`; only the admin may press them. */
 export async function handleCatalogButton(
   i: ButtonInteraction,
-  { adminId }: { adminId: string },
+  { adminId }: AdminDeps,
   store: ImportStore = importStore
 ): Promise<void> {
   try {

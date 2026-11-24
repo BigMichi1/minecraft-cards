@@ -5,6 +5,7 @@ import { db, initializeDatabase } from '../database/db';
 import { cards, listingCards, listings, reports, adminAlerts } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
+import { encodeConfirmId } from './buttonIds';
 import { reportManager } from '../database/reportManager';
 import { runManager } from '../database/runManager';
 import logger from '../utils/logger';
@@ -396,6 +397,73 @@ describe('report flow', () => {
     expect(replies).toHaveLength(2);
     expect(spy.calls).toHaveLength(0);
     expect(db.select().from(reports).all()).toHaveLength(0);
+  });
+
+  describe('failures are answered, never thrown', () => {
+    const errorTitle = () => lastReply().embeds[0].toJSON().title;
+
+    test('the report button', async () => {
+      const l = makeListing();
+      const i = fakeButton(`report:${l.id}`);
+      let first = true;
+      (i as any).reply = async (p: unknown) => {
+        if (first) {
+          first = false;
+          throw new Error('Unknown interaction');
+        }
+        replies.push(p);
+      };
+      await handleReportButton(i);
+      expect(errorTitle()).toBe('Report failed');
+    });
+
+    test('the reason button', async () => {
+      const i = fakeButton('report-reason:1:other');
+      (i as any).showModal = async () => {
+        throw new Error('Unknown interaction');
+      };
+      await handleReportReason(i);
+      expect(errorTitle()).toBe('Report failed');
+    });
+
+    test('the report form', async () => {
+      const l = makeListing();
+      const i = fakeModal(`report-modal:${l.id}:other`, '');
+      let first = true;
+      (i as any).editReply = async (p: unknown) => {
+        if (first) {
+          first = false;
+          throw new Error('Unknown interaction');
+        }
+        edits.push(p);
+      };
+      await handleReportModal(i, adminSpy());
+      expect(edits[edits.length - 1].embeds[0].toJSON().title).toBe('Report failed');
+    });
+
+    test('the retry of unsent reports', async () => {
+      const unsent = spyOn(reportManager, 'unsentOpen').mockImplementation(() => {
+        throw new Error('db down');
+      });
+      try {
+        expect(await retryUnsentReports(adminSpy())).toBe(0);
+      } finally {
+        unsent.mockRestore();
+      }
+    });
+  });
+
+  test('admin message carries Confirm and Dismiss buttons and keeps the command hint', () => {
+    const l = makeListing();
+    const msg = buildAdminReportMessage(
+      { listingId: l.id, reporterId: 'u1', reason: 'wrong_number', note: null },
+      l,
+      'bob#1'
+    );
+    expect(msg.components).toHaveLength(1);
+    const ids = (msg.components![0] as any).toJSON().components.map((c: any) => c.custom_id);
+    expect(ids).toEqual([encodeConfirmId(l), `admin-dismiss:${l.id}`]);
+    expect(msg.content).toContain('/admin map url:');
   });
 
   test('admin message has the fields, commands, and survives a bad listing url', () => {

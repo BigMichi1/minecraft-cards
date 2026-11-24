@@ -19,6 +19,8 @@ import {
   handleReportReason,
   retryUnsentReports,
 } from './interactions/report';
+import { handleAdminConfirm, handleAdminDismiss, withPictures } from './interactions/adminActions';
+import { handleRightButton } from './interactions/right';
 import { dispatchButton, isReportModal } from './interactions/router';
 import { createShutdown, runChatCommand, type ChatCommand } from './lifecycle';
 import {
@@ -72,6 +74,9 @@ async function dmAdmin(message: string | MessageCreateOptions): Promise<void> {
   await admin.send(message);
 }
 
+/** Admin DMs about one listing (Right, wrong reports), pictures attached: see `withPictures`. */
+const dmAdminListing = withPictures(dmAdmin);
+
 /** How long shutdown waits for a check in progress before closing the client and database. */
 const SHUTDOWN_GRACE_MS = 5_000;
 
@@ -97,7 +102,7 @@ const runDeps: RunDeps = {
   alertAdmin,
   now: Date.now,
   intervalMs: config.checkIntervalMs,
-  retryReports: () => retryUnsentReports(dmAdmin),
+  retryReports: () => retryUnsentReports(dmAdminListing),
   // A failing reference picture is tried again once a day, across runs.
   referenceFailures: new Map(),
 };
@@ -170,12 +175,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await dispatchButton(interaction.customId, {
         report: () => handleReportButton(interaction),
         'report-reason': () => handleReportReason(interaction),
+        right: () => handleRightButton(interaction, { notifyAdmin: dmAdminListing }),
+        'admin-confirm': () => handleAdminConfirm(interaction, { adminId: config.botAdminId }),
+        'admin-dismiss': () => handleAdminDismiss(interaction, { adminId: config.botAdminId }),
         // No store argument: the module-level store is the one /admin catalog import fills.
         catalog: () => handleCatalogButton(interaction, { adminId: config.botAdminId }),
         stock: () => stockCommand.handleStockButton(interaction, { enabledShops }),
       });
     } else if (interaction.isModalSubmit() && isReportModal(interaction.customId)) {
-      await handleReportModal(interaction, dmAdmin);
+      await handleReportModal(interaction, dmAdminListing);
     }
   } catch (error) {
     logError('[INTERACTION] unhandled error', error);

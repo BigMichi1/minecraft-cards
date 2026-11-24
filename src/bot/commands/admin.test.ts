@@ -127,6 +127,18 @@ describe('/admin', () => {
     );
   });
 
+  test('map without any card number says how to write one and changes nothing', async () => {
+    await adminExecute(fakeAdmin(undefined, 'map', { url: 'https://x', cards: ' , ' }), ctx);
+    expect(lastReply().content).toBe('No card numbers found. Example: 12, LE8');
+  });
+
+  test('an unknown subcommand is answered with an error, not thrown', async () => {
+    await adminExecute(fakeAdmin(undefined, 'nope'), ctx);
+    expect((lastReply() as any).embeds[0].toJSON().description).toBe(
+      'Something went wrong running the admin command.'
+    );
+  });
+
   test('non-admins are refused and nothing runs', async () => {
     let triggered = false;
     ctx.trigger = async () => {

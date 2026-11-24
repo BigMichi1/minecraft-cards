@@ -2,20 +2,25 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
-  EmbedBuilder,
   MessageFlags,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
 import type { ButtonInteraction, MessageCreateOptions, ModalSubmitInteraction } from 'discord.js';
-import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { reportManager, type ReportReason } from '../database/reportManager';
 import { runManager } from '../database/runManager';
-import { validUrl } from '../notify/messages';
+import {
+  adminActionRow,
+  adminListingEmbed,
+  MAX_FIELD,
+  NO_LISTING,
+  type AdminDm,
+} from './adminActions';
+import { parseListingId } from './buttonIds';
 import logger, { logError } from '../utils/logger';
-import { replyWithError } from '../utils/interactionReply';
+import { ephemeral, replyWithError } from '../utils/interactionReply';
 
 const REASONS: Record<ReportReason, string> = {
   wrong_number: 'Wrong number',
@@ -23,20 +28,16 @@ const REASONS: Record<ReportReason, string> = {
   other: 'Other',
 };
 const MAX_NOTE = 500;
-const MAX_FIELD = 1024;
-const NO_LISTING = 'This listing no longer exists.';
 const THANKS = "Thanks — the admin has been notified. This listing is paused until it's checked.";
 const THANKS_UNSENT =
   "Thanks — this listing is paused until it's checked. The admin could not be reached just now; the bot will try again with the next check.";
-
-type NotifyAdmin = (msg: MessageCreateOptions) => Promise<void>;
 
 /**
  * DM the admin about one report and record it. True when the DM went out (even if recording
  * it then failed: the admin knows, at worst the next check DMs again).
  */
 async function sendReport(
-  notifyAdmin: NotifyAdmin,
+  notifyAdmin: AdminDm,
   report: {
     id: number;
     listingId: number;
@@ -71,10 +72,6 @@ function isReason(value: string | undefined): value is ReportReason {
   return value !== undefined && Object.hasOwn(REASONS, value);
 }
 
-function parseListingId(value: string | undefined): number | null {
-  return value !== undefined && /^\d{1,15}$/.test(value) ? Number(value) : null;
-}
-
 /** Parse `<prefix>:<listingId>[:<reason>]`; null when malformed. */
 function parseId(
   customId: string,
@@ -87,8 +84,6 @@ function parseId(
   if (!withReason) return { listingId, reason: null };
   return isReason(parts[2]) ? { listingId, reason: parts[2] } : null;
 }
-
-const ephemeral = (content: string) => ({ content, flags: MessageFlags.Ephemeral as const });
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
@@ -152,44 +147,31 @@ export function buildAdminReportMessage(
   listing: StoredListing,
   reporterTag: string
 ): MessageCreateOptions {
-  const embed = new EmbedBuilder()
-    .setTitle(`⚠️ Wrong card reported (listing ${report.listingId})`)
-    .addFields(
-      {
-        name: 'Reporter',
-        value: truncate(`${reporterTag} (${report.reporterId})`, MAX_FIELD),
-        inline: true,
-      },
-      {
-        name: 'Cards',
-        value: truncate(listing.cardIds.map((id) => `#${id}`).join(', ') || 'none', MAX_FIELD),
-        inline: true,
-      },
-      { name: 'Shop', value: listing.shop, inline: true },
-      { name: 'URL', value: truncate(listing.url, MAX_FIELD) },
-      { name: 'Reason', value: REASONS[report.reason], inline: true }
-    );
+  const embed = adminListingEmbed(listing, `⚠️ Wrong card reported (listing ${report.listingId})`, [
+    {
+      name: 'Reporter',
+      value: truncate(`${reporterTag} (${report.reporterId})`, MAX_FIELD),
+      inline: true,
+    },
+  ]).addFields({ name: 'Reason', value: REASONS[report.reason], inline: true });
   if (report.note) embed.addFields({ name: 'Note', value: truncate(report.note, MAX_FIELD) });
-  const url = validUrl(listing.url);
-  if (url) embed.setURL(url);
-  const image = validUrl(listing.imageUrl);
-  if (image) embed.setImage(image);
-  const reference = listing.cardIds[0] ? catalogManager.getCard(listing.cardIds[0]) : undefined;
-  const thumbnail = validUrl(reference?.referenceImageUrl);
-  if (thumbnail) embed.setThumbnail(thumbnail);
   const ids = listing.cardIds.join(',');
+  const row = adminActionRow(listing, { dismiss: true });
   return {
+    // The commands stay beside the buttons: mapping to other cards has no button, `/admin map`
+    // stands in for a Confirm left out for a long id, and both work from an old DM without buttons.
     content: truncate(
       `Fix with \`/admin map url:${listing.url} cards:${ids}\` or dismiss with \`/admin clear url:${listing.url}\`.`,
       2000
     ),
     embeds: [embed],
+    ...(row ? { components: [row] } : {}),
   };
 }
 
 export async function handleReportModal(
   i: ModalSubmitInteraction,
-  notifyAdmin: NotifyAdmin
+  notifyAdmin: AdminDm
 ): Promise<void> {
   try {
     const parsed = parseId(i.customId, true);
@@ -247,7 +229,7 @@ export function resetReportWarnings(): void {
  * once per process.
  */
 export async function retryUnsentReports(
-  notifyAdmin: NotifyAdmin,
+  notifyAdmin: AdminDm,
   now: number = Date.now()
 ): Promise<number> {
   let sent = 0;

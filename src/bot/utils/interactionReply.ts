@@ -36,3 +36,8 @@ export async function replyWithError(
     );
   }
 }
+
+/** A plain reply only the clicking user sees. */
+export function ephemeral(content: string): { content: string; flags: MessageFlags.Ephemeral } {
+  return { content, flags: MessageFlags.Ephemeral };
+}

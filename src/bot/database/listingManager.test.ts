@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { db, initializeDatabase } from './db';
 import {
   cards,
@@ -11,6 +12,7 @@ import {
 } from './schema/index';
 import { catalogManager } from './catalogManager';
 import { listingManager } from './listingManager';
+import { imageFingerprint } from '../matcher/imageFingerprint';
 import { userManager } from './userManager';
 import type { Listing } from '../shops/types';
 import { cid, ids } from '../../test/cardIds';
@@ -387,6 +389,155 @@ describe('listingManager', () => {
       similarity: null,
     });
   });
+  describe('confirmCards', () => {
+    const IMAGE = imageFingerprint(blue12.imageUrl);
+    const confirm = (id: number, cards: string[], now = 3000, image = IMAGE) =>
+      listingManager.confirmCards({ listingId: id, cardIds: cards.map(cid), image }, now);
+
+    function unconfirmed12() {
+      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      const l = listingManager.getByUrl(blue12.url)!;
+      listingManager.setMatch(
+        l.id,
+        { status: 'unconfirmed', similarity: 0.7, picture: null },
+        1500
+      );
+      return l;
+    }
+
+    test('confirms with the current cards and keeps availableSince', () => {
+      const l = unconfirmed12();
+      listingManager.setOnHold(l.id);
+      db.insert(reports)
+        .values({ listingId: l.id, reporterId: 'r', reason: 'other', createdAt: 1 })
+        .run();
+      const result = confirm(l.id, ['12']);
+      expect(result.kind).toBe('confirmed');
+      expect(result.kind === 'confirmed' && result.listing).toMatchObject({
+        cardIds: ['12'],
+        matchStatus: 'confirmed',
+        manualOverride: true,
+        similarity: null,
+        pictureCardId: null,
+        onHold: false,
+        availableSince: 1000,
+      });
+      expect(db.select().from(reports).get()!.resolvedAt).toBe(3000);
+    });
+
+    test('confirming never re-notifies a user who already had the alert', () => {
+      userManager.setList('u1', '12');
+      const l = unconfirmed12();
+      listingManager.recordNotified('u1', l.id, l.availableSince!);
+      confirm(l.id, ['12']);
+      expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
+    });
+
+    test('confirming a held listing sends the held-back alert exactly once', () => {
+      userManager.setList('u1', '12');
+      const l = unconfirmed12();
+      listingManager.setOnHold(l.id);
+      expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
+      confirm(l.id, ['12']);
+      const pending = listingManager.pendingNotifications().get('u1')!;
+      expect(pending.map((p) => p.listing.id)).toEqual([l.id]);
+      listingManager.recordNotified('u1', l.id, pending[0]!.availableSince);
+      confirm(l.id, ['12'], 4000);
+      expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
+    });
+
+    test('a listing without a picture URL is confirmed by the fingerprint of none', () => {
+      listingManager.upsertFromRun('blue-ocean', [{ ...blue12, imageUrl: null }], 1000);
+      const l = listingManager.getByUrl(blue12.url)!;
+      listingManager.setMatch(
+        l.id,
+        { status: 'unconfirmed', similarity: null, picture: null },
+        1500
+      );
+      expect(confirm(l.id, ['12'], 3000, imageFingerprint(null)).kind).toBe('confirmed');
+    });
+
+    test('refuses when the cards changed, writing nothing', () => {
+      const l = unconfirmed12();
+      for (const cards of [['13'], ['12', '13'], []]) {
+        expect(confirm(l.id, cards)).toEqual({ kind: 'stale', reason: 'cards' });
+      }
+      expect(listingManager.getById(l.id)).toMatchObject({
+        matchStatus: 'unconfirmed',
+        manualOverride: false,
+        similarity: 0.7,
+      });
+    });
+
+    test('a subset of a bundle is refused as changed cards', () => {
+      listingManager.upsertFromRun(
+        'blue-ocean',
+        [{ ...blue12, cardIds: [cid('12'), cid('13')] }],
+        1000
+      );
+      const l = listingManager.getByUrl(blue12.url)!;
+      expect(confirm(l.id, ['12'])).toEqual({ kind: 'stale', reason: 'cards' });
+    });
+
+    test('refuses when the picture URL changed since the admin saw it', () => {
+      const l = unconfirmed12();
+      const seen = imageFingerprint('https://img/old.jpg');
+      expect(confirm(l.id, ['12'], 3000, seen)).toEqual({ kind: 'stale', reason: 'picture' });
+      expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
+      expect(confirm(l.id, ['12']).kind).toBe('confirmed');
+    });
+
+    test('refuses a listing that is a mismatch or waits for a comparison', () => {
+      const l = unconfirmed12();
+      listingManager.setMatch(
+        l.id,
+        { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.9 } },
+        2000
+      );
+      expect(confirm(l.id, ['12'])).toEqual({ kind: 'stale', reason: 'status' });
+      db.update(listings).set({ matchStatus: 'pending' }).where(eq(listings.id, l.id)).run();
+      expect(confirm(l.id, ['12'])).toEqual({ kind: 'stale', reason: 'status' });
+      expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
+    });
+
+    test('an admin-mapped listing may be confirmed whatever its status', () => {
+      const l = unconfirmed12();
+      listingManager.overrideCards(blue12.url, [cid('12')], 2000);
+      db.update(listings).set({ matchStatus: 'pending' }).where(eq(listings.id, l.id)).run();
+      expect(confirm(l.id, ['12']).kind).toBe('confirmed');
+    });
+
+    test('a missing listing is gone', () => {
+      expect(confirm(424242, ['12'])).toEqual({ kind: 'gone' });
+    });
+
+    test('is idempotent', () => {
+      const l = unconfirmed12();
+      confirm(l.id, ['12']);
+      const again = confirm(l.id, ['12'], 4000);
+      expect(again.kind === 'confirmed' && again.listing).toMatchObject({
+        matchStatus: 'confirmed',
+        manualOverride: true,
+        availableSince: 1000,
+      });
+    });
+
+    test('survives a rescrape', () => {
+      const l = unconfirmed12();
+      confirm(l.id, ['12']);
+      listingManager.upsertFromRun(
+        'blue-ocean',
+        [{ ...blue12, imageUrl: 'https://img/new.jpg' }],
+        5000
+      );
+      expect(listingManager.getById(l.id)).toMatchObject({
+        matchStatus: 'confirmed',
+        manualOverride: true,
+        cardIds: ['12'],
+      });
+    });
+  });
+
   describe('picture identification', () => {
     const HOUR = 60 * 60 * 1000;
     /** An eBay title naming no card, passed on for the picture to identify (rule 4). */

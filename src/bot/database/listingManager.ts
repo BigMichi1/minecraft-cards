@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
-import type { MatchResult, MatchStatus } from '../matcher/matchStatus';
+import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
+import { isConfirmable, type MatchResult, type MatchStatus } from '../matcher/matchStatus';
 import type {
   IdSource,
   ListingFormat,
@@ -50,6 +51,21 @@ export interface PendingNotification {
 
 /** discordId -> that user's pending notifications, by listing id. */
 export type PendingNotifications = Map<string, PendingNotification[]>;
+
+/** Why a confirmation was not written: see `confirmCards`. */
+export type StaleReason = 'cards' | 'picture' | 'status';
+
+/** What the admin confirms: the listing, its cards and its picture as the admin saw them. */
+export interface ConfirmTarget {
+  readonly listingId: number;
+  readonly cardIds: readonly CardId[];
+  readonly image: ImageFingerprint;
+}
+
+export type ConfirmResult =
+  | { kind: 'confirmed'; listing: StoredListing }
+  | { kind: 'gone' }
+  | { kind: 'stale'; reason: StaleReason };
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -458,6 +474,47 @@ export const listingManager = {
         .run();
       resolveReports(tx, row.id, now);
       return byUrl(tx, url);
+    });
+  },
+
+  /**
+   * The admin's one-click confirmation: what `overrideCards` does with the listing's current
+   * cards, except that `availableSince` is kept, so users who already had the alert for this
+   * availability period are not notified again. Nothing is written, and the result says why,
+   * when the listing is gone or stale since the button was sent:
+   * - `cards`: its cards no longer equal the confirmed ones (e.g. a rescrape changed them);
+   * - `picture`: its picture URL no longer has the fingerprint the admin saw;
+   * - `status`: it is not confirmable (`isConfirmable`): a `mismatch`, or `pending`, a comparison
+   *   being due.
+   */
+  confirmCards(expected: ConfirmTarget, now: number): ConfirmResult {
+    return db.transaction((tx): ConfirmResult => {
+      const row = tx.select().from(listings).where(eq(listings.id, expected.listingId)).get();
+      if (!row) return { kind: 'gone' };
+      const current = new Set(cardIdsOf(tx, [row.id]).get(row.id) ?? []);
+      const wanted = new Set(expected.cardIds);
+      if (current.size !== wanted.size || [...wanted].some((id) => !current.has(id))) {
+        return { kind: 'stale', reason: 'cards' };
+      }
+      if (imageFingerprint(row.imageUrl) !== expected.image) {
+        return { kind: 'stale', reason: 'picture' };
+      }
+      if (!isConfirmable(row)) return { kind: 'stale', reason: 'status' };
+      tx.update(listings)
+        .set({
+          manualOverride: true,
+          matchStatus: 'confirmed',
+          similarity: null,
+          pictureCardId: null,
+          onHold: false,
+        })
+        .where(eq(listings.id, row.id))
+        .run();
+      resolveReports(tx, row.id, now);
+      const listing = byUrl(tx, row.url);
+      // Throwing rolls the write back: a confirmation is never kept while reported as not done.
+      if (!listing) throw new Error(`listing ${row.id} vanished while being confirmed`);
+      return { kind: 'confirmed', listing };
     });
   },
 

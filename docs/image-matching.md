@@ -180,6 +180,22 @@ For single-card listings of every shop but sammel-ente (bundles are never compar
 
 An admin-mapped listing (`/admin map`) is never compared or identified again.
 
+**One-click confirmation.** A single-card `unconfirmed` alert carries a "✅ Right #<card>" button.
+A user's click DMs the admin the listing with a "✅ Confirm" button, at most once a day per
+listing (throttle `confirm-request:<listing>`, released when the DM fails); it puts no hold on the
+listing and files no report, and a listing that is no longer `unconfirmed` sends nothing. The
+admin's "⚠️ Wrong card reported" DM carries "✅ Confirm" and "🗑️ Dismiss". Confirm is
+`/admin map` with the listing's current cards (admin-mapped from then on), except that it keeps
+`availableSince`, so nobody who had the alert is notified again. It is refused, naming the
+reason, when the cards or the picture URL (a fingerprint in the button,
+`interactions/buttonIds.ts`) changed since the DM, or when the listing is a `mismatch` or
+`pending` (`isConfirmable`): a confirmation is never compared again. Dismiss is `/admin clear`.
+Only the admin can press either. Both admin DMs attach the listing picture and the usable
+reference (never a placeholder) as user alerts do (`withPictures` in
+`interactions/adminActions.ts`); a DM Discord refuses as a bad payload (400/413, never 50007) is
+resent once without them, any other failure is not resent, and these fallbacks are only logged,
+not the `notify-pictures` alert.
+
 **Puzzle cards** come from data: sammel-ente names them "Puzzlekarte <picture> <piece>"
 ("#154 Puzzlekarte Oberwelt 1"). A card is a puzzle card when its current name says so or any
 earlier one did (`cards.puzzle_seen`, set on a name update and never cleared), so a rename

@@ -152,7 +152,8 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   fraction, no series. A number that is no series number
   (`Serie 3 - 12 - Steve - Charakterkarte`, `Serie 3 - 5 - …`), or one not higher than the
   series after spaces, dashes or title signs (`Serie 3 - 1 - Steve - Charakterkarte`), is a
-  card number, and so is one after a closing bracket (`(Serie 3) 2 - Alex - Charakterkarte`).
+  card number, and so is one after a closing bracket (`(Serie 3) 2 - Alex - Charakterkarte`), unless a
+  list sign or word follows it (`(Serie 1) & 2`).
   An admin mapping into a collection eBay does not search is left alone and alerted
   (`shop-outside:ebay`). A title with no series word gives no ids either, even in the clear
   `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms

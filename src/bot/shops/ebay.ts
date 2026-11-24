@@ -284,7 +284,8 @@ export type TitleExclusion =
 // it makes the pair a list in any order; made only of spaces, dashes and title signs
 // (TITLE_SIGNS), which sellers also put between a series and a card number, only going upward
 // ("Serie 3 - 1 - Steve - Charakterkarte" and "Serie 3 | 2 - Alex - Charakterkarte" are cards
-// #1 and #2). A closing bracket ends the series ("(Serie 3) 2 - Alex" is card #2). Any pair that
+// #1 and #2). After a closing bracket the series is over: a pair is a list then only through a
+// list sign or word ("(Serie 3) 2 - Alex" is card #2, "(Serie 1) & 2" a list). Any pair that
 // is a list makes the title one: "Serie 1 - 2 - Steve" may be series 1 #2 or a list, unclear,
 // so no ids.
 const LIST_WORDS = new Set([
@@ -301,10 +302,15 @@ const LIST_WORDS = new Set([
   'u',
   'o',
 ]);
-/** Dashes (hyphen, en, em, figure, bar, minus, fullwidth) and title signs. */
-const TITLE_SIGNS = new Set([...' -‐‑‒–—―−－|·•;:~._']);
+/**
+ * Dashes (hyphen, en, em, figure, bar, minus, fullwidth, soft hyphen) and title signs, a
+ * zero-width space too.
+ */
+const TITLE_SIGNS = new Set([...' -‐‑‒–—―−－\u00ad\u200b|｜·•;:~._']);
 /** Signs that join series: slash, ampersand, plus, comma, opening brackets (fullwidth too). */
-const LIST_SIGNS = new Set([...'/&+,([／＆＋，（［']);
+const LIST_SIGNS = new Set([...'/&+,([／＆＋，、（［﹠⁄∕']);
+/** Closing brackets: the series word's bracket ends, a list needs a list sign or word. */
+const CLOSING_BRACKETS = new Set([...')]）］']);
 const SERIES_START = new RegExp(`\\b(?:Series?|Staffel|TCC)\\s*(${SERIES_NUMBER})(?!\\d)`, 'gi');
 const LETTERS = /[A-Za-zÄÖÜäöüß]+/y;
 const ONE_SERIES_NUMBER = new RegExp(`^${SERIES_NUMBER}$`);
@@ -318,9 +324,13 @@ function namesSeriesList(title: string): boolean {
       // The separator: spaces, signs and list words.
       let end = at;
       let definite = false;
+      let closed = false;
       while (end < title.length) {
         const ch = title[end]!;
         if (TITLE_SIGNS.has(ch) || /\s/.test(ch)) {
+          end++;
+        } else if (CLOSING_BRACKETS.has(ch)) {
+          closed = true;
           end++;
         } else if (LIST_SIGNS.has(ch)) {
           definite = true;
@@ -338,7 +348,7 @@ function namesSeriesList(title: string): boolean {
       const rest = title.slice(end + 1, end + 4);
       if (/^\d/.test(rest) || /^\/\d{2}/.test(rest)) break;
       const number = Number(digit);
-      if (definite || number > previous) return true;
+      if (definite || (!closed && number > previous)) return true;
       previous = number;
       at = end + 1;
     }

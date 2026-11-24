@@ -2143,6 +2143,12 @@ describe('series markers (2026-11-24 probe)', () => {
       expect(classifyTitle(title)).toEqual({ collection });
       expect(extractCardIdsFromTitle(title, collection)).toEqual(ids(id));
     }
+    for (const title of [
+      'LEGO Minecraft Serie 3 • 1 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 3: 1 - Steve - Charakterkarte',
+    ]) {
+      expect(extractCardIdsFromTitle(title)).toEqual(ids('1'));
+    }
     expect(classifyTitle('LEGO Minecraft Serie 3 Toto 1 Karte 5')).toEqual({
       collection: 'lego-minecraft-3',
     });
@@ -2216,6 +2222,25 @@ describe('series markers (2026-11-24 probe)', () => {
       'LEGO Minecraft Serie 1 ＆ 2 Karte 45',
       'LEGO Minecraft Serie 1 ／ 2 Karte 45',
       'LEGO Minecraft Serie 1 [2] Karte 45',
+      // A list after the series word's closing bracket.
+      'LEGO Minecraft (Serie 1) & 2 Karte 45',
+      'LEGO Minecraft (Serie 1) + (2) Karte 45',
+      'LEGO Minecraft (Serie 1) und 2 Karte 45',
+      'LEGO Minecraft Serie 1) & 2 Karte 45',
+      // More signs.
+      'LEGO Minecraft Serie 1 • 2 Karte 45',
+      'LEGO Minecraft Serie 1: 2 Karte 45',
+      'LEGO Minecraft Serie 1 ＋ 2 Karte 45',
+      'LEGO Minecraft Serie 1，2 Karte 45',
+      'LEGO Minecraft Serie 1（2）Karte 45',
+      'LEGO Minecraft Serie 1 ［2］ Karte 45',
+      'LEGO Minecraft Serie 1\u00a0&\u00a02 Karte 45',
+      'LEGO Minecraft Serie 1\t2 Karte 45',
+      'LEGO Minecraft Serie 1 ｜ 2 Karte 45',
+      'LEGO Minecraft Serie 1、2 Karte 45',
+      'LEGO Minecraft Serie 1 ﹠ 2 Karte 45',
+      'LEGO Minecraft Serie 1⁄2 Karte 45',
+      'LEGO Minecraft Serie 1\u200b-\u200b2 Karte 45',
       // A card number after the list does not hide it.
       'LEGO Minecraft Serie 1 und 2 1 Karte 5',
       'LEGO Minecraft Serie 1 & 2 - 1 - Steve - Charakterkarte',

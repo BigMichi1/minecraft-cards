@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { COLLECTION_IDS, LEGACY_COLLECTION, isCollectionId } from './ids';
+import {
+  COLLECTION_IDS,
+  LEGACY_COLLECTION,
+  isCollectionId,
+  type CollectionDefinition,
+} from './ids';
 
 describe('isCollectionId', () => {
   test('accepts a registered collection id', () => {
@@ -24,5 +29,15 @@ describe('COLLECTION_IDS', () => {
   test('are unique slugs starting with a letter (custom ids split on ":" and embed them unescaped)', () => {
     expect(new Set(COLLECTION_IDS).size).toBe(COLLECTION_IDS.length);
     for (const id of COLLECTION_IDS) expect(id).toMatch(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
+  });
+});
+
+describe('CollectionDefinition', () => {
+  test('takes a registered id and a display name', () => {
+    const definition: CollectionDefinition = { id: 'lego-minecraft-3', name: 'Series 3' };
+    // @ts-expect-error an id outside the registry is not a CollectionId
+    const unknown: CollectionDefinition = { id: 'lego-minecraft-9', name: 'Series 9' };
+    expect(definition.id).toBe('lego-minecraft-3');
+    expect(unknown.name).toBe('Series 9');
   });
 });

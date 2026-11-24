@@ -1,6 +1,5 @@
-import { COLLECTION_IDS, type CollectionId } from './ids';
+import { COLLECTION_IDS, type CollectionDefinition, type CollectionId } from './ids';
 import { legoMinecraft3 } from './legoMinecraft3';
-import type { CollectionDefinition } from './types';
 
 /**
  * One definition per id, filed under its own id: an id without a definition, or a definition

@@ -8,8 +8,7 @@ import {
 } from '../cards/cardId';
 import { parseChecklist } from '../cards/starterCatalog';
 import { COLLECTIONS } from '../collections/index';
-import type { CollectionId } from '../collections/ids';
-import type { CollectionCards } from '../collections/types';
+import type { CollectionCards, CollectionId } from '../collections/ids';
 import type { MissingReference } from '../matcher/identify';
 import { db } from './db';
 import { cards, wantedCards } from './schema/index';

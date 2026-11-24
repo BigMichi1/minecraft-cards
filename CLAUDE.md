@@ -32,7 +32,7 @@ Commits: Conventional Commits, signed off (`git commit -s`). Hooks run gitleaks,
 Bun + TypeScript Discord bot (discord.js), SQLite through Drizzle. `src/bot/bot.ts` wires everything.
 
 - `config.ts`: env parsing, fails fast with a message naming the variable.
-- `collections/`: the collection registry (`ids.ts` for `CollectionId`, one definition file per collection, `index.ts` with `COLLECTIONS`); only `lego-minecraft-3` so far.
+- `collections/`: the collection registry (`ids.ts` for `CollectionId` and the collection types, one definition file per collection, `index.ts` with `COLLECTIONS`); only `lego-minecraft-3` so far.
 - `cards/`: canonical card ids and the starter catalog.
 - `shops/`: adapters for sammel-ente, blue-ocean, collect-it and eBay behind one `ShopAdapter` interface; `adapters.ts` builds the enabled list for `bot.ts`.
 - `check/`: `runner.ts` (one round for all users), `scheduler.ts` (interval, `/admin run`) and `adminAlert.ts` (throttled admin alerts, at most once a day per key; the registration and model-load DMs are not throttled, they go once per start).

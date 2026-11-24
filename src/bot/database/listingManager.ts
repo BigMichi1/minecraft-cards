@@ -1,7 +1,6 @@
 import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
-import type { CollectionId } from '../collections/ids';
-import type { CollectionCards } from '../collections/types';
+import type { CollectionCards, CollectionId } from '../collections/ids';
 import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
 import { isConfirmable, type MatchResult, type MatchStatus } from '../matcher/matchStatus';
 import type {

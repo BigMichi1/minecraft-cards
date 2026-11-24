@@ -1,9 +1,8 @@
 import { MessageFlags } from 'discord.js';
 import type { ButtonInteraction } from 'discord.js';
 import type { CardId } from '../cards/cardId';
-import type { CollectionId } from '../collections/ids';
+import type { CollectionCards, CollectionId } from '../collections/ids';
 import { collectionName } from '../collections/index';
-import type { CollectionCards } from '../collections/types';
 import { catalogManager, type ImportPreview } from '../database/catalogManager';
 import { replyWithError } from '../utils/interactionReply';
 import { errorMessage } from '../utils/async';

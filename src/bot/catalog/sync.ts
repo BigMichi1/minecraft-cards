@@ -4,7 +4,6 @@ import type { CollectionDefinition, CollectionId } from '../collections/ids';
 import { COLLECTIONS, collectionName } from '../collections/index';
 import { catalogManager, type SyncResult } from '../database/catalogManager';
 import { errorMessage, sleep as realSleep } from '../utils/async';
-import { HttpError } from '../utils/http';
 import { logError } from '../utils/logger';
 import { DISCORD_MESSAGE_LIMIT, clipText } from '../utils/messageLimit';
 import { CatalogLayoutError, fetchLaststickerSet } from './laststicker';
@@ -26,11 +25,22 @@ const REQUEST_DELAY_MS = 1500;
 const MAX_NAMED = 20;
 
 /**
- * More stored cards missing from laststicker than max(5, 2 % of the catalog) is taken for a
- * partial page and changes nothing, as for an eBay walk short of its total.
+ * More stored laststicker cards missing from the page than max(5, ceil(2 %) of them) is taken
+ * for a partial page and changes nothing, the rule of an eBay walk short of its total. A forced
+ * sync (`/admin catalog sync`) has no limit: the admin who sees the missing cards named in the
+ * failure alert accepts them by running it.
  */
-function maxVanished(collection: CollectionId): number {
-  return Math.max(5, Math.floor(catalogManager.knownIds(collection).size * 0.02));
+function maxVanished(collection: CollectionId, force: boolean | undefined): number {
+  if (force) return Number.POSITIVE_INFINITY;
+  return Math.max(5, Math.ceil(catalogManager.laststickerCardCount(collection) * 0.02));
+}
+
+/** A fetch that failed (network, HTTP, timeout): tells it apart from a database error. */
+class FetchFailed extends Error {
+  constructor(readonly original: unknown) {
+    super(errorMessage(original));
+    this.name = 'FetchFailed';
+  }
 }
 
 /** Why a sync failed: an unreadable page, an unreachable site, or anything else (database). */
@@ -110,10 +120,7 @@ export function formatSyncOutcome(o: SyncOutcome): string {
 
 function failureKind(error: unknown): SyncFailure {
   if (error instanceof CatalogLayoutError) return 'layout';
-  if (error instanceof HttpError || (error instanceof Error && error.name === 'TimeoutError')) {
-    return 'fetch';
-  }
-  return 'other';
+  return error instanceof FetchFailed ? 'fetch' : 'other';
 }
 
 /** `(last success <t:…:R>)` or `(never synced before)`, read without failing the alert. */
@@ -141,9 +148,15 @@ async function fetchAndApply(
   }
   catalogManager.markSyncAttempt(collection, deps.now());
   await (deps.gate ?? defaultGate).beforeRequest(deps.now, sleep);
-  const { rows } = await (deps.fetchSet ?? fetchLaststickerSet)(definition.laststicker.set);
+  let rows;
+  try {
+    ({ rows } = await (deps.fetchSet ?? fetchLaststickerSet)(definition.laststicker.set));
+  } catch (error) {
+    // An unreadable page stays a layout error; anything else from the fetch is the network's.
+    throw error instanceof CatalogLayoutError ? error : new FetchFailed(error);
+  }
   return catalogManager.syncCollection(collection, rows, deps.now(), {
-    maxVanished: maxVanished(collection),
+    maxVanished: maxVanished(collection, deps.force),
   });
 }
 
@@ -172,8 +185,9 @@ async function report(collection: CollectionId, result: SyncResult, deps: SyncDe
         DISCORD_MESSAGE_LIMIT
       )
     );
-    // Noted only once delivered (or held back as sent before): a failed DM is tried again.
-    if (outcome !== 'failed') {
+    // Noted only once delivered (or held back as sent before): a failed DM is tried again. A
+    // forced sync's outcome is the admin's own reply (`/admin catalog sync`), which names them.
+    if (outcome !== 'failed' || deps.force) {
       try {
         catalogManager.markListedNoted(collection, result.nowListed, deps.now());
       } catch (error) {
@@ -194,7 +208,10 @@ async function syncOne(
     result = await fetchAndApply(definition, deps, sleep);
   } catch (error) {
     const message = errorMessage(error);
-    logError(`catalog sync of ${collection} failed`, error);
+    logError(
+      `catalog sync of ${collection} failed`,
+      error instanceof FetchFailed ? error.original : error
+    );
     await deps.alert(
       `catalog-sync:${collection}`,
       clipText(

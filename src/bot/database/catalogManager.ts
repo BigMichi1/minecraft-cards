@@ -362,8 +362,10 @@ export const catalogManager = {
         .map(([cardId]) => cardId);
       if (vanished.length > maxVanished) {
         // Thrown inside the transaction: every write above is rolled back.
+        const shown = vanished.sort(compareCardIds).slice(0, 20).join(', ');
+        const more = vanished.length > 20 ? ` … and ${vanished.length - 20} more` : '';
         throw new CatalogLayoutError(
-          `laststicker: ${vanished.length} stored cards missing from laststicker, more than ${maxVanished}`
+          `laststicker: ${vanished.length} stored cards missing from laststicker, more than ${maxVanished}: ${shown}${more}`
         );
       }
       const sorted = (list: CardId[]) => list.sort(compareCardIds);
@@ -451,6 +453,17 @@ export const catalogManager = {
     return onManual(collection, cardId, () => {
       db.delete(cards).where(ofCard(collection, cardId)).run();
     });
+  },
+
+  /** How many of the collection's cards come from laststicker (the ones a sync can miss). */
+  laststickerCardCount(collection: CollectionId): number {
+    return (
+      db
+        .select({ n: count() })
+        .from(cards)
+        .where(and(eq(cards.collection, collection), eq(cards.source, 'laststicker')))
+        .get()?.n ?? 0
+    );
   },
 
   /** A manual card, or why the card is none (`unknown`, `not_manual`). */

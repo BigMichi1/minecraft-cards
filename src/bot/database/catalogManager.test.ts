@@ -401,7 +401,9 @@ describe('catalogManager', () => {
       const sync = (maxVanished: number) =>
         catalogManager.syncCollection('lego-minecraft-3', rows, 10, { maxVanished });
       expect(() => sync(5)).toThrow(CatalogLayoutError);
-      expect(() => sync(5)).toThrow('11 stored cards missing from laststicker, more than 5');
+      expect(() => sync(5)).toThrow(
+        '11 stored cards missing from laststicker, more than 5: LE13, LE14, LE15'
+      );
       expect(catalogManager.getCard('lego-minecraft-3', cid('1'))?.name).toBeNull();
       expect(sync(11).vanished).toHaveLength(11);
     });
@@ -485,6 +487,12 @@ describe('catalogManager', () => {
         ok: false,
         reason: 'unknown',
       });
+    });
+
+    test('laststickerCardCount counts only laststicker cards', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 5);
+      expect(catalogManager.laststickerCardCount('lego-minecraft-3')).toBe(251);
     });
 
     test('a manual card without a picture takes the sammel-ente one, then keeps it', () => {

@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import type { ButtonInteraction } from 'discord.js';
 import { MessageFlags } from 'discord.js';
 import { catalogManager } from '../database/catalogManager';
@@ -95,6 +95,41 @@ describe('handleCatalogRemove', () => {
         flags: MessageFlags.Ephemeral,
       },
     ]);
+  });
+
+  test('a removal that fails before anything changed says so and keeps the card', async () => {
+    const store = createRemoveStore(() => clock);
+    const token = store.put('lego-minecraft-3', cid('229'));
+    const spy = spyOn(catalogManager, 'removeManual').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+    try {
+      await handleCatalogRemove(fakeButton(`catalog-remove:${token}`), deps, store);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(catalogManager.getCard('lego-minecraft-3', cid('229'))).toBeDefined();
+    expect(JSON.stringify(replies)).toContain('Removing the card failed. Run the command again.');
+    expect(JSON.stringify(replies)).not.toContain('was removed');
+  });
+
+  test('a kept card whose message cannot be updated says it was kept', async () => {
+    const store = createRemoveStore(() => clock);
+    const token = store.put('lego-minecraft-3', cid('229'));
+    const button = {
+      ...fakeButton(`catalog-keep:${token}`),
+      update: async () => {
+        throw new Error('Unknown interaction');
+      },
+    } as unknown as ButtonInteraction;
+    await handleCatalogRemove(button, deps, store);
+    expect(replies).toEqual([
+      {
+        content: '#229 was kept, but this message could not be updated.',
+        flags: MessageFlags.Ephemeral,
+      },
+    ]);
+    expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.source).toBe('manual');
   });
 
   test('a card that is no longer manual is not removed, and says why', async () => {

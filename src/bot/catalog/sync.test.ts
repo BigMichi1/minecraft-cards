@@ -126,14 +126,43 @@ describe('syncCatalogs', () => {
     expect(alerts.at(-1)!.text).toContain('(last success <t:0:R>)');
   });
 
+  test('/admin catalog sync (force) applies a page leaving out more, naming the cards', async () => {
+    rows = starter.slice(0, 240).map((id) => row(id));
+    const [failed] = await run(10);
+    expect(failed).toMatchObject({ ok: false, kind: 'layout' });
+    expect(failed!.ok === false && failed!.error).toContain(
+      'missing from laststicker, more than 6:'
+    );
+    expect(failed!.ok === false && failed!.error).toContain('LE13, LE14');
+    const [forced] = await run(20, { force: true });
+    expect(forced).toMatchObject({ ok: true, result: { vanished: starter.slice(240) } });
+  });
+
+  test('a network error is a fetch failure', async () => {
+    const [o] = await run(10, {
+      fetchSet: async () => {
+        throw new TypeError('fetch failed');
+      },
+    });
+    expect(o).toMatchObject({ ok: false, kind: 'fetch', error: 'fetch failed' });
+  });
+
+  test('a forced sync counts its reply as telling the admin', async () => {
+    catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', null, 1);
+    rows = [...starter.map((id) => row(id)), row('229')];
+    outcome = 'failed';
+    await run(10, { force: true });
+    expect(catalogManager.releaseManual('lego-minecraft-3', cid('229'), 11)).toEqual({ ok: true });
+  });
+
   test('a page leaving out more than max(5, 2 %) of the stored cards changes nothing', async () => {
     rows = starter.slice(0, 240).map((id) => row(id));
     const [failed] = await run(10);
     expect(failed).toMatchObject({ ok: false, kind: 'layout' });
     expect(catalogManager.getCard('lego-minecraft-3', cid('1'))?.name).toBeNull();
-    rows = starter.slice(0, 246).map((id) => row(id));
-    const [synced] = await run(10, { force: true });
-    expect(synced).toMatchObject({ ok: true, result: { vanished: starter.slice(246) } });
+    rows = starter.slice(0, 245).map((id) => row(id));
+    const [synced] = await run(10 + DAY);
+    expect(synced).toMatchObject({ ok: true, result: { vanished: starter.slice(245) } });
   });
 
   test("a due check that fails is that collection's failure, not a rejection", async () => {
@@ -175,6 +204,41 @@ describe('syncCatalogs', () => {
       'catalog-listed:lego-minecraft-3:229',
       'catalog-listed:lego-minecraft-3:229',
     ]);
+  });
+
+  test('a now-listed note held back by the throttle counts as noted', async () => {
+    catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', null, 1);
+    rows = [...starter.map((id) => row(id)), row('229')];
+    outcome = 'throttled';
+    await run(10);
+    outcome = 'sent';
+    await run(20, { force: true });
+    expect(alerts.map((a) => a.key)).toEqual(['catalog-listed:lego-minecraft-3:229']);
+  });
+
+  test('a timeout is a fetch failure', async () => {
+    const [o] = await run(10, {
+      fetchSet: async () => {
+        throw new DOMException('The operation timed out.', 'TimeoutError');
+      },
+    });
+    expect(o).toMatchObject({ ok: false, kind: 'fetch' });
+  });
+
+  test('a last success that cannot be read leaves the failure alert intact', async () => {
+    const spy = spyOn(catalogManager, 'syncSucceededAt').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+    try {
+      await run(10, {
+        fetchSet: async () => {
+          throw new HttpError(503, 'https://x/');
+        },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(alerts.at(-1)!.text).toContain('(last success unknown)');
   });
 
   test('vanished and newly listed manual cards are reported', async () => {
@@ -245,6 +309,21 @@ describe('syncCatalogs', () => {
     const plain: CollectionDefinition = { id: 'other-set' as CollectionId, name: 'Other' };
     expect(await run(10, { collections: [plain] })).toEqual([]);
     expect(fetched).toEqual([]);
+  });
+});
+
+describe('createSyncGate', () => {
+  test('waits only what is left of 1500 ms, and nothing for an earlier clock', async () => {
+    const gate = createSyncGate();
+    const sleeps: number[] = [];
+    const sleep = async (ms: number) => {
+      sleeps.push(ms);
+    };
+    await gate.beforeRequest(() => 1000, sleep);
+    await gate.beforeRequest(() => 2000, sleep);
+    await gate.beforeRequest(() => 5000, sleep);
+    await gate.beforeRequest(() => 10, sleep);
+    expect(sleeps).toEqual([500]);
   });
 });
 

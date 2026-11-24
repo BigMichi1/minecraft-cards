@@ -151,7 +151,9 @@ The design above is as approved; review changed these points, and the code follo
 
 - **Picture and status checks.** The Confirm customId is
   `admin-confirm:<listing>:<cards>:<picture URL fingerprint>` (built and read only in
-  `interactions/buttonIds.ts`). `listingManager.confirmCards(listingId, { cardIds, image }, now)`
+  `interactions/buttonIds.ts`).
+  `listingManager.confirmCards({ listingId, cardIds, image }, now)` (a `ConfirmTarget`; the
+  fingerprint lives in `matcher/imageFingerprint.ts`)
   returns `{ kind: 'confirmed' | 'gone' | 'stale' }`; `stale` names the reason: `cards`,
   `picture` (the picture URL changed since the DM) or `status` (the listing is a `mismatch` or
   `pending`, `isConfirmable` in `matcher/matchStatus.ts`). The admin's reply names the reason.
@@ -168,3 +170,9 @@ The design above is as approved; review changed these points, and the code follo
   Both actions are logged.
 - **Interfaces.** `handleRightButton(i, { notifyAdmin, now? })`, `handleAdminConfirm(i,
 { adminId, now? })`; one exported `AdminDm` type; `adminListingEmbed(listing, title, lead?)`.
+- **Reply texts.** Confirm refusals (`STALE_REPLIES`): "The listing's cards changed since this
+  message; look again or use /admin map.", "The listing's picture changed since this message;
+  look again or use /admin map.", "The listing's picture check is due again or found another
+  card; look again or use /admin map." A throttled Right answers "Thanks — someone already asked
+  the admin about this listing today." Replies that cannot be delivered after the action took
+  effect are only logged (warn), never reported as a failure of the action.

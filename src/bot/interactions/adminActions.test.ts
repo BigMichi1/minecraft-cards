@@ -140,7 +140,7 @@ describe('admin actions', () => {
         { name: 'By', value: 'bob' },
       ]).toJSON();
       expect(json.title).toBe('Title');
-      expect(json.fields!.map((f) => f.name)).toEqual(['By', 'Cards', 'Shop', 'URL']);
+      expect(json.fields!.map((f) => f.name)).toEqual(['By', 'Collection', 'Cards', 'Shop', 'URL']);
       expect(json.url).toBe('https://www.ebay.de/itm/1');
       expect(json.image!.url).toBe('https://img/12.jpg');
     });

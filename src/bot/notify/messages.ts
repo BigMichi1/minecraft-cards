@@ -8,6 +8,7 @@ import {
 import type { CardId } from '../cards/cardId';
 import { encodeRightId } from '../interactions/buttonIds';
 import type { CollectionId } from '../collections/ids';
+import { collectionName } from '../collections/index';
 import { catalogManager } from '../database/catalogManager';
 import type { StoredListing } from '../database/listingManager';
 import type { Money, ShopId } from '../shops/types';
@@ -66,19 +67,17 @@ export function formatPrice(price: Money): string {
   return `${amount} ${price.currency}`;
 }
 
+/** The alert title; it names the collection, as card names repeat across series ("Steve"). */
 function title(item: NotificationItem, marker: string): string {
   const { listing, cardIds } = item;
-  const prefix = marker ? `${marker} ` : '';
+  const prefix = `${marker ? `${marker} ` : ''}🟢 ${collectionName(listing.collection)} · `;
   if (cardIds.length > 1) {
     const ids = cardIds.map((id) => `#${id}`).join(', ');
-    return truncate(`${prefix}🟢 Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
+    return truncate(`${prefix}Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
   }
   const [id] = cardIds;
   const name = id === undefined ? undefined : catalogManager.getCard(listing.collection, id)?.name;
-  return truncate(
-    `${prefix}🟢 Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`,
-    MAX_TITLE
-  );
+  return truncate(`${prefix}Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`, MAX_TITLE);
 }
 
 function footer(listing: StoredListing): string | null {

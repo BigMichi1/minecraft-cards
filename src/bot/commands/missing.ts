@@ -102,8 +102,8 @@ function status(
   // "looked up, none in the window", so the formatter can tell it from "not looked up".
   const lastSuccess: Partial<Record<ShopId, number | null>> = {};
   for (const shop of SHOP_IDS) {
-    if (needsLastSuccess(latest.summary, shop, ctx.enabledShops)) {
-      lastSuccess[shop] = runManager.lastSuccess(shop, now) ?? null;
+    if (needsLastSuccess(latest.summary, collection, shop, ctx.enabledShops)) {
+      lastSuccess[shop] = runManager.lastSuccess(shop, collection, now) ?? null;
     }
   }
   const names = new Map<CardId, string>();
@@ -112,6 +112,7 @@ function status(
     if (name) names.set(card, name);
   }
   return buildStatusReply({
+    collection,
     cards,
     latest,
     enabledShops: ctx.enabledShops,

@@ -74,10 +74,14 @@ function ok(
     },
   };
 }
-function failing(id: ShopId, error: Error): ShopAdapter {
+function failing(
+  id: ShopId,
+  error: Error,
+  collection: CollectionId = 'lego-minecraft-3'
+): ShopAdapter {
   return {
     id,
-    collection: 'lego-minecraft-3',
+    collection,
     fetchListings: async () => {
       fetchCount++;
       throw error;
@@ -160,6 +164,43 @@ describe('runCheck', () => {
     embedded = [];
     clock = 1_000_000;
     fetchCount = 0;
+  });
+
+  test("a failing shop for one collection leaves the other collections' listings alone", async () => {
+    await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+    const s1: Listing = { ...blue12, url: 'https://www.blue-ocean.de/p/s1-12' };
+    userManager.setList('u1', 'lego-minecraft-1', '12');
+    catalogManager.syncCollection(
+      'lego-minecraft-1',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Skin Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      clock
+    );
+    await runCheck(
+      depsWith([ok('blue-ocean', [blue12]), ok('blue-ocean', [s1], {}, 'lego-minecraft-1')])
+    );
+    expect(listingManager.getByUrl(s1.url)!.available).toBe(true);
+    const s = await runCheck(
+      depsWith([
+        ok('blue-ocean', [blue12]),
+        failing('blue-ocean', new ShopLayoutError('no cards'), 'lego-minecraft-1'),
+      ])
+    );
+    expect(listingManager.getByUrl(blue12.url)!.available).toBe(true);
+    expect(listingManager.getByUrl(s1.url)!.available).toBe(true);
+    expect(s.shops['blue-ocean']).toEqual({ listings: 1 });
+    expect(s.collections?.['lego-minecraft-1']?.['blue-ocean']?.error).toContain('no cards');
+    expect(
+      alerts.filter((a) => a.startsWith('Shop blue-ocean (LEGO Minecraft Serie 1) check failed'))
+    ).toHaveLength(1);
   });
 
   test('a failing shop keeps its stored state and alerts once per 24 h', async () => {
@@ -868,7 +909,7 @@ describe('runCheck', () => {
     expect(alerts[0]).toContain('5000 results');
     await runCheck(depsWith([cut()]));
     expect(alerts).toHaveLength(1);
-    expect(runManager.lastAlertAt('shop-truncated:ebay')).toBeDefined();
+    expect(runManager.lastAlertAt('shop-truncated:ebay:lego-minecraft-3')).toBeDefined();
     await runCheck(depsWith([ok('ebay', [], { truncated: [] })]));
     expect(alerts).toHaveLength(1);
   });
@@ -1252,7 +1293,10 @@ describe('runCheck', () => {
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('160'), puzzle: true }]);
     });
     /** The admin alerts but the one for the sold-out references. */
-    const notes = () => alerts.filter((a) => !a.startsWith('Shop sammel-ente: all'));
+    const notes = () =>
+      alerts.filter(
+        (a) => !a.startsWith('Shop sammel-ente (LEGO Minecraft Serie 3 "On Fire"): all')
+      );
 
     test('a sammel-ente "Puzzlekarte" name no longer marks a puzzle card', async () => {
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('160'), puzzle: false }]);

@@ -16,7 +16,7 @@ import type { PictureCounts, RunSummary } from '../check/runner';
 import { PICTURE_REJECTIONS, type PictureRejection } from '../matcher/matchStatus';
 import { catalogManager, parseKnownCardList, type ManualRefusal } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
-import { runManager } from '../database/runManager';
+import { runManager, shopEntries } from '../database/runManager';
 import type { AdminDeps } from '../interactions/adminActions';
 import { buildPreviewText, importStore } from '../interactions/catalogImport';
 import { errorMessage } from '../utils/async';
@@ -292,17 +292,24 @@ function picturesLine(pictures: PictureCounts): string {
 }
 
 export function formatSummary(summary: RunSummary): string {
-  const lines = Object.entries(summary.shops).map(([shop, s]) => {
+  const lines: string[] = [];
+  let heading: CollectionId | null = null;
+  for (const { collection, shop, entry: s } of shopEntries(summary)) {
+    if (collection !== heading) {
+      lines.push(`${collectionName(collection)}:`);
+      heading = collection;
+    }
     let line = `${shop}: ${s.listings} listings`;
     if (s.error) line += ` — error: ${s.error}`;
     if (s.skippedNoId) line += ` (skipped ${s.skippedNoId} without card number)`;
-    if (s.skippedExcluded) line += ` (skipped ${s.skippedExcluded} not series 3 single cards)`;
+    if (s.skippedExcluded)
+      line += ` (skipped ${s.skippedExcluded} not single cards of this collection)`;
     if (s.truncated) {
       line += ` (${s.truncated} ${s.truncated === 1 ? 'search' : 'searches'} cut at the page cap)`;
     }
     if (s.skippedInvalid) line += ` (skipped ${s.skippedInvalid} without link or title)`;
-    return line;
-  });
+    lines.push(line);
+  }
   if (summary.error) lines.push(`Run failed: ${summary.error}`);
   if (summary.pictures) lines.push(picturesLine(summary.pictures));
   if (summary.rematch) {

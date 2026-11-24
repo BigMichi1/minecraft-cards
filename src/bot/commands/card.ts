@@ -84,6 +84,7 @@ export async function execute(
       catalogManager.referenceCatalog(collection).usable.find((r) => r.cardId === card.cardId)
         ?.referenceImageUrl ?? null;
     const reply = buildCardReply({
+      collection,
       card: card.cardId,
       name: card.name,
       reference,

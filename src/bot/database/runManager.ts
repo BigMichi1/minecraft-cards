@@ -1,6 +1,7 @@
 import { desc, eq, gte, lt } from 'drizzle-orm';
 import type { RunSummary, ShopSummary } from '../check/runner';
-import type { ShopId } from '../shops/types';
+import { COLLECTION_IDS, LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
+import { SHOP_IDS, type ShopId } from '../shops/types';
 import { errorMessage } from '../utils/async';
 import logger from '../utils/logger';
 import { db } from './db';
@@ -55,6 +56,71 @@ function isShopSummary(entry: unknown): entry is ShopSummary {
 }
 
 /**
+ * A shop's result for a collection in a run. Series 3 (LEGACY_COLLECTION) lives in `shops`, as
+ * in every row written before collections; every other collection in `collections`.
+ */
+export function shopEntry(
+  summary: RunSummary,
+  collection: CollectionId,
+  shop: ShopId
+): ShopSummary | undefined {
+  return collection === LEGACY_COLLECTION
+    ? summary.shops[shop]
+    : summary.collections?.[collection]?.[shop];
+}
+
+/** Store a shop's result for a collection where shopEntry reads it. */
+export function setShopEntry(
+  summary: RunSummary,
+  collection: CollectionId,
+  shop: ShopId,
+  entry: ShopSummary
+): void {
+  if (collection === LEGACY_COLLECTION) {
+    summary.shops[shop] = entry;
+    return;
+  }
+  summary.collections ??= {};
+  (summary.collections[collection] ??= {})[shop] = entry;
+}
+
+/** Every shop result of a run, in COLLECTION_IDS then SHOP_IDS order. */
+export function shopEntries(
+  summary: RunSummary
+): { collection: CollectionId; shop: ShopId; entry: ShopSummary }[] {
+  return COLLECTION_IDS.flatMap((collection) =>
+    SHOP_IDS.flatMap((shop) => {
+      const entry = shopEntry(summary, collection, shop);
+      return entry ? [{ collection, shop, entry }] : [];
+    })
+  );
+}
+
+/** A stored `collections` map with every entry that is no shop summary dropped (warned once). */
+function parseCollections(value: unknown, rowId: number): RunSummary['collections'] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'object' || value === null) {
+    warnOnce(`${rowId}:collections`, `run ${rowId}: stored collections are not an object`);
+    return undefined;
+  }
+  const out: NonNullable<RunSummary['collections']> = {};
+  for (const [collection, shops] of Object.entries(value)) {
+    if (typeof shops !== 'object' || shops === null) continue;
+    const kept: Partial<Record<ShopId, ShopSummary>> = {};
+    for (const [shop, entry] of Object.entries(shops as Record<string, unknown>)) {
+      if (isShopSummary(entry)) kept[shop as ShopId] = entry;
+      else
+        warnOnce(
+          `${rowId}:${collection}:${shop}`,
+          `run ${rowId}: stored ${collection} ${shop} entry is not a shop summary`
+        );
+    }
+    out[collection as CollectionId] = kept;
+  }
+  return out;
+}
+
+/**
  * Parse a stored summary. Rows written by an older version lack newer fields, so every field
  * added to RunSummary after the first release must be optional; this check covers the fields
  * every version wrote. A row that is not valid JSON, not an object or lacks one of those fields
@@ -90,7 +156,8 @@ function parseSummary(json: string, rowId: number): RunSummary | undefined {
     if (isShopSummary(entry)) shops[shop] = entry;
     else warnOnce(`${rowId}:${shop}`, `run ${rowId}: stored ${shop} entry is not a shop summary`);
   }
-  return { ...(value as RunSummary), shops };
+  const collections = parseCollections(v.collections, rowId);
+  return { ...(value as RunSummary), shops, ...(collections ? { collections } : {}) };
 }
 
 export const runManager = {
@@ -112,12 +179,12 @@ export const runManager = {
   },
 
   /**
-   * The highest number of listings `shop` returned in its successful runs that started within
+   * The highest number of listings `shop` returned for `collection` in its successful runs that started within
    * the last SHOP_PEAK_WINDOW_MS (3 days) before `now`, however many runs that is; undefined when
    * there is none.
    * Unreadable rows and entries are skipped with a warning, once per row.
    */
-  shopPeakListings(shop: ShopId, now: number): number | undefined {
+  shopPeakListings(shop: ShopId, collection: CollectionId, now: number): number | undefined {
     const rows = db
       .select({ id: runs.id, summary: runs.summary }) // id keys the once-per-row warning
       .from(runs)
@@ -127,7 +194,7 @@ export const runManager = {
     for (const row of rows) {
       const summary = parseSummary(row.summary, row.id);
       if (!summary) continue;
-      const entry = summary.shops[shop];
+      const entry = shopEntry(summary, collection, shop);
       if (entry === undefined || entry.error !== undefined) continue;
       peak = Math.max(peak ?? entry.listings, entry.listings);
     }
@@ -158,11 +225,11 @@ export const runManager = {
   },
 
   /**
-   * When `shop` was last checked successfully: the start of the newest run within the last
+   * When `shop` was last checked successfully for `collection`: the start of the newest run within the last
    * LAST_SUCCESS_WINDOW_MS (7 days) before `now` whose entry for it has no error. Undefined when
    * there is none in that window (or only in rows that can no longer be read).
    */
-  lastSuccess(shop: ShopId, now: number): number | undefined {
+  lastSuccess(shop: ShopId, collection: CollectionId, now: number): number | undefined {
     // Newest first, a page at a time: the scan usually ends in the first page.
     for (let offset = 0; ; offset += PAGE) {
       const rows = db
@@ -175,7 +242,7 @@ export const runManager = {
         .all();
       for (const row of rows) {
         const summary = parseSummary(row.summary, row.id);
-        const entry = summary?.shops[shop];
+        const entry = summary ? shopEntry(summary, collection, shop) : undefined;
         if (summary && entry !== undefined && entry.error === undefined) return summary.startedAt;
       }
       if (rows.length < PAGE) return undefined;

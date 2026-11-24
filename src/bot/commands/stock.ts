@@ -54,8 +54,8 @@ function page(
   const latest = runManager.latestReadable();
   const lastSuccess: Partial<Record<ShopId, number | null>> = {};
   for (const shop of SHOP_IDS) {
-    if (needsLastSuccess(latest.summary, shop, ctx.enabledShops)) {
-      lastSuccess[shop] = runManager.lastSuccess(shop, now) ?? null;
+    if (needsLastSuccess(latest.summary, collection, shop, ctx.enabledShops)) {
+      lastSuccess[shop] = runManager.lastSuccess(shop, collection, now) ?? null;
     }
   }
   return buildStockPage({

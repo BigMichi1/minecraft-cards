@@ -2,6 +2,7 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import { COLLECTION_IDS, LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
 import type { RunSummary } from '../check/runner';
+import { shopEntry } from '../database/runManager';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { SHOP_NAMES } from '../notify/messages';
 import { SHOP_IDS, type ShopId } from '../shops/types';
@@ -134,14 +135,14 @@ function cellText(cell: ShopCell): string {
 function shopStatus(shop: ShopId, input: StockInput, last: RunSummary): string {
   const name = SHOP_NAMES[shop];
   if (!input.enabledShops.includes(shop)) return `⚪ ${name} n/a`;
-  const entry = last.shops[shop];
+  const entry = shopEntry(last, input.collection, shop);
   const state =
     entry === undefined
       ? `⚠️ ${name} not checked`
       : entry.error !== undefined
         ? `❌ ${name} failed`
         : `✅ ${name}`;
-  if (!needsLastSuccess(last, shop, input.enabledShops)) return state;
+  if (!needsLastSuccess(last, input.collection, shop, input.enabledShops)) return state;
   const success = input.lastSuccess[shop];
   if (success === undefined) throw new Error(`/stock: last success of ${shop} was not looked up`);
   return success === null

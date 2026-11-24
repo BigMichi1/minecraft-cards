@@ -17,6 +17,7 @@ const ALL: readonly ShopId[] = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay
 
 function ctx(over: Partial<CellContext> = {}): CellContext {
   return {
+    collection: 'lego-minecraft-3',
     latest: { summary: runOf(ALL), newerUnreadable: false },
     enabledShops: ALL,
     listings: [],
@@ -56,11 +57,11 @@ describe('pictureBacked', () => {
 describe('needsLastSuccess', () => {
   test('only an enabled shop whose latest check failed or did not run', () => {
     const last = runOf(['sammel-ente'], ['blue-ocean']);
-    expect(needsLastSuccess(last, 'sammel-ente', ALL)).toBe(false);
-    expect(needsLastSuccess(last, 'blue-ocean', ALL)).toBe(true);
-    expect(needsLastSuccess(last, 'ebay', ALL)).toBe(true);
-    expect(needsLastSuccess(last, 'ebay', ['sammel-ente'])).toBe(false);
-    expect(needsLastSuccess(undefined, 'ebay', ALL)).toBe(false);
+    expect(needsLastSuccess(last, 'lego-minecraft-3', 'sammel-ente', ALL)).toBe(false);
+    expect(needsLastSuccess(last, 'lego-minecraft-3', 'blue-ocean', ALL)).toBe(true);
+    expect(needsLastSuccess(last, 'lego-minecraft-3', 'ebay', ALL)).toBe(true);
+    expect(needsLastSuccess(last, 'lego-minecraft-3', 'ebay', ['sammel-ente'])).toBe(false);
+    expect(needsLastSuccess(undefined, 'lego-minecraft-3', 'ebay', ALL)).toBe(false);
   });
 });
 

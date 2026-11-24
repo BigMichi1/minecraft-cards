@@ -113,6 +113,22 @@ describe('handleCatalogRemove', () => {
     expect(JSON.stringify(replies)).not.toContain('was removed');
   });
 
+  test('a note that cannot be sent either is logged, not thrown', async () => {
+    const store = createRemoveStore(() => clock);
+    const token = store.put('lego-minecraft-3', cid('229'));
+    const button = {
+      ...fakeButton(`catalog-remove:${token}`),
+      update: async () => {
+        throw new Error('Unknown interaction');
+      },
+      reply: async () => {
+        throw new Error('Unknown interaction');
+      },
+    } as unknown as ButtonInteraction;
+    await handleCatalogRemove(button, deps, store);
+    expect(catalogManager.getCard('lego-minecraft-3', cid('229'))).toBeUndefined();
+  });
+
   test('a kept card whose message cannot be updated says it was kept', async () => {
     const store = createRemoveStore(() => clock);
     const token = store.put('lego-minecraft-3', cid('229'));

@@ -216,6 +216,24 @@ describe('syncCatalogs', () => {
     expect(alerts.map((a) => a.key)).toEqual(['catalog-listed:lego-minecraft-3:229']);
   });
 
+  test('a failing note of the now-listed cards is logged and tried again', async () => {
+    catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', null, 1);
+    rows = [...starter.map((id) => row(id)), row('229')];
+    const spy = spyOn(catalogManager, 'markListedNoted').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+    try {
+      const [o] = await run(10);
+      expect(o).toMatchObject({ ok: true });
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await run(20, { force: true }))[0]).toMatchObject({
+      ok: true,
+      result: { nowListed: ids('229') },
+    });
+  });
+
   test('a timeout is a fetch failure', async () => {
     const [o] = await run(10, {
       fetchSet: async () => {

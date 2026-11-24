@@ -547,6 +547,11 @@ describe('/admin', () => {
       );
     });
 
+    test('an unknown catalog subcommand gets the error reply, not a throw', async () => {
+      await adminExecute(fakeAdmin('catalog', 'nope', { card: '12' }), ctx);
+      expect(JSON.stringify(lastReply())).toContain('Something went wrong');
+    });
+
     test('a sync with nothing to sync says so', async () => {
       ctx = { ...ctx, syncCatalog: async () => undefined };
       await adminExecute(fakeAdmin('catalog', 'sync'), ctx);

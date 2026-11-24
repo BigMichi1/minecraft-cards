@@ -97,6 +97,7 @@ describe('parseSammelEntePage', () => {
       productCount: 0,
       skippedNoId: 0,
       skippedExcluded: 0,
+      noSeries: [],
       skippedInvalid: 0,
     });
   });
@@ -201,6 +202,28 @@ describe('series 1', () => {
     ].join('');
     const page = parseSammelEntePage(html, 'Serie 1');
     expect(page.listings.map((l) => l.cardIds[0])).toEqual([cid('1')]);
-    expect(page.skippedExcluded).toBe(2);
+    expect(page.skippedExcluded).toBe(1);
+    expect(page.noSeries).toEqual(['LEGO Minecraft | #013 Pig']);
+  });
+
+  test('a card title naming no series fails the read: the title format changed', async () => {
+    const html =
+      '<div class="card product-box"><a class="product-name" href="/a">LEGO Minecraft Serie 1 | #001 Steve</a></div>' +
+      '<div class="card product-box"><a class="product-name" href="/c">LEGO Minecraft | #013 Pig</a></div>';
+    const { fetchFn } = fakeFetch({ '?p=1': html });
+    const settings = {
+      category: 'https://shop-sammel-ente.de/Minecraft/Serie-1/',
+      series: 'Serie 1',
+    };
+    await expect(
+      createSammelEnteFetcher(settings, fetchFn, { delayMs: 0 }).fetchListings()
+    ).rejects.toThrow('sammel-ente: a card title names no series: "LEGO Minecraft | #013 Pig"');
+  });
+
+  test('the series is read however it is spaced', () => {
+    const html =
+      '<div class="card product-box"><a class="product-name" href="/a">LEGO Minecraft Serie1 | #001 Steve</a></div>' +
+      '<div class="card product-box"><a class="product-name" href="/b">LEGO Minecraft Serie 1 TCC | #002 Alex</a></div>';
+    expect(parseSammelEntePage(html, 'Serie 1').listings).toHaveLength(2);
   });
 });

@@ -177,8 +177,15 @@ export function parseCollectItPage(html: string, series: string | null = null): 
       return;
     }
     const titleSeries = SERIES_SUFFIX.exec(title)?.[1];
+    if (series !== null && titleSeries === undefined) {
+      // A title naming no series: the title format changed, so this box cannot be trusted, and
+      // a box the walk drops would read as sold out (collect-it hides sold-out cards).
+      skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no series label`);
+      skippedNoId++;
+      return;
+    }
     if (series !== null && titleSeries?.toLowerCase() !== series.toLowerCase()) {
-      // Another series' card in this category, or a title naming none: unsure is no card.
+      // Another series' card in this category: counted, never stored as this collection's.
       excluded.push(url);
       return;
     }
@@ -364,6 +371,11 @@ export function createCollectItFetcher(
       }
       // Catches a dropped rel="next" (page 1 read alone) and cards that moved between pages
       // during the walk (one sold out, so a later card moved onto a page already read).
+      if (byUrl.size === 0) {
+        // Every card of another series (a series label typo, or a renamed suffix): reading it as
+        // none would mark every stored listing sold out.
+        throw new ShopLayoutError(`collect-it: no card listings of ${series} found`);
+      }
       if (byUrl.size + excluded.size !== total) {
         throw new ShopLayoutError(
           `collect-it: read ${byUrl.size + excluded.size} listings, but page 1 counts ${total} articles`

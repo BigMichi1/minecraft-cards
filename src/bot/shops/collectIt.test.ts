@@ -765,11 +765,19 @@ describe('series 1', () => {
     expect(page.listings.map((l) => l.cardIds[0])).toContain(cid('XXL1'));
   });
 
-  test('a title without the series label is skipped too: unsure is no card', async () => {
+  test('a title without the series label is an unreadable box: the walk fails, nothing is marked sold out', async () => {
     const html = retitle(alone(S1), '1 - Steve - Skin Karte - Serie 1', '1 - Steve - Skin Karte');
     const { fetchFn } = fakeFetch({ Einzelkarten: html });
-    const result = await createCollectItFetcher(SERIES_1, fetchFn, { delayMs: 0 }).fetchListings();
-    expect(result.listings).toHaveLength(29);
-    expect(result.skippedExcluded).toBe(1);
+    await expect(
+      createCollectItFetcher(SERIES_1, fetchFn, { delayMs: 0 }).fetchListings()
+    ).rejects.toThrow(/unreadable product box.*no series label/);
+  });
+
+  test('a category of only other series is a shop error, not 0 listings', async () => {
+    const { fetchFn } = fakeFetch({ Einzelkarten: alone(S1) });
+    const wrong = { ...SERIES_1, series: 'Serie 2' };
+    await expect(
+      createCollectItFetcher(wrong, fetchFn, { delayMs: 0 }).fetchListings()
+    ).rejects.toThrow('collect-it: no card listings of Serie 2 found');
   });
 });

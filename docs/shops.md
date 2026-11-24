@@ -106,9 +106,9 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   single in the probe named its series.
 - **No series word, but the catalog name** (`nameMatchedCardIds`): a title without any series
   word still gives a card when the name of that number in the eBay adapter's collection (the
-  catalog name, synced from laststicker, read at the start of each eBay fetch) stands right
-  beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
-  because series 3 #131 is "Ghast".
+  catalog name: laststicker's, or the admin's for a manual card, read at the start of each eBay
+  fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131, because series 3
+  #131 is "Ghast".
   - The number comes from the title forms above, a plain `N - Name`, or `LE`/`XXL` with any
     spacing (`LE 19 - Creeper` is LE19). The name follows it (spaces and at most one `-`, `–`,
     `—`, `:` or `|` between) or stands before it (`Wither Skeleton Karte 4`, `Karte #4`). Case,
@@ -122,12 +122,12 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     `Puzzlekarte Oberwelt 1` title no longer matches by name; they are never identified by
     picture alone anyway. The catalog names come from laststicker; on 2026-11-24 they equalled
     sammel-ente's apart from the 36 puzzle cards, and all 43 titles of the eBay fixture read the
-    same with them. Any other word gives nothing: another
-    series (`Comic Karte 3 - Steve`, series 1 card 3 is "Comic Steve"; `Staffel 2`, `S1`),
-    another card's longer name (`Gold Ghast Karte 131`, `Karte 131 - Ghast (Gold)`: LE21 is
-    "Gold Ghast"), a second card without its number (`Karte 3 - Steve / Alex`), another product
-    (`Sticker`, `Movie`), or another number (`2025`). Several cards each beside their own name
-    give all of them, in any order.
+    same with them. Any other word gives nothing: another series (`Comic Karte 3 - Steve`,
+    series 1 card 3 is "Comic Steve"; `Staffel 2`, `S1`), another card's longer name
+    (`Gold Ghast Karte 131`, `Karte 131 - Ghast (Gold)`: LE21 is "Gold Ghast"), a second card
+    without its number (`Karte 3 - Steve / Alex`), another product (`Sticker`, `Movie`), or
+    another number (`2025`). Several cards each beside their own name give all of them, in any
+    order.
   - Titles with a pick list, range, variation or `COUNT_WORDS` word never qualify, so the common
     `Karten N - Name - Charakterkarte` form and `Holo`, `Foil` or `Sammelkarte` titles are not
     read by name.
@@ -136,9 +136,10 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     (2026-11-19) is read as #104. A series 1 or 2 card with the same number and name, and
     nothing else in its title, passes too; it starts `pending` and its picture is compared as for
     any title, so a clearly other series 3 card becomes a `mismatch`, and an unclear picture an
-    alert marked "number unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with the series 1 and 2
-    catalogs loaded, is to place such a title by name only when no other series has that name at
-    that number (`docs/superpowers/specs/2026-11-19-multi-collection-design.md`).
+    alert marked "number unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with
+    the series 1 and 2 catalogs loaded, is to place such a title by name only when no other
+    series has that name at that number
+    (`docs/superpowers/specs/2026-11-19-multi-collection-design.md`).
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
   `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
   `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,

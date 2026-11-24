@@ -108,6 +108,13 @@ describe('/card', () => {
     runManager.record(runOf(['sammel-ente', 'blue-ocean']));
   });
 
+  test('a card of a collection whose card list is not loaded yet says so', async () => {
+    await execute(command('12', null, 'lego-minecraft-1'), ctx());
+    expect(last().content).toBe(
+      'The card list of LEGO Minecraft Serie 1 is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).'
+    );
+  });
+
   test('declares number (required) and shop with a choice per shop', () => {
     const json = data.toJSON();
     expect(json.name).toBe('card');

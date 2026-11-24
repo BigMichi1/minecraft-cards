@@ -206,6 +206,15 @@ describe('/missing', () => {
     await execute(fakeInteraction('u1', 'add', '9999, 9999, abc, 9999'));
     expect(lastReply().content).toBe('Nothing changed. Unknown or invalid: abc, 9999');
   });
+  test('a list for a collection whose card list is not loaded yet says so', async () => {
+    for (const sub of ['set', 'add', 'remove']) {
+      await execute(fakeInteraction('u1', sub, '1, 2', 'lego-minecraft-1'));
+      expect(lastReply().content).toBe(
+        'The card list of LEGO Minecraft Serie 1 is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).'
+      );
+    }
+  });
+
   test('a shop the collection does not use is "not enabled" there', async () => {
     catalogManager.syncCollection(
       'lego-minecraft-2',

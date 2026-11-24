@@ -69,7 +69,8 @@ const FILTER_LABEL: Record<StockFilter, string> = {
 };
 
 const EMPTY: Record<StockFilter, string> = {
-  all: 'This collection has no cards.',
+  // A collection's catalog is empty only before its first laststicker sync.
+  all: 'The card list of this collection is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).',
   missing: 'You have no missing cards on your list.',
   'in-stock': 'No card is in stock in any enabled shop right now.',
 };

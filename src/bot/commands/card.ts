@@ -13,7 +13,12 @@ import { logError } from '../utils/logger';
 import { clipText } from '../utils/messageLimit';
 import { buildCardReply } from './cardReply';
 import { enabledFor, type EnabledShops } from './shopCell';
-import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
+import {
+  catalogNotLoaded,
+  collectionOption,
+  readCollection,
+  UNKNOWN_COLLECTION,
+} from './collectionOption';
 
 /** What `/card` needs from the bot's wiring. */
 export interface CardContext {
@@ -68,7 +73,7 @@ export async function execute(
     const id = normalizeCardId(token);
     const card = id ? catalogManager.getCard(collection, id) : undefined;
     if (!card) {
-      await interaction.editReply(text(`Unknown card: ${token}`));
+      await interaction.editReply(text(catalogNotLoaded(collection) ?? `Unknown card: ${token}`));
       return;
     }
     const shopOption = interaction.options.getString('shop');

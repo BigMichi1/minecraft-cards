@@ -187,7 +187,9 @@ describe('buildStockPage', () => {
       'No card is in stock in any enabled shop right now.'
     );
     expect(empty('in-stock', ids('12')).components).toEqual([]);
-    expect(empty('all').content).toBe('This collection has no cards.');
+    expect(empty('all').content).toBe(
+      'The card list of this collection is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).'
+    );
   });
 
   describe('paging over the full catalog', () => {

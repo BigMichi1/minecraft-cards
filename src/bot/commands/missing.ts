@@ -8,7 +8,12 @@ import { userManager, type ListChange } from '../database/userManager';
 import { SHOP_IDS, type ShopId } from '../shops/types';
 import type { CardId } from '../cards/cardId';
 import type { CollectionId } from '../collections/ids';
-import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
+import {
+  catalogNotLoaded,
+  collectionOption,
+  readCollection,
+  UNKNOWN_COLLECTION,
+} from './collectionOption';
 import { buildStatusReply, needsLastSuccess, type StatusReply } from './missingStatus';
 import { enabledFor, type EnabledShops } from './shopCell';
 import { joinWithinLimit } from '../utils/messageLimit';
@@ -144,6 +149,10 @@ function runListChange(
   sub: string
 ): string {
   const userId = interaction.user.id;
+  if (sub === 'set' || sub === 'add' || sub === 'remove') {
+    const notLoaded = catalogNotLoaded(collection);
+    if (notLoaded) return notLoaded;
+  }
   switch (sub) {
     case 'set':
       return describeChange(

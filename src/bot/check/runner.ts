@@ -655,21 +655,23 @@ async function checkShop(
         )
       );
     }
-    if (found.length > 0 && found.every((l) => !l.available)) {
+    // This collection's own listings: a URL another collection holds is counted there.
+    const own = found.filter((l) => ownUrls.has(l.url));
+    if (own.length > 0 && own.every((l) => !l.available)) {
       // Every card sold out at once is more likely a changed stock marker than real.
       await alert(
         `shop-all-unavailable:${key}`,
-        `Shop ${shop}: all ${found.length} card listings read as unavailable — check the stock marker.`
+        `Shop ${shop}: all ${own.length} card listings read as unavailable — check the stock marker.`
       );
     }
-    if (peak !== undefined && found.length < peak * DROP_ALERT_SHARE) {
+    if (peak !== undefined && own.length < peak * DROP_ALERT_SHARE) {
       // A pagination or markup change can leave only part of the shop readable. Measured
       // against the peak of the successful runs of the last SHOP_PEAK_WINDOW_MS (3 days, longer
       // than the 24 h throttle), a lasting drop keeps alerting daily until its last healthy run
       // is older than that (about three alerts).
       await alert(
         `shop-drop:${key}`,
-        `Shop ${shop}: ${found.length} card listings, down from ${peak} at most in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)} — check the pagination and markup.`
+        `Shop ${shop}: ${own.length} card listings, down from ${peak} at most in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)} — check the pagination and markup.`
       );
     }
     if (result.truncated && result.truncated.length > 0) {
@@ -710,7 +712,7 @@ async function checkShop(
       }
     }
     record({
-      listings: found.length,
+      listings: own.length,
       ...(result.skippedNoId ? { skippedNoId: result.skippedNoId } : {}),
       ...(result.skippedExcluded ? { skippedExcluded: result.skippedExcluded } : {}),
       ...(result.skippedInvalid ? { skippedInvalid: result.skippedInvalid } : {}),

@@ -35,3 +35,8 @@ export function collectionName(id: CollectionId): string {
 export function collectionChoices(): { name: string; value: CollectionId }[] {
   return COLLECTIONS.map((c) => ({ name: c.name, value: c.id }));
 }
+
+/** The reply for a collection whose card list has not been synced from laststicker yet. */
+export function notLoadedText(collection: CollectionId): string {
+  return `The card list of ${collectionName(collection)} is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).`;
+}

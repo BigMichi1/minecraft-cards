@@ -6,7 +6,7 @@ import logger from '../utils/logger';
 import { clipText } from '../utils/messageLimit';
 import type { CategoryShopSettings } from '../collections/ids';
 import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher, ShopId } from './types';
-import { ShopLayoutError } from './types';
+import { sameSeries, ShopLayoutError } from './types';
 
 const SHOP = 'collect-it' satisfies ShopId;
 const ORIGIN = 'https://www.collect-it.de/';
@@ -117,7 +117,7 @@ export interface CollectItPage {
   canonical: string | null;
   /** The raw href of `<link rel="next">`, null when absent (the last page). */
   next: string | null;
-  /** Boxes whose title does not start with a card number. */
+  /** Boxes whose title does not start with a card number, or (with `series`) names no series. */
   skippedNoId: number;
   /** Card boxes whose title ends with another series label than `series`, by URL. */
   excluded: string[];
@@ -187,7 +187,7 @@ export function parseCollectItPage(html: string, series: string | null): Collect
       skippedNoId++;
       return;
     }
-    if (series !== null && titleSeries?.toLowerCase() !== series.toLowerCase()) {
+    if (series !== null && titleSeries !== undefined && !sameSeries(titleSeries, series)) {
       // Another series' card in this category: counted, never stored as this collection's.
       excluded.push(url);
       return;

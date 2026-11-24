@@ -7,10 +7,9 @@ import type { RunSummary } from '../check/runner';
 import type { StoredListing } from '../database/listingManager';
 import { shopEntry, type LatestRun } from '../database/runManager';
 import type { CollectionId } from '../collections/ids';
-import type { ShopId } from '../shops/types';
+import type { EnabledShops, ShopId } from '../shops/types';
 
-/** The shops this process checks, per collection (from the adapters). */
-export type EnabledShops = ReadonlyMap<CollectionId, readonly ShopId[]>;
+export type { EnabledShops } from '../shops/types';
 
 /** The shops checked for `collection`; none for a collection nothing checks. */
 export function enabledFor(enabled: EnabledShops, collection: CollectionId): readonly ShopId[] {

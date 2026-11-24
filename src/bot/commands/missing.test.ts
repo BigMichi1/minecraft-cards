@@ -7,7 +7,7 @@ import { cards, listingCards, listings, runs, users, wantedCards } from '../data
 import { listingManager } from '../database/listingManager';
 import { userManager } from '../database/userManager';
 import { runManager } from '../database/runManager';
-import { cid } from '../../test/cardIds';
+import { cid, ids } from '../../test/cardIds';
 import { setCatalogCards } from '../../test/catalog';
 import { catalogManager } from '../database/catalogManager';
 import logger from '../utils/logger';
@@ -207,12 +207,23 @@ describe('/missing', () => {
     expect(lastReply().content).toBe('Nothing changed. Unknown or invalid: abc, 9999');
   });
   test('a list for a collection whose card list is not loaded yet says so', async () => {
+    userManager.setList('u1', 'lego-minecraft-3', '12');
     for (const sub of ['set', 'add', 'remove']) {
       await execute(fakeInteraction('u1', sub, '1, 2', 'lego-minecraft-1'));
+      // Nothing changed, in this collection or another.
+      expect(userManager.getList('u1', 'lego-minecraft-1')).toEqual([]);
+      expect(userManager.getList('u1', 'lego-minecraft-3')).toEqual(ids('12'));
       expect(lastReply().content).toBe(
         'The card list of LEGO Minecraft Serie 1 is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).'
       );
     }
+  });
+
+  test('list and clear answer for a collection whose card list is not loaded yet', async () => {
+    await execute(fakeInteraction('u1', 'list', undefined, 'lego-minecraft-1'));
+    expect(lastReply().content).toBe('You have no missing cards on your list.');
+    await execute(fakeInteraction('u1', 'clear', undefined, 'lego-minecraft-1'));
+    expect(lastReply().content).toBe('Your missing list is now empty.');
   });
 
   test('a shop the collection does not use is "not enabled" there', async () => {

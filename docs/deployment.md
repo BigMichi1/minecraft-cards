@@ -68,8 +68,10 @@ collection for shop alerts): shop failures and unparseable pages, a shop whose c
 unavailable (a changed stock marker), a shop returning less than half of its peak count (the
 highest over its successful runs of the last 3 days: a pagination or markup change; a lasting
 drop keeps alerting daily until its last healthy run is older than 3 days, about three alerts),
-a check run that failed, a run where every notification DM failed, and notifications that could
-not be built. Failed slash command registration and an image model that failed to load are DMed
+a check run that failed, a run where every notification DM failed, notifications that could
+not be built, and a shop's listings that are stored under another collection
+(`shop-foreign:<shop>:<collection>`: not read for this one; moving a listing between
+collections comes with eBay for every collection). Failed slash command registration and an image model that failed to load are DMed
 once per start, not throttled. A wrong-card report whose admin DM failed is sent again with the
 next check; one still unsent after a day also logs a warning, once a day.
 

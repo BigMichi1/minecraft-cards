@@ -197,8 +197,7 @@ export const runManager = {
   /**
    * The highest number of listings `shop` returned for `collection` in its successful runs that
    * started within the last SHOP_PEAK_WINDOW_MS (3 days) before `now`, however many runs that is;
-   * undefined when
-   * there is none.
+   * undefined when there is none.
    * Unreadable rows and entries are skipped with a warning, once per row.
    */
   shopPeakListings(shop: ShopId, collection: CollectionId, now: number): number | undefined {
@@ -244,8 +243,7 @@ export const runManager = {
   /**
    * When `shop` was last checked successfully for `collection`: the start of the newest run
    * within the last LAST_SUCCESS_WINDOW_MS (7 days) before `now` whose entry for it has no error.
-   * Undefined when
-   * there is none in that window (or only in rows that can no longer be read).
+   * Undefined when there is none in that window (or only in rows that can no longer be read).
    */
   lastSuccess(shop: ShopId, collection: CollectionId, now: number): number | undefined {
     // Newest first, a page at a time: the scan usually ends in the first page.

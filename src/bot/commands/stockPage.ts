@@ -1,5 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { CardId } from '../cards/cardId';
+import { notLoadedText } from '../collections/index';
 import { COLLECTION_IDS, LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
 import type { RunSummary } from '../check/runner';
 import { shopEntry } from '../database/runManager';
@@ -68,12 +69,15 @@ const FILTER_LABEL: Record<StockFilter, string> = {
   'in-stock': 'cards in stock',
 };
 
-const EMPTY: Record<StockFilter, string> = {
-  // A collection's catalog is empty only before its first laststicker sync.
-  all: 'The card list of this collection is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).',
+const EMPTY: Record<Exclude<StockFilter, 'all'>, string> = {
   missing: 'You have no missing cards on your list.',
   'in-stock': 'No card is in stock in any enabled shop right now.',
 };
+
+/** The reply for an empty page: a collection's catalog is empty only before its first sync. */
+function emptyText(input: StockInput): string {
+  return input.filter === 'all' ? notLoadedText(input.collection) : EMPTY[input.filter];
+}
 
 /** Collection ids are slugs (checked in `collections/ids.test.ts`): no regex syntax, no `:`. */
 const CUSTOM_ID = new RegExp(
@@ -206,7 +210,7 @@ export function buildStockPage(input: StockInput): StockPage {
     cells: SHOP_IDS.map((shop) => cellText(cellAt(card, shop))),
   }));
   const shown = input.filter === 'in-stock' ? rows.filter((r) => r.cells.includes(IN_STOCK)) : rows;
-  if (shown.length === 0) return { content: EMPTY[input.filter], components: [] };
+  if (shown.length === 0) return { content: emptyText(input), components: [] };
 
   const cardWidth = Math.max('Card'.length, ...shown.map((r) => r.card.length));
   const widths = SHOP_IDS.map((shop) => Math.max(SHORT[shop].length, NOT_ENABLED.length));

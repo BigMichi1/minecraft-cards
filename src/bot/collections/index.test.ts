@@ -2,7 +2,13 @@ import { normalizeCardId, type CardId } from '../cards/cardId';
 import { describe, expect, test } from 'bun:test';
 import { COLLECTION_IDS } from './ids';
 import type { CollectionId } from './ids';
-import { COLLECTIONS, collectionById, collectionChoices, collectionName } from './index';
+import {
+  COLLECTIONS,
+  collectionById,
+  collectionChoices,
+  collectionName,
+  notLoadedText,
+} from './index';
 import { SHOP_HOSTS } from '../shops/adapters';
 
 describe('COLLECTIONS', () => {
@@ -91,5 +97,13 @@ describe('definition rules', () => {
         expect(normalizeCardId(id)).toBe(id as CardId);
       }
     }
+  });
+});
+
+describe('notLoadedText', () => {
+  test('names the collection and how its card list arrives', () => {
+    expect(notLoadedText('lego-minecraft-2')).toBe(
+      'The card list of LEGO Minecraft Serie 2 "TNT Boom-Bastic" is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).'
+    );
   });
 });

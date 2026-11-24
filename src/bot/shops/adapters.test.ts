@@ -73,6 +73,33 @@ describe('createShopAdapters', () => {
     );
   });
 
+  test('a collect-it category on another host, or eBay for another collection, is refused', () => {
+    const host = {
+      ...legoMinecraft1,
+      shops: {
+        'collect-it': { category: 'https://collect-it.de/x/Einzelkarten', series: 'Serie 1' },
+      },
+    };
+    expect(() => createShopAdapters(null, undefined, { collections: [host] })).toThrow(
+      'lego-minecraft-1: collect-it category is on collect-it.de, not www.collect-it.de'
+    );
+    const ebay = { ...legoMinecraft1, shops: { ebay: {} } };
+    expect(() =>
+      createShopAdapters({ clientId: 'id', clientSecret: 's' }, undefined, { collections: [ebay] })
+    ).toThrow('lego-minecraft-1: ebay is read for lego-minecraft-3 only');
+  });
+
+  test('without a fetch given, the shops are read with the global fetch', async () => {
+    const spy = spyOn(globalThis, 'fetch').mockResolvedValue(new Response('x'));
+    try {
+      const adapters = withWarnings(() => createShopAdapters(null)).value;
+      await adapters[0]!.fetchListings().catch(() => undefined);
+      expect(spy.mock.calls[0]?.[0]).toBe('https://shop-sammel-ente.de/Minecraft/Serie-1/?p=1');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('enabledShopsOf lists the shops checked per collection', () => {
     const enabled = enabledShopsOf(withWarnings(() => createShopAdapters(null)).value);
     expect(enabled.get('lego-minecraft-1')).toEqual(['sammel-ente', 'collect-it']);
@@ -84,7 +111,6 @@ describe('createShopAdapters', () => {
     let clock = 0;
     const sleeps: number[] = [];
     const deps = {
-      fetchFn: async () => new Response('x'),
       now: () => clock,
       sleep: async (ms: number) => {
         sleeps.push(ms);

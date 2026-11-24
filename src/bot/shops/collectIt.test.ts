@@ -791,4 +791,32 @@ describe('series 1', () => {
       createCollectItFetcher(wrong, fetchFn, { delayMs: 0 }).fetchListings()
     ).rejects.toThrow('collect-it: no card listings of Serie 2 found');
   });
+
+  test('the series label is compared by its number', () => {
+    const html = retitle(
+      S1,
+      '1 - Steve - Skin Karte - Serie 1',
+      '1 - Steve - Skin Karte - Serie 01'
+    );
+    expect(parseCollectItPage(html, 'Serie 1').listings.map((l) => l.cardIds[0])).toContain(
+      cid('1')
+    );
+  });
+
+  test('a URL read as this series on one page is not also counted as another series later', async () => {
+    const $1 = cheerio.load(P1);
+    const repeated = $1('.c-product-box-content a[href]').first().attr('href')!;
+    const $8 = cheerio.load(P8);
+    const box = $8('.c-product-box').first();
+    box.find('.c-product-box-content a[href]').attr('href', repeated);
+    box.find('.c-product-box-content-title').text('1 - Alex - Charakterkarte - Serie 2');
+    const unique = 30 + $8('.c-product-box').length - 1;
+    const { fetchFn } = fakeFetch({
+      Einzelkarten_s2: asPage($8.html(), 2, false, unique),
+      Einzelkarten: asPage(P1, 1, true, unique),
+    });
+    const result = await createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 }).fetchListings();
+    expect(result.listings).toHaveLength(unique);
+    expect(result.skippedExcluded).toBeUndefined();
+  });
 });

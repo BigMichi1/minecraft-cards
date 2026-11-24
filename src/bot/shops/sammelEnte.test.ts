@@ -254,4 +254,34 @@ describe('series 1', () => {
     expect(result.listings).toHaveLength(2);
     expect(result.skippedExcluded).toBe(1);
   });
+
+  test('the series number is compared as a number', () => {
+    const html =
+      '<div class="card product-box"><a class="product-name" href="/a">LEGO Minecraft Serie 01 | #001 Steve</a></div>';
+    expect(parseSammelEntePage(html, 'Serie 1').listings).toHaveLength(1);
+  });
+
+  test('a card title naming no series on a later page fails the read too, counted', async () => {
+    const box = (href: string, title: string) =>
+      `<div class="card product-box"><a class="product-name" href="${href}">${title}</a></div>`;
+    const page1 = `${box('/a', 'LEGO Minecraft Serie 1 | #001 Steve')}<a href="?p=2">2</a>`;
+    const page2 = `${box('/b', 'LEGO Minecraft | #013 Pig')}${box('/c', 'LEGO Minecraft | #014 Cow')}`;
+    const { fetchFn } = fakeFetch({ '?p=1': page1, '?p=2': page2 });
+    const settings = {
+      category: 'https://shop-sammel-ente.de/Minecraft/Serie-1/',
+      series: 'Serie 1',
+    };
+    await expect(
+      createSammelEnteFetcher(settings, fetchFn, { delayMs: 0 }).fetchListings()
+    ).rejects.toThrow('names no series: "LEGO Minecraft | #013 Pig" and 1 more');
+  });
+
+  test('"Serie 13" is no "Serie 1"', () => {
+    const html =
+      '<div class="card product-box"><a class="product-name" href="/a">LEGO Minecraft Serie 13 | #001 Steve</a></div>';
+    expect(parseSammelEntePage(html, 'Serie 1')).toMatchObject({
+      listings: [],
+      skippedExcluded: 1,
+    });
+  });
 });

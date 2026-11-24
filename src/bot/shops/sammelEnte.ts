@@ -6,7 +6,7 @@ import { clipText } from '../utils/messageLimit';
 import logger, { logError } from '../utils/logger';
 import type { CategoryShopSettings } from '../collections/ids';
 import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher } from './types';
-import { ShopLayoutError } from './types';
+import { sameSeries, ShopLayoutError } from './types';
 
 const ORIGIN = 'https://shop-sammel-ente.de/';
 const PAGE_DELAY_MS = 1500;
@@ -18,9 +18,6 @@ const TITLE_PATTERN = /\|\s*#((?:LE|XXL)?\d+)\s+(\S.*)$/i;
 // The series a card title names before its pipe ("LEGO Minecraft Serie 1 | #001 Steve"; also
 // "Serie1" or more words before the pipe).
 const SERIES_PATTERN = /\bSerie\s*(\d+)\b[^|]*\|/i;
-
-/** The number of a series label (`Serie 1` -> `1`), compared with a title's. */
-const seriesNumber = (label: string): string | undefined => /(\d+)/.exec(label)?.[1];
 
 function parsePrice(text: string): Listing['price'] {
   const match = /(\d+(?:\.\d{3})*),(\d{2})\s*€/.exec(text.replace(/\s+/g, ' '));
@@ -92,7 +89,7 @@ export function parseSammelEntePage(html: string, series: string | null): Sammel
         noSeries.push(title);
         return;
       }
-      if (titleSeries !== seriesNumber(series)) {
+      if (!sameSeries(titleSeries, series)) {
         // Another series' card: its number is no card here, and its picture no reference.
         skippedExcluded++;
         return;

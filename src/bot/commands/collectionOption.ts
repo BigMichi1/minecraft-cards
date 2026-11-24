@@ -1,6 +1,6 @@
 import type { ChatInputCommandInteraction, SlashCommandStringOption } from 'discord.js';
 import { isCollectionId, type CollectionId } from '../collections/ids';
-import { COLLECTIONS, collectionChoices, collectionName } from '../collections/index';
+import { COLLECTIONS, collectionChoices, notLoadedText } from '../collections/index';
 import { catalogManager } from '../database/catalogManager';
 import logger from '../utils/logger';
 
@@ -44,5 +44,5 @@ export function readCollection(i: ChatInputCommandInteraction): CollectionId | n
  */
 export function catalogNotLoaded(collection: CollectionId): string | null {
   if (catalogManager.knownIds(collection).size > 0) return null;
-  return `The card list of ${collectionName(collection)} is not loaded yet: it comes from laststicker with the next check (/admin catalog sync loads it now).`;
+  return notLoadedText(collection);
 }

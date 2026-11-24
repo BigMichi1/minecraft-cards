@@ -319,7 +319,7 @@ describe('runManager', () => {
     expect(read.collections).toEqual({ 'lego-minecraft-1': { 'collect-it': { listings: 4 } } });
   });
 
-  test('a stored collections value that is not an object is dropped, warned once', () => {
+  test('a stored collections value that is not an object is dropped, warned once per row', () => {
     const warn = spyOn(logger, 'warn');
     try {
       for (const bad of [5, null, ['x']]) {
@@ -335,10 +335,12 @@ describe('runManager', () => {
         expect(read.collections).toBeUndefined();
         expect(read.shops).toEqual(summary.shops);
       }
-      expect(
-        warn.mock.calls.filter((c) => String(c[0]).includes('stored collections are not an object'))
-          .length
-      ).toBeGreaterThan(0);
+      runManager.last();
+      const warned = warn.mock.calls.filter((c) =>
+        String(c[0]).includes('stored collections are not an object')
+      );
+      // One row per bad value, each warned once however often it is read.
+      expect(warned).toHaveLength(3);
     } finally {
       warn.mockRestore();
     }

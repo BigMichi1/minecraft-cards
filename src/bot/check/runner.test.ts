@@ -243,11 +243,62 @@ describe('runCheck', () => {
     );
   });
 
+  test("in one run, another collection's copy of a listing is neither matched nor sent", async () => {
+    catalogManager.syncCollection(
+      'lego-minecraft-1',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Skin Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      clock
+    );
+    userManager.setList('u2', 'lego-minecraft-1', '12');
+    setCatalogCards('lego-minecraft-3', [{ cardId: cid('12'), imageUrl: 'https://ente/12.jpg' }]);
+    const s1Copy: Listing = { ...blue12, imageUrl: 'https://img/s1-copy.jpg' };
+    await runCheck(
+      depsWith([ok('blue-ocean', [blue12]), ok('blue-ocean', [s1Copy], {}, 'lego-minecraft-1')])
+    );
+    // Matched with series 3's own picture, not the copy the series 1 adapter returned.
+    expect(embedded).toContain(blue12.imageUrl!);
+    expect(embedded).not.toContain(s1Copy.imageUrl!);
+    const notified = db
+      .select()
+      .from(notifications)
+      .all()
+      .map((n) => n.discordId);
+    expect(notified).toContain('u1');
+    expect(notified).not.toContain('u2');
+  });
+
+  test('the foreign-listing alert is throttled, and names at most ten listings', async () => {
+    const many: Listing[] = Array.from({ length: 12 }, (_, i) => ({
+      ...blue12,
+      url: `https://www.blue-ocean.de/p/f${i}`,
+    }));
+    await runCheck(depsWith([ok('blue-ocean', many)]));
+    await runCheck(depsWith([ok('blue-ocean', many, {}, 'lego-minecraft-1')]));
+    await runCheck(depsWith([ok('blue-ocean', many, {}, 'lego-minecraft-1')]));
+    const foreign = alerts.filter((a) => a.includes('stored under another collection'));
+    expect(foreign).toHaveLength(1);
+    expect(foreign[0]).toContain('… and 2 more');
+    expect(foreign[0]!.length).toBeLessThanOrEqual(2000);
+  });
+
   test('a listing another collection holds is named in one alert, and not read here', async () => {
     await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     await runCheck(depsWith([ok('blue-ocean', [blue12], {}, 'lego-minecraft-1')]));
     const foreign = alerts.filter((a) => a.includes('stored under another collection'));
     expect(foreign).toHaveLength(1);
+    // Counted for the collection that holds it, not this one.
+    expect(runManager.last()!.collections?.['lego-minecraft-1']?.['blue-ocean']).toEqual({
+      listings: 0,
+    });
     expect(foreign[0]).toContain(blue12.url);
     expect(runManager.lastAlertAt('shop-foreign:blue-ocean:lego-minecraft-1')).toBeDefined();
   });

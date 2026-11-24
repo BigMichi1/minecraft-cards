@@ -12,8 +12,14 @@ import { createBlueOceanFetcher } from './blueOcean';
 import { createCollectItFetcher } from './collectIt';
 import { createEbayFetcher } from './ebay';
 import { createSammelEnteFetcher } from './sammelEnte';
-import type { EnabledShops } from '../commands/shopCell';
-import { SHOP_IDS, type FetchFn, type ShopAdapter, type ShopFetcher, type ShopId } from './types';
+import {
+  SHOP_IDS,
+  type EnabledShops,
+  type FetchFn,
+  type ShopAdapter,
+  type ShopFetcher,
+  type ShopId,
+} from './types';
 
 /**
  * Between two page requests to one shop, also across collections (CLAUDE.md, shop requests).

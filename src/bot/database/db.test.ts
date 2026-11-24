@@ -51,14 +51,15 @@ describe('database schema', () => {
   test('every table takes a row and returns it', () => {
     db.insert(users).values({ discordId: 'u1', createdAt: 1 }).run();
     db.insert(wantedCards)
-      .values({ discordId: 'u1', cardId: cid('12') })
+      .values({ discordId: 'u1', collection: 'lego-minecraft-3', cardId: cid('12') })
       .run();
     db.insert(cards)
-      .values({ cardId: cid('12'), type: 'base', updatedAt: 1 })
+      .values({ collection: 'lego-minecraft-3', cardId: cid('12'), type: 'base', updatedAt: 1 })
       .run();
     const { id } = db
       .insert(listings)
       .values({
+        collection: 'lego-minecraft-3',
         shop: 'blue-ocean',
         url: 'https://www.blue-ocean.de/p/12',
         title: 't',
@@ -88,10 +89,19 @@ describe('database schema', () => {
       createdAt: 1,
       dmFailedAt: null,
     });
-    expect(db.select().from(wantedCards).get()).toEqual({ discordId: 'u1', cardId: cid('12') });
-    expect(db.select().from(cards).get()).toMatchObject({ cardId: '12', type: 'base' });
+    expect(db.select().from(wantedCards).get()).toEqual({
+      discordId: 'u1',
+      collection: 'lego-minecraft-3',
+      cardId: cid('12'),
+    });
+    expect(db.select().from(cards).get()).toMatchObject({
+      collection: 'lego-minecraft-3',
+      cardId: '12',
+      type: 'base',
+    });
     expect(db.select().from(listings).get()).toMatchObject({
       id,
+      collection: 'lego-minecraft-3',
       onHold: false,
       manualOverride: false,
       idConflict: false,
@@ -171,6 +181,82 @@ describe('database schema', () => {
       { url: 'https://e/bundle', match_status: 'bundle', similarity: 0.9, ...plain },
       { url: 'https://s/ref', match_status: 'reference', similarity: 0.9, ...plain },
     ]);
+    old.close();
+  });
+  test('the collection migration keeps every row under lego-minecraft-3', () => {
+    const dir = path.join(process.cwd(), 'src/bot/database/migrations');
+    const journal = JSON.parse(readFileSync(path.join(dir, 'meta/_journal.json'), 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const sqlOf = (tag: string) => readFileSync(path.join(dir, `${tag}.sql`), 'utf8');
+    const at = journal.entries.findIndex((e) => sqlOf(e.tag).includes('`collection`'));
+    expect(at).toBeGreaterThan(0);
+    const old = new Database(':memory:');
+    old.run('PRAGMA foreign_keys = ON');
+    const apply = (tag: string) => {
+      for (const statement of sqlOf(tag).split('--> statement-breakpoint')) {
+        if (statement.trim()) old.run(statement);
+      }
+    };
+    for (const e of journal.entries.slice(0, at)) apply(e.tag);
+    old.run(
+      `INSERT INTO cards (card_id, type, name, reference_image_url, updated_at) VALUES ('12', 'base', 'Squid', 'https://s/12.jpg', 1)`
+    );
+    old.run(`INSERT INTO users (discord_id, created_at) VALUES ('u1', 1)`);
+    old.run(`INSERT INTO wanted_cards (discord_id, card_id) VALUES ('u1', '12'), ('u1', 'LE8')`);
+    old.run(
+      `INSERT INTO listings (shop, url, title, format, available, available_since, match_status, manual_override, picture_card_id, first_seen_at, last_seen_at)
+       VALUES ('blue-ocean', 'https://b/12', 't', 'shop', 1, 5, 'mismatch', 1, '45', 1, 1)`
+    );
+    old.run(`INSERT INTO listing_cards (listing_id, card_id) VALUES (1, '12')`);
+    old.run(
+      `INSERT INTO notifications (discord_id, listing_id, available_since) VALUES ('u1', 1, 5)`
+    );
+    apply(journal.entries[at]!.tag);
+    expect(
+      old.query('SELECT collection, card_id, name, reference_image_url FROM cards').all()
+    ).toEqual([
+      {
+        collection: 'lego-minecraft-3',
+        card_id: '12',
+        name: 'Squid',
+        reference_image_url: 'https://s/12.jpg',
+      },
+    ]);
+    expect(
+      old.query('SELECT discord_id, collection, card_id FROM wanted_cards ORDER BY card_id').all()
+    ).toEqual([
+      { discord_id: 'u1', collection: 'lego-minecraft-3', card_id: '12' },
+      { discord_id: 'u1', collection: 'lego-minecraft-3', card_id: 'LE8' },
+    ]);
+    expect(
+      old
+        .query(
+          'SELECT id, collection, url, manual_override, picture_card_id, match_status FROM listings'
+        )
+        .all()
+    ).toEqual([
+      {
+        id: 1,
+        collection: 'lego-minecraft-3',
+        url: 'https://b/12',
+        manual_override: 1,
+        picture_card_id: '45',
+        match_status: 'mismatch',
+      },
+    ]);
+    expect(old.query('SELECT listing_id, card_id FROM listing_cards').all()).toEqual([
+      { listing_id: 1, card_id: '12' },
+    ]);
+    expect(
+      old.query('SELECT discord_id, listing_id, available_since FROM notifications').all()
+    ).toEqual([{ discord_id: 'u1', listing_id: 1, available_since: 5 }]);
+    expect(() =>
+      old.run(
+        `INSERT INTO cards (collection, card_id, type, updated_at) VALUES ('lego-minecraft-3', '12', 'base', 2)`
+      )
+    ).toThrow(/UNIQUE|PRIMARY KEY/);
+    expect(old.query('PRAGMA foreign_key_check').all()).toEqual([]);
     old.close();
   });
 });

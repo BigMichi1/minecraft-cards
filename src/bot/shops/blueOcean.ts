@@ -203,16 +203,25 @@ export function parseBlueOceanPage(
 
     const title = link.text().replace(/\s+/g, ' ').trim();
     const href = link.attr('href');
+    const box = link.closest('[data-testid="product-box"], .product-card');
+    const imageSrc = box.find('img[data-testid="product-box-img"]').first().attr('src');
+    const picture = pictureFile(imageSrc);
     if (!href) {
       skippedInvalid++;
       linkless++;
+      // A card box without a link: the series its picture or title names keep their listings.
+      const named = collections.filter(
+        (c) => isSinglePicture(c, picture) || names(c, title, picture)
+      );
+      if (named.length > 0) {
+        logger.warn(`blue-ocean: "${title}" has no link, skipping`);
+        for (const c of named) unreadable.add(c.id);
+        unreadableUrls.push(`(no link) "${title}"`);
+      }
       return;
     }
     const url = new URL(href, ORIGIN).toString();
     productUrls.push(url);
-    const box = link.closest('[data-testid="product-box"], .product-card');
-    const imageSrc = box.find('img[data-testid="product-box-img"]').first().attr('src');
-    const picture = pictureFile(imageSrc);
     const placement = placeByUrl(href, collections, suffixes);
     if (!placement) {
       // A single's picture (a series part and a card number, `250_…_tcc-01_de.jpg`) at a URL of

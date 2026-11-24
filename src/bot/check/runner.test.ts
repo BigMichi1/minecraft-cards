@@ -515,7 +515,7 @@ describe('runCheck', () => {
         const s = await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
         expect(listingManager.getByUrl(last.url)!.available).toBe(true);
         expect(s.shops['blue-ocean']?.error).toBe(
-          'no card of LEGO Minecraft Serie 3 "On Fire" on any page (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or no stored listing of it is available)'
+          'no card of LEGO Minecraft Serie 3 "On Fire" on any page (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or, for a series read before, once none of its stored listings is available)'
         );
 
         const again = card('4', 'lego-minecraft-3');

@@ -288,6 +288,25 @@ describe('parseBlueOceanPage across collections', () => {
   test('a box without a link is counted invalid, one without a price has none', () => {
     const noLink = box('', 'Nummer 012 I Steve', 'x.jpg').replace(' href=""', '');
     expect(parseBlueOceanPage(noLink)).toMatchObject({ listings: [], skippedInvalid: 1 });
+    expect(parseBlueOceanPage(noLink).unreadable.size).toBe(0);
+    // A card box without a link keeps the series it names from marking listings gone.
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const card = parseBlueOceanPage(
+        box(
+          '',
+          'Nummer 250 I Schildkröte I LEGO Minecraft TCC 1',
+          'https://x.test/250_lego_minecraft_tcc-01_de.jpg'
+        ).replace(' href=""', '')
+      );
+      expect([...card.unreadable]).toEqual(['lego-minecraft-1']);
+      expect(card.unreadableUrls).toEqual([
+        '(no link) "Nummer 250 I Schildkröte I LEGO Minecraft TCC 1"',
+      ]);
+      expect(card.linkless).toBe(1);
+    } finally {
+      warn.mockRestore();
+    }
     const noPrice = box(`${S2}/nummer-012-i-steve`, 'Nummer 012 I Steve', 'x.jpg').replace(
       ' aria-label="Preis: 0.8"',
       ' aria-label="Preis auf Anfrage"'

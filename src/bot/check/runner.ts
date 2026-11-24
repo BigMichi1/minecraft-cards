@@ -780,7 +780,7 @@ async function checkShop(
           ? `all searches of ${collectionName(collection)} returned no usable items`
           : `no card of ${collectionName(collection)} on any page`) +
         (soldOutPossible && peak === undefined
-          ? ' (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or no stored listing of it is available)'
+          ? ' (no readable recent listing counts to tell a sell-out; it clears once a check reads a card of it, or, for a series read before, once none of its stored listings is available)'
           : '');
       const homes = [...(placement?.homes.values() ?? [])];
       const dropped = homes.filter((c) => c === collection).length;

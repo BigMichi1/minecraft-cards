@@ -106,7 +106,8 @@ export interface FetchResult {
   mayHaveSoldOut?: readonly CollectionId[];
   /**
    * blue-ocean: the URLs of products the walk saw but could not read (excluded, without a card
-   * id, a single's picture at an unknown URL form). The runner neither refreshes nor marks their
+   * id or stock marker, a single's picture at an unknown URL form), and `(no link) "<title>"` for
+   * a card box without a link. The runner neither refreshes nor marks their
    * stored listings gone (`seenUrls`), and alerts the admin (`shop-unreadable:<shop>`).
    */
   unreadableUrls?: readonly string[];

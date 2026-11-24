@@ -54,7 +54,8 @@ changes or a new one is suggested.
     single's picture (series part and card number) at a URL of no known form.
   - **Stock:** "Auf Lager" is in stock, "Nicht verfügbar" sold out (733 and 1 on 2026-11-24); a
     card box showing neither is unreadable (`skippedInvalid`), never read as sold out.
-  - **Unreadable products** (excluded, without id or without a stock marker) keep their stored listings (neither
+  - **Unreadable products** (excluded, without id or without a stock marker, and card boxes
+    without a link, which name the series their picture or title names) keep their stored listings (neither
     refreshed nor marked gone), no listing of their collection (nor of a series their title or
     picture names) is marked gone that run (a
     product whose URL changed form leaves its old URL unseen), and they raise a throttled

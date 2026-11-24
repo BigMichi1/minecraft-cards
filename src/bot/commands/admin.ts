@@ -7,7 +7,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ChatInputCommandInteraction, SlashCommandStringOption } from 'discord.js';
-import { formatCardList, normalizeCardId } from '../cards/cardId';
+import { formatCardList, normalizeCardId, type CardId } from '../cards/cardId';
 import { formatSyncOutcome, type SyncOutcome } from '../catalog/sync';
 import { manualRefusal, removeRow, removeStore } from '../interactions/catalogRemove';
 import { MAX_URL, validUrl } from '../notify/messages';
@@ -148,6 +148,21 @@ function readPicture(
   };
 }
 
+/**
+ * The card's reference picture changed (a manual card's new picture, a release): compare its
+ * mismatches again. The change itself is made either way; a failure is logged and returned as
+ * the line the admin's reply adds.
+ */
+function rematchCard(collection: CollectionId, cardId: CardId, retry: string): string {
+  try {
+    listingManager.rematchMismatches(collection, [cardId]);
+    return '';
+  } catch (error) {
+    logError(`re-matching the mismatches of #${cardId} failed`, error);
+    return `\n⚠️ Its mismatches could not be compared again (${errorMessage(error)}); ${retry}.`;
+  }
+}
+
 /** `/admin catalog sync|add|edit|remove|release` for one collection. */
 async function catalogCardCommand(
   interaction: ChatInputCommandInteraction,
@@ -216,8 +231,11 @@ async function catalogCardCommand(
         await refused(result.reason);
         return;
       }
+      const warning = picture.url
+        ? rematchCard(collection, cardId, 'run the edit with the picture again to retry')
+        : '';
       const card = catalogManager.getCard(collection, cardId);
-      await interaction.reply(ephemeral(`#${cardId} now: ${card?.name ?? '(no name)'}.`));
+      await interaction.reply(ephemeral(`#${cardId} now: ${card?.name ?? '(no name)'}.${warning}`));
       return;
     }
     case 'remove': {
@@ -241,7 +259,15 @@ async function catalogCardCommand(
         await refused(result.reason);
         return;
       }
-      await interaction.reply(ephemeral(`#${cardId} now follows laststicker from the next sync.`));
+      // The next sync sets its scan, a changed reference, and re-matches it then (repictured).
+      const warning = rematchCard(
+        collection,
+        cardId,
+        'the next catalog sync does it with its scan'
+      );
+      await interaction.reply(
+        ephemeral(`#${cardId} now follows laststicker from the next sync.${warning}`)
+      );
       return;
     }
     default:
@@ -279,6 +305,11 @@ export function formatSummary(summary: RunSummary): string {
   });
   if (summary.error) lines.push(`Run failed: ${summary.error}`);
   if (summary.pictures) lines.push(picturesLine(summary.pictures));
+  if (summary.rematch) {
+    lines.push(
+      `Re-match: ${summary.rematch.compared} compared, ${summary.rematch.changed} changed`
+    );
+  }
   lines.push(`Notified: ${summary.notified} · DM failures: ${summary.dmFailures}`);
   return lines.join('\n').slice(0, DISCORD_MESSAGE_LIMIT);
 }

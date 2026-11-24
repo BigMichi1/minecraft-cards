@@ -105,8 +105,6 @@ function footer(listing: StoredListing): string | null {
     case 'mismatch':
       // Never sent to users (pendingNotifications); kept for an exhaustive switch.
       return `⚠️ the picture shows #${listing.pictureCardId ?? '?'}, not #${listing.cardIds[0] ?? '?'}`;
-    case 'reference':
-      return null;
   }
 }
 

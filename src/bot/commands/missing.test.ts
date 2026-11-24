@@ -221,6 +221,9 @@ describe('/missing', () => {
       ],
       T
     );
+    // Its picture matched (sammel-ente is compared like every shop).
+    const stored = listingManager.getByUrl('https://shop-sammel-ente.de/x/MNC-03XX-BAS-0012')!;
+    listingManager.setMatch(stored.id, { status: 'confirmed', similarity: 0.95, picture: null }, T);
     runManager.record({
       startedAt: T,
       finishedAt: T + 1,

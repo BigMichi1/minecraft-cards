@@ -1,7 +1,7 @@
 import { sqliteTable, text, integer, real, primaryKey, index } from 'drizzle-orm/sqlite-core';
 import type { CardId } from '../../cards/cardId';
 import { COLLECTION_IDS } from '../../collections/ids';
-import { MATCH_STATUSES } from '../../matcher/matchStatus';
+import { MATCH_STATUSES, type LegacyMatchStatus } from '../../matcher/matchStatus';
 import { ID_SOURCES, LISTING_FORMATS, SHOP_IDS } from '../../shops/types';
 
 export const listings = sqliteTable(
@@ -39,6 +39,11 @@ export const listings = sqliteTable(
     pictureCardId: text().$type<CardId>(),
     /** When the admin note of the current `mismatch` went out; null while it is due. */
     mismatchNotedAt: integer(),
+    /**
+     * The status before the switch to laststicker's references (migration 0008), until the
+     * listing is compared again: the run counts what changed and sends one summary.
+     */
+    rematchFrom: text().$type<LegacyMatchStatus>(),
     firstSeenAt: integer().notNull(),
     lastSeenAt: integer().notNull(),
   },

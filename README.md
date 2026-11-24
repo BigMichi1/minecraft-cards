@@ -3,7 +3,8 @@
 A Discord bot that checks shops (sammel-ente, blue-ocean, collect-it, optionally eBay) every hour
 (configurable, `CHECK_INTERVAL_MINUTES`) for
 Minecraft sticker card availability and DMs users about the cards they are missing. A
-picture comparison against the sammel-ente card image marks a listing as confirmed.
+picture comparison against the card's laststicker scan (sammel-ente's picture where laststicker
+has none) marks a listing as confirmed.
 
 Users keep one list per card collection (so far only `lego-minecraft-3`, LEGO Minecraft series 3
 "On Fire"); the card commands (`/missing *`, `/stock`, `/card`, `/admin map`, `/admin catalog

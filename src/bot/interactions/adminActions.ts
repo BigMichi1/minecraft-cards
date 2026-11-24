@@ -39,7 +39,7 @@ export interface AdminDeps {
   now?: () => number;
 }
 
-const defaultDownload: DownloadFn = (url, maxBytes) => downloadImage(url, fetch, maxBytes);
+const defaultDownload: DownloadFn = (url, maxBytes) => downloadImage(url, undefined, maxBytes);
 
 /**
  * `send` with the embed pictures attached, as user alerts do: Discord's proxy shows no collect-it

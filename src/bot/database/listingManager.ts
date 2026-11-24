@@ -1,8 +1,13 @@
-import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
 import type { CollectionCards, CollectionId } from '../collections/ids';
 import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
-import { isConfirmable, type MatchResult, type MatchStatus } from '../matcher/matchStatus';
+import {
+  isConfirmable,
+  type LegacyMatchStatus,
+  type MatchResult,
+  type MatchStatus,
+} from '../matcher/matchStatus';
 import type {
   IdSource,
   ListingFormat,
@@ -45,6 +50,11 @@ export type StoredListing = Readonly<{
   idSource: IdSource;
   /** The card the picture was taken for (see the `pictureCardId` column), or null. */
   pictureCardId: CardId | null;
+  /**
+   * The status before the reference switch (migration 0008) while the listing waits to be
+   * compared again; an old value may be `reference`, a status no longer in use.
+   */
+  rematchFrom: LegacyMatchStatus | null;
 }>;
 
 /** One listing to tell a user about: the cards of it they want, for this availability period. */
@@ -123,6 +133,7 @@ function toStored(row: ListingRow, cardIds: readonly CardId[]): StoredListing {
     lastSeenAt: row.lastSeenAt,
     idSource: row.idSource,
     pictureCardId: row.pictureCardId,
+    rematchFrom: row.rematchFrom,
   };
 }
 
@@ -151,9 +162,18 @@ function load(tx: Tx, rows: ListingRow[]): StoredListing[] {
   return rows.map((r) => toStored(r, cards.get(r.id) ?? []));
 }
 
+/** A status the next run compares again (`needsMatch`): not the end of a re-match. */
+function isRetryStatus(status: MatchStatus): boolean {
+  return (
+    status === 'image_unavailable' ||
+    status === 'model_unavailable' ||
+    status === 'pending' ||
+    status === 'no_reference'
+  );
+}
+
 /** The status of a listing whose picture has not been compared (yet). */
-function defaultMatchStatus(shop: ShopId, cardIds: readonly CardId[]): MatchStatus {
-  if (shop === 'sammel-ente') return 'reference';
+function defaultMatchStatus(cardIds: readonly CardId[]): MatchStatus {
   return cardIds.length > 1 ? 'bundle' : 'pending';
 }
 
@@ -222,7 +242,7 @@ export const listingManager = {
               shop: item.shop,
               url: item.url,
               availableSince: item.available ? now : null,
-              matchStatus: defaultMatchStatus(item.shop, item.cardIds),
+              matchStatus: defaultMatchStatus(item.cardIds),
               firstSeenAt: now,
             })
             .returning({ id: listings.id })
@@ -264,10 +284,12 @@ export const listingManager = {
                 : now,
             ...(rematch
               ? {
-                  matchStatus: defaultMatchStatus(existing.shop, newCards),
+                  matchStatus: defaultMatchStatus(newCards),
                   similarity: null,
                   matchCheckedAt: null,
                   pictureCardId: null,
+                  // A bundle is never compared: its re-match is over.
+                  ...(newCards.length > 1 ? { rematchFrom: null } : {}),
                 }
               : {}),
           })
@@ -329,6 +351,8 @@ export const listingManager = {
           matchCheckedAt: now,
           pictureCardId,
           mismatchNotedAt: null,
+          // A final status ends the re-match in the same write; a retry status keeps it waiting.
+          ...(isRetryStatus(result.status) ? {} : { rematchFrom: null }),
         })
         .where(eq(listings.id, listingId))
         .run();
@@ -367,6 +391,15 @@ export const listingManager = {
     db.update(listings).set({ mismatchNotedAt: now }).where(eq(listings.id, listingId)).run();
   },
 
+  /** Mark several mismatches noted in one write: all of them, or (failing) none. */
+  markMismatchesNoted(listingIds: readonly number[], now: number): void {
+    if (listingIds.length === 0) return;
+    db.update(listings)
+      .set({ mismatchNotedAt: now })
+      .where(inArray(listings.id, [...listingIds]))
+      .run();
+  },
+
   /**
    * After the reference pictures of the collection's `cardIds` changed: compare again (back to
    * `pending`) every mismatch of the collection whose title card or picture card is one of them,
@@ -399,6 +432,9 @@ export const listingManager = {
           similarity: null,
           matchCheckedAt: null,
           pictureCardId: null,
+          // Held back from users until it is compared again (pendingNotifications): the run that
+          // resets it may not compare it, and its DMs go out the same run.
+          rematchFrom: sql`coalesce(${listings.rematchFrom}, 'mismatch')`,
         })
         .where(
           and(
@@ -416,7 +452,8 @@ export const listingManager = {
   },
 
   /**
-   * Available, not on hold, not a `mismatch` (the picture shows another card), not an ended
+   * Available, not on hold, not a `mismatch` (the picture shows another card; also one from
+   * before the reference switch not compared again yet, `rematchFrom`), not an ended
    * auction, seen since `seenSince`, sharing a card with the user's list, and not yet notified
    * for this availability period.
    */
@@ -431,6 +468,8 @@ export const listingManager = {
             eq(listings.available, true),
             eq(listings.onHold, false),
             ne(listings.matchStatus, 'mismatch'),
+            // A mismatch before the reference switch stays held back until it is compared again.
+            or(isNull(listings.rematchFrom), ne(listings.rematchFrom, 'mismatch')),
             options.excludeIds?.length
               ? notInArray(listings.id, [...options.excludeIds])
               : undefined,
@@ -508,6 +547,8 @@ export const listingManager = {
           matchStatus: 'confirmed',
           similarity: null,
           pictureCardId: null,
+          // The admin decided: never compared again, so its re-match is over.
+          rematchFrom: null,
           onHold: false,
           availableSince: row.available ? now : null,
         })
@@ -547,6 +588,8 @@ export const listingManager = {
           matchStatus: 'confirmed',
           similarity: null,
           pictureCardId: null,
+          // The admin decided: never compared again, so its re-match is over.
+          rematchFrom: null,
           onHold: false,
         })
         .where(eq(listings.id, row.id))

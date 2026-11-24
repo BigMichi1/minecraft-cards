@@ -1,4 +1,5 @@
 import type { CardId } from '../cards/cardId';
+import type { ShopId } from '../shops/types';
 
 /**
  * Collection ids and types, kept free of runtime imports so the database schema can use them.
@@ -35,6 +36,17 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   readonly starterChecklist?: string;
   /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */
   readonly laststicker?: { readonly set: string };
+  /**
+   * The shop whose listing picture is a card's reference when laststicker has no scan of it
+   * (404 or 410, or none synced yet), or a manual card has no picture of the admin's; none: such
+   * a card has no reference.
+   */
+  readonly referenceFallbackShop?: ShopId;
+  /**
+   * Cards that show the same art, measured so (docs/image-matching.md): each is a twin of the
+   * other whatever their reference pictures score, so the picture alone never tells them apart.
+   */
+  readonly knownTwins?: readonly (readonly [string, string])[];
 }
 
 /**

@@ -68,11 +68,19 @@ function ended(l: StoredListing, now: number): boolean {
   return l.auctionEndsAt !== null && l.auctionEndsAt < now;
 }
 
+/**
+ * Never sent to users: a mismatch, or one from before a reference change waiting to be compared
+ * again (listingManager.pendingNotifications).
+ */
+export function heldBack(l: StoredListing): boolean {
+  return l.matchStatus === 'mismatch' || l.rematchFrom === 'mismatch';
+}
+
 export function listingState(l: StoredListing, now: number): ListingState {
   if (!l.available) return 'sold_out';
   if (ended(l, now)) return 'ended';
   if (l.onHold) return 'paused';
-  if (l.matchStatus === 'mismatch') return 'held_back';
+  if (heldBack(l)) return 'held_back';
   return 'in_stock';
 }
 
@@ -81,7 +89,7 @@ export function listingState(l: StoredListing, now: number): ListingState {
  * compared, so they never count as picture-backed.
  */
 export function pictureBacked(l: StoredListing): boolean {
-  return l.matchStatus === 'reference' || l.matchStatus === 'confirmed';
+  return l.matchStatus === 'confirmed';
 }
 
 /** A listing of a shop whose latest check succeeded, but which that check did not return. */

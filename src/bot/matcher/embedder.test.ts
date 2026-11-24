@@ -1,9 +1,10 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { db, initializeDatabase } from '../database/db';
 import { imageEmbeddings } from '../database/schema/index';
 import type { Listing } from '../shops/types';
 import {
   allowedImageUrl,
+  pacedImageFetch,
   createCachedEmbedder,
   createTransformersEmbedder,
   DEFAULT_IMAGE_MATCH_THRESHOLD,
@@ -18,6 +19,7 @@ import {
 } from './embedder';
 import type { ReferenceSet, ReferenceVector } from './identify';
 import { cid } from '../../test/cardIds';
+import { HttpError } from '../utils/http';
 
 /** Fake inner embedder: returns `vectors[url]` (or `fallback`) and counts calls. */
 function fakeEmbedder(
@@ -185,12 +187,19 @@ describe('matchListing', () => {
     await expect(matchListing(blue12, 'ref12', broken, 0.85)).rejects.toThrow(/SQLITE_BUSY/);
   });
 
-  test('bundles, sammel-ente and missing references skip the comparison', async () => {
+  test('a sammel-ente listing is compared with the reference', async () => {
+    const result = await matchListing(
+      { ...blue12, shop: 'sammel-ente' },
+      'ref12',
+      fakeEmbedder({ ref12: [1, 0], [blue12.imageUrl!]: [1, 0] }),
+      0.85
+    );
+    expect(result).toMatchObject({ status: 'confirmed', similarity: 1 });
+  });
+
+  test('bundles and missing references skip the comparison', async () => {
     const counting = fakeEmbedder({});
     expect((await matchListing(bundle, 'ref12', counting, 0.85)).status).toBe('bundle');
-    expect(
-      (await matchListing({ ...blue12, shop: 'sammel-ente' }, null, counting, 0.85)).status
-    ).toBe('reference');
     expect(await matchListing(blue12, null, counting, 0.85)).toEqual({
       status: 'no_reference',
       similarity: null,
@@ -504,9 +513,11 @@ describe('matchListing with picture identification', () => {
 });
 
 describe('loadReferenceSet', () => {
-  const card = (id: string, url: string, puzzle = false) => ({
+  const card = (id: string, url: string, puzzle = false, fallbackUrl: string | null = null) => ({
     cardId: cid(id),
     referenceImageUrl: url,
+    source: 'laststicker' as const,
+    fallbackUrl,
     puzzle,
   });
 
@@ -537,6 +548,127 @@ describe('loadReferenceSet', () => {
       { cardId: cid('LE10'), reason: 'placeholder' },
       { cardId: cid('13'), reason: 'image_unavailable', detail: 'HTTP 404 for bad' },
       { cardId: cid('14'), reason: 'image_unavailable', detail: 'onnx failed on corrupt' },
+    ]);
+  });
+
+  describe('a laststicker scan with a shop picture as fallback', () => {
+    const scan = 'https://www.laststicker.com/i/cards/12125/xxl1.jpg';
+    const shop = 'https://shop-sammel-ente.de/xxl1.jpg';
+    const failing = (error: Error): ImageEmbedder => ({
+      model: 'm',
+      embed: async (url) => {
+        if (url === scan) throw error;
+        return new Float32Array(url === shop ? [0, 1] : [1, 0]);
+      },
+    });
+    const httpFailure = (status: number) =>
+      new ImageUnavailableError(`HTTP ${status} for ${scan}`, {
+        cause: new HttpError(status, scan),
+      });
+
+    test('a 404 scan falls back to the shop picture and reports the card', async () => {
+      const missingScans: string[] = [];
+      const set = await loadReferenceSet(
+        { usable: [card('XXL1', scan, false, shop), card('12', 'ok')], missing: [] },
+        failing(httpFailure(404)),
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.vectors.map((v) => [v.cardId, [...v.vector]])).toEqual([
+        [cid('XXL1'), [0, 1]],
+        [cid('12'), [1, 0]],
+      ]);
+      expect(set.urls.get(cid('XXL1'))).toBe(shop);
+      expect(set.urls.get(cid('12'))).toBe('ok');
+      expect(missingScans).toEqual(['XXL1']);
+      expect(set.missing).toEqual([]);
+    });
+
+    test('a 410 counts as missing too', async () => {
+      const missingScans: string[] = [];
+      const set = await loadReferenceSet(
+        { usable: [card('XXL1', scan, false, shop)], missing: [] },
+        failing(httpFailure(410)),
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.urls.get(cid('XXL1'))).toBe(shop);
+      expect(missingScans).toEqual(['XXL1']);
+    });
+
+    test('a 500 or a timeout on a scan never falls back', async () => {
+      for (const error of [
+        httpFailure(500),
+        new ImageUnavailableError(`image ${scan}: The operation timed out.`),
+      ]) {
+        const missingScans: string[] = [];
+        const set = await loadReferenceSet(
+          { usable: [card('XXL1', scan, false, shop)], missing: [] },
+          failing(error),
+          { onScanMissing: (id) => missingScans.push(id) }
+        );
+        expect(set.vectors).toEqual([]);
+        expect(set.missing).toEqual([
+          { cardId: cid('XXL1'), reason: 'image_unavailable', detail: error.message },
+        ]);
+        expect(missingScans).toEqual([]);
+      }
+    });
+
+    test('a 404 scan without fallbackUrl is no_picture (not retried) and reported', async () => {
+      const missingScans: string[] = [];
+      const set = await loadReferenceSet(
+        { usable: [card('XXL1', scan)], missing: [] },
+        failing(httpFailure(404)),
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.missing).toEqual([
+        { cardId: cid('XXL1'), reason: 'no_picture', detail: `HTTP 404 for ${scan}` },
+      ]);
+      expect(missingScans).toEqual(['XXL1']);
+    });
+
+    test('a 404 of a shop or admin picture stays image_unavailable and is no missing scan', async () => {
+      const missingScans: string[] = [];
+      const set = await loadReferenceSet(
+        {
+          usable: [{ ...card('XXL1', scan), source: 'shop' as const, fallbackUrl: null }],
+          missing: [],
+        },
+        failing(httpFailure(404)),
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.missing).toMatchObject([{ cardId: cid('XXL1'), reason: 'image_unavailable' }]);
+      expect(missingScans).toEqual([]);
+    });
+
+    test('a failing fallback is image_unavailable, the scan still reported missing', async () => {
+      const missingScans: string[] = [];
+      const embedder: ImageEmbedder = {
+        model: 'm',
+        embed: async (url) => {
+          if (url === scan) throw httpFailure(404);
+          throw new ImageUnavailableError(`HTTP 503 for ${url}`);
+        },
+      };
+      const set = await loadReferenceSet(
+        { usable: [card('XXL1', scan, false, shop)], missing: [] },
+        embedder,
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.missing).toEqual([
+        { cardId: cid('XXL1'), reason: 'image_unavailable', detail: `HTTP 503 for ${shop}` },
+      ]);
+      expect(missingScans).toEqual(['XXL1']);
+    });
+  });
+
+  test('a known twin keeps its mark in the loaded set', async () => {
+    const set = await loadReferenceSet(
+      { usable: [{ ...card('59', 'ok'), knownTwin: true }, card('60', 'ok2')], missing: [] },
+      { model: 'm', embed: async () => new Float32Array([1, 0]) }
+    );
+    expect(set.vectors.map((v) => [v.cardId, v.knownTwin])).toEqual([
+      [cid('59'), true],
+      [cid('60'), undefined],
     ]);
   });
 
@@ -605,14 +737,29 @@ describe('loadReferenceSet', () => {
 
 const IMG = 'https://shop-sammel-ente.de/media/12.jpg';
 
+describe('pacedImageFetch', () => {
+  test('passes a request on to fetch', async () => {
+    const spy = spyOn(globalThis, 'fetch').mockImplementation(
+      (async () => new Response('ok')) as unknown as typeof fetch
+    );
+    try {
+      expect(await (await pacedImageFetch('https://cdn.blue-ocean.de/x.jpg')).text()).toBe('ok');
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('allowedImageUrl', () => {
-  test('only https on the shop and eBay image hosts', () => {
+  test('only https on the shop, eBay and laststicker image hosts', () => {
     for (const ok of [
       'https://shop-sammel-ente.de/media/a.jpg',
       'https://cdn.blue-ocean.de/a.jpg',
       'https://www.blue-ocean.de/a.jpg',
       'https://www.collect-it.de/media/image/product/623996/md/12-squid-charakterkarte-serie-3.jpg',
       'https://i.ebayimg.com/images/g/a/s-l225.jpg',
+      'https://www.laststicker.com/i/cards/12125/1.jpg',
     ]) {
       expect(allowedImageUrl(ok)).toBe(true);
     }
@@ -701,6 +848,37 @@ describe('createTransformersEmbedder', () => {
     const error = await embedder.embed('https://cdn.blue-ocean.de/missing.jpg').catch((e) => e);
     expect(error).toBeInstanceOf(ImageUnavailableError);
     expect(error.message).toMatch(/404/);
+  });
+
+  test('a 404 scan through the real download falls back to the shop picture', async () => {
+    const scan = 'https://www.laststicker.com/i/cards/12125/xxl1.jpg';
+    const inner = await createTransformersEmbedder(
+      { model: 'm', cacheDir: 'c' },
+      {
+        fetchFn: async (url) =>
+          url === scan ? new Response('', { status: 404 }) : new Response(new Uint8Array([7, 8])),
+        loadPipeline: async () => async () => ({ data: new Float32Array([1, 0]), dims: [1, 2] }),
+      }
+    );
+    const missing: string[] = [];
+    const set = await loadReferenceSet(
+      {
+        usable: [
+          {
+            cardId: cid('XXL1'),
+            referenceImageUrl: scan,
+            source: 'laststicker',
+            fallbackUrl: 'https://shop-sammel-ente.de/xxl1.jpg',
+            puzzle: false,
+          },
+        ],
+        missing: [],
+      },
+      inner,
+      { onScanMissing: (id) => missing.push(id) }
+    );
+    expect(set.urls.get(cid('XXL1'))).toBe('https://shop-sammel-ente.de/xxl1.jpg');
+    expect(missing).toEqual(['XXL1']);
   });
 
   test('a network failure is ImageUnavailableError', async () => {

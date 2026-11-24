@@ -3,6 +3,7 @@ import type { AlertFn } from '../check/adminAlert';
 import type { CollectionDefinition, CollectionId } from '../collections/ids';
 import { COLLECTIONS, collectionName } from '../collections/index';
 import { catalogManager, type SyncResult } from '../database/catalogManager';
+import { listingManager } from '../database/listingManager';
 import { errorMessage, sleep as realSleep } from '../utils/async';
 import { logError } from '../utils/logger';
 import { DISCORD_MESSAGE_LIMIT, clipText } from '../utils/messageLimit';
@@ -103,7 +104,10 @@ export interface SyncDeps {
 }
 
 function named(ids: readonly CardId[]): string {
-  const shown = ids.slice(0, MAX_NAMED).join(', ');
+  const shown = ids
+    .slice(0, MAX_NAMED)
+    .map((id) => `#${id}`)
+    .join(', ');
   return ids.length > MAX_NAMED ? `${shown} … and ${ids.length - MAX_NAMED} more` : shown;
 }
 
@@ -160,13 +164,34 @@ async function fetchAndApply(
   });
 }
 
-/** After an applied sync: record it and tell the admin; failures here are logged only. */
+/**
+ * After an applied sync: record it, compare the mismatches of re-pictured cards again and tell
+ * the admin; failures here are logged only.
+ */
 async function report(collection: CollectionId, result: SyncResult, deps: SyncDeps): Promise<void> {
   const name = collectionName(collection);
   try {
     catalogManager.markSyncSuccess(collection, deps.now());
   } catch (error) {
     logError(`catalog sync of ${collection} applied, but recording its success failed`, error);
+  }
+  try {
+    // A new scan may settle a mismatch either way: compare those again.
+    listingManager.rematchMismatches(collection, result.repictured);
+  } catch (error) {
+    logError(
+      `catalog sync of ${collection} applied, but re-matching its new pictures failed`,
+      error
+    );
+    // The changed cards are known only to this sync: name them, so the admin can act.
+    await deps.alert(
+      // Per card list: a later sync's failure names other cards and must not be throttled.
+      `catalog-rematch:${collection}:${result.repictured.join(',')}`,
+      clipText(
+        `${name}: the sync could not compare the mismatches of ${result.repictured.length} card(s) again (new pictures): ${named(result.repictured)} — ${errorMessage(error)}`,
+        DISCORD_MESSAGE_LIMIT
+      )
+    );
   }
   if (result.vanished.length > 0) {
     await deps.alert(

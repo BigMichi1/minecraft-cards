@@ -16,6 +16,7 @@ import { listingManager } from './listingManager';
 import { imageFingerprint } from '../matcher/imageFingerprint';
 import { userManager } from './userManager';
 import type { Listing } from '../shops/types';
+import type { LegacyMatchStatus } from '../matcher/matchStatus';
 import { cid, ids } from '../../test/cardIds';
 import type { CollectionId } from '../collections/ids';
 
@@ -358,7 +359,8 @@ describe('listingManager', () => {
     listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, bundle], 1000);
     listingManager.upsertFromRun('sammel-ente', 'lego-minecraft-3', [ente], 1000);
     expect(listingManager.getByUrl(bundle.url)!.matchStatus).toBe('bundle');
-    expect(listingManager.getByUrl(ente.url)!.matchStatus).toBe('reference');
+    // sammel-ente is compared like every shop (its pictures are no references any more).
+    expect(listingManager.getByUrl(ente.url)!.matchStatus).toBe('pending');
     const l = listingManager.getByUrl(blue12.url)!;
     expect(l.matchStatus).toBe('pending');
     listingManager.setMatch(l.id, { status: 'confirmed', similarity: 0.93, picture: null }, 1500);
@@ -975,6 +977,108 @@ describe('listingManager', () => {
       // Compared again with the same outcome: a new note is due (the alert throttle decides).
       listingManager.setMatch(l.id, mismatch45, 2001);
       expect(listingManager.pendingMismatchNotes().map((x) => x.id)).toEqual([l.id]);
+    });
+
+    describe('rematchFrom is cleared with every final status', () => {
+      const waiting = (from: LegacyMatchStatus = 'mismatch') => {
+        listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+        const l = listingManager.getByUrl(blue12.url)!;
+        db.update(listings).set({ rematchFrom: from }).where(eq(listings.id, l.id)).run();
+        return l;
+      };
+
+      test('pendingNotifications holds back only a listing that was a mismatch', () => {
+        userManager.setList('u1', 'lego-minecraft-3', '12, 13, 14');
+        const of = (id: string) => ({ ...blue12, url: `https://x/${id}`, cardIds: ids(id) });
+        listingManager.upsertFromRun(
+          'blue-ocean',
+          'lego-minecraft-3',
+          [of('12'), of('13'), of('14')],
+          1000
+        );
+        const set = (id: string, from: LegacyMatchStatus | null) =>
+          db
+            .update(listings)
+            .set({ rematchFrom: from })
+            .where(eq(listings.url, `https://x/${id}`))
+            .run();
+        set('12', 'mismatch');
+        set('13', 'confirmed');
+        set('14', null);
+        const urls = (listingManager.pendingNotifications({ now: 1000 }).get('u1') ?? []).map(
+          (n) => n.listing.url
+        );
+        expect(urls.sort()).toEqual(['https://x/13', 'https://x/14']);
+      });
+
+      test('an admin map clears it, so the listing is notified again', () => {
+        userManager.setList('u1', 'lego-minecraft-3', '12');
+        waiting();
+        expect(listingManager.pendingNotifications({ now: 1000 }).get('u1')).toBeUndefined();
+        listingManager.overrideCards(
+          blue12.url,
+          { collection: 'lego-minecraft-3', ids: ids('12') },
+          2000
+        );
+        expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBeNull();
+        expect(listingManager.pendingNotifications({ now: 2000 }).get('u1')).toHaveLength(1);
+      });
+
+      test('a rescrape into a bundle clears it', () => {
+        waiting();
+        listingManager.upsertFromRun(
+          'blue-ocean',
+          'lego-minecraft-3',
+          [{ ...blue12, cardIds: ids('12', '13') }],
+          2000
+        );
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+          matchStatus: 'bundle',
+          rematchFrom: null,
+        });
+      });
+
+      test('setMatch clears it with a final status and keeps it with a retry status', () => {
+        const l = waiting();
+        listingManager.setMatch(
+          l.id,
+          { status: 'image_unavailable', similarity: null, picture: null },
+          1001
+        );
+        expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBe('mismatch');
+        listingManager.setMatch(
+          l.id,
+          { status: 'model_unavailable', similarity: null, picture: null },
+          1002
+        );
+        expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBe('mismatch');
+        // No reference left for the card: compared again every check, still held back.
+        listingManager.setMatch(
+          l.id,
+          { status: 'no_reference', similarity: null, picture: null },
+          1003
+        );
+        expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBe('mismatch');
+        listingManager.setMatch(
+          l.id,
+          { status: 'unconfirmed', similarity: 0.5, picture: null },
+          1004
+        );
+        expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBeNull();
+      });
+    });
+
+    test('markMismatchesNoted marks every given mismatch at once', () => {
+      const other = { ...blue12, url: 'https://x/13', cardIds: ids('13') };
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, other], 1000);
+      const a = listingManager.getByUrl(blue12.url)!;
+      const b = listingManager.getByUrl(other.url)!;
+      listingManager.setMatch(a.id, mismatch45, 1001);
+      listingManager.setMatch(b.id, mismatch45, 1001);
+      listingManager.markMismatchesNoted([], 1002);
+      expect(listingManager.pendingMismatchNotes()).toHaveLength(2);
+      listingManager.markMismatchesNoted([a.id, b.id], 1002);
+      expect(listingManager.pendingMismatchNotes()).toEqual([]);
     });
 
     test('an admin-mapped mismatch needs no note', () => {

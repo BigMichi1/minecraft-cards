@@ -390,6 +390,21 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   (`normalize`); `syncCollection` still uses `cardType` and the section name `Puzzlekarten`,
   which become per-collection settings with the definitions.
 
+## Notes from PR 2b for the later steps
+
+- `cards.reference_source` is not stored: `catalogManager.referenceCatalog` derives each card's
+  source (`ReferenceCard.source`: `laststicker`, `shop`, `manual`) from its columns
+  (`laststicker_image_url`, `laststicker_scan_missing_at`, `shop_image_url`, and the admin's
+  `reference_image_url`), so it cannot drift.
+- The measurement (`docs/image-matching.md`, 2026-11-24) kept 0.78, 0.02 and 0.9. 17 series 3
+  cards have no laststicker scan and use sammel-ente's picture; Turbo Attax cards without a scan
+  and without a fallback shop are `no_reference` (spec "Matcher").
+- The re-match keeps the old status in `listings.rematch_from` until the listing is compared
+  again; listings that are unavailable or nobody wants keep it until they are compared. A final
+  status, an admin map or a bundle clears it.
+- Steps 3 and 4: a new collection with a laststicker set needs `referenceFallbackShop` only if a
+  shop's pictures should stand in for missing scans.
+
 ## Left to the builder
 
 - Exact module layout inside each adapter, the migration's SQL (generated), names of helpers.

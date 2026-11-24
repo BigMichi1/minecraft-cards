@@ -50,6 +50,20 @@
       "when": 1795516395297,
       "tag": "0006_overconfident_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795524386169,
+      "tag": "0007_tearful_phalanx",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1795525609350,
+      "tag": "0008_fancy_natasha_romanoff",
+      "breakpoints": true
     }
   ]
 }

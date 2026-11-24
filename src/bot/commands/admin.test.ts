@@ -128,7 +128,7 @@ describe('/admin', () => {
         return {
           collection,
           ok: true,
-          result: { added: ids('LE23'), renamed: [], vanished: [], nowListed: [] },
+          result: { added: ids('LE23'), renamed: [], vanished: [], nowListed: [], repictured: [] },
         };
       },
     };
@@ -408,6 +408,16 @@ describe('/admin', () => {
     );
   });
 
+  test('the summary names the re-match counts', () => {
+    expect(
+      formatSummary({
+        ...summary,
+        shops: { ebay: { listings: 1 } },
+        rematch: { compared: 12, changed: 2, changes: ['#12 ebay confirmed→mismatch u'] },
+      })
+    ).toBe('ebay: 1 listings\nRe-match: 12 compared, 2 changed\nNotified: 4 · DM failures: 1');
+  });
+
   describe('catalog sync and manual cards', () => {
     const catalogSub = (name: string) =>
       (
@@ -475,11 +485,69 @@ describe('/admin', () => {
       expect(catalogManager.getCard('lego-minecraft-3', cid('LE24'))).toBeUndefined();
     });
 
+    test('a new picture of a manual card compares its mismatches again; a failure is logged', async () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', null, 1);
+      const rematch = spyOn(listingManager, 'rematchMismatches');
+      try {
+        await adminExecute(
+          fakeAdmin('catalog', 'edit', { card: '229', picture: 'https://m/2.jpg' }),
+          ctx
+        );
+        expect(rematch).toHaveBeenCalledWith('lego-minecraft-3', ids('229'));
+        rematch.mockImplementation(() => {
+          throw new Error('db locked');
+        });
+        const log = spyOn(logger, 'log');
+        try {
+          await adminExecute(
+            fakeAdmin('catalog', 'edit', { card: '229', picture: 'https://m/3.jpg' }),
+            ctx
+          );
+          expect(lastReply().content).toBe(
+            '#229 now: Mine.\n⚠️ Its mismatches could not be compared again (db locked); run the edit with the picture again to retry.'
+          );
+          expect(
+            log.mock.calls.some((c: unknown[]) =>
+              String(c[1]).includes('re-matching the mismatches of #229 failed')
+            )
+          ).toBe(true);
+        } finally {
+          log.mockRestore();
+        }
+      } finally {
+        rematch.mockRestore();
+      }
+    });
+
+    test('a failed re-match on release says the next sync retries it', async () => {
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', null, 1);
+      catalogManager.markListedNoted('lego-minecraft-3', ids('229'), 2);
+      const rematch = spyOn(listingManager, 'rematchMismatches').mockImplementation(() => {
+        throw new Error('db locked');
+      });
+      try {
+        await adminExecute(fakeAdmin('catalog', 'release', { card: '229' }), ctx);
+      } finally {
+        rematch.mockRestore();
+      }
+      expect(lastReply().content).toBe(
+        '#229 now follows laststicker from the next sync.\n⚠️ Its mismatches could not be compared again (db locked); the next catalog sync does it with its scan.'
+      );
+    });
+
     test('edit and release change manual cards only', async () => {
       catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 1);
       await adminExecute(fakeAdmin('catalog', 'edit', { card: '229' }), ctx);
       expect(lastReply().content).toBe('Nothing to change: give name or picture.');
-      await adminExecute(fakeAdmin('catalog', 'edit', { card: '229', name: 'Better' }), ctx);
+      const nameOnly = spyOn(listingManager, 'rematchMismatches');
+      try {
+        await adminExecute(fakeAdmin('catalog', 'edit', { card: '229', name: 'Better' }), ctx);
+        // A new name changes no picture: nothing to compare again.
+        expect(nameOnly).not.toHaveBeenCalled();
+      } finally {
+        nameOnly.mockRestore();
+      }
       expect(lastReply().content).toBe('#229 now: Better.');
       await adminExecute(fakeAdmin('catalog', 'edit', { card: '12', name: 'X' }), ctx);
       expect(lastReply().content).toBe(
@@ -504,7 +572,14 @@ describe('/admin', () => {
         '#229 is not on laststicker yet; release it once a sync reports it there.'
       );
       catalogManager.markListedNoted('lego-minecraft-3', ids('229'), 2);
-      await adminExecute(fakeAdmin('catalog', 'release', { card: '229' }), ctx);
+      const rematch = spyOn(listingManager, 'rematchMismatches');
+      try {
+        await adminExecute(fakeAdmin('catalog', 'release', { card: '229' }), ctx);
+        // Its reference changed (the admin's picture goes): its mismatches are compared again.
+        expect(rematch).toHaveBeenCalledWith('lego-minecraft-3', ids('229'));
+      } finally {
+        rematch.mockRestore();
+      }
       expect(lastReply().content).toBe('#229 now follows laststicker from the next sync.');
       expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.source).toBe('laststicker');
       for (const sub of ['remove', 'release']) {

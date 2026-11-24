@@ -6,6 +6,7 @@ import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { formatPrice, SHOP_NAMES, validUrl } from '../notify/messages';
 import { SHOP_IDS, type ShopId } from '../shops/types';
 import {
+  heldBack,
   needsLastSuccess,
   pictureBacked,
   shopCells,
@@ -150,7 +151,7 @@ function cellFor(cell: ShopCell): Cell {
   const l = cell.listing;
   if (cell.stale) markers.add('*');
   if (l.cardIds.length > 1) markers.add('+');
-  else if (!pictureBacked(l) && l.matchStatus !== 'mismatch') markers.add('!');
+  else if (!pictureBacked(l) && !heldBack(l)) markers.add('!');
   if (cell.state !== 'in_stock') return { value: STATE_TEXT[cell.state], markers };
   const value = l.price ? formatPrice(l.price) : 'in stock';
   const url = validUrl(l.url);

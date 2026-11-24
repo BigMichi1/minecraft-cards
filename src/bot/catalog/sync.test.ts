@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { db, initializeDatabase } from '../database/db';
 import { catalogManager } from '../database/catalogManager';
+import { listingManager } from '../database/listingManager';
 import { cards, catalogSyncs, users, wantedCards } from '../database/schema/index';
 import type { AlertFn } from '../check/adminAlert';
 import type { CollectionDefinition, CollectionId } from '../collections/ids';
@@ -61,8 +62,35 @@ describe('syncCatalogs', () => {
     rows = starter.map((id) => row(id));
   });
 
+  test("a sync that changed scans compares those cards' mismatches again", async () => {
+    await run(10);
+    rows = rows.map((r) => (r.cardId === '12' ? { ...r, pictureUrl: `${r.pictureUrl}?v=2` } : r));
+    const spy = spyOn(listingManager, 'rematchMismatches');
+    try {
+      await run(20, { force: true });
+      expect(spy).toHaveBeenCalledWith('lego-minecraft-3', ids('12'));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('a failing re-match after a sync is logged; the sync stands', async () => {
+    const spy = spyOn(listingManager, 'rematchMismatches').mockImplementation(() => {
+      throw new Error('db locked');
+    });
+    try {
+      expect((await run(10))[0]).toMatchObject({ ok: true });
+      expect(catalogManager.syncSucceededAt('lego-minecraft-3')).toBe(10);
+      // The re-pictured cards are known only now: the admin is told which to re-check.
+      const alert = alerts.find((a) => a.key.startsWith('catalog-rematch:lego-minecraft-3:'));
+      expect(alert?.text).toContain('could not compare the mismatches of 251 card(s) again');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   test('a collection never synced is due; a day later (less the slack) again, not before', async () => {
-    expect(await run(10)).toEqual([
+    expect(await run(10)).toMatchObject([
       {
         collection: 'lego-minecraft-3',
         ok: true,
@@ -266,11 +294,11 @@ describe('syncCatalogs', () => {
     expect(alerts).toEqual([
       {
         key: 'catalog-vanished:lego-minecraft-3',
-        text: 'LEGO Minecraft Serie 3 "On Fire": 1 card(s) no longer on laststicker, kept: 12',
+        text: 'LEGO Minecraft Serie 3 "On Fire": 1 card(s) no longer on laststicker, kept: #12',
       },
       {
         key: 'catalog-listed:lego-minecraft-3:229',
-        text: 'LEGO Minecraft Serie 3 "On Fire": manual card(s) now on laststicker: 229 — /admin catalog release hands one over',
+        text: 'LEGO Minecraft Serie 3 "On Fire": manual card(s) now on laststicker: #229 — /admin catalog release hands one over',
       },
     ]);
   });
@@ -351,10 +379,10 @@ describe('formatSyncOutcome', () => {
     const text = formatSyncOutcome({
       collection: 'lego-minecraft-3',
       ok: true,
-      result: { added: [], renamed: [], vanished: many, nowListed: [] },
+      result: { added: [], renamed: [], vanished: many, nowListed: [], repictured: [] },
     });
-    expect(text).toContain('25 vanished (1, 2,');
-    expect(text).toContain('20 … and 5 more)');
+    expect(text).toContain('25 vanished (#1, #2,');
+    expect(text).toContain('#20 … and 5 more)');
   });
 
   test('names the collection and the counts, or the error', () => {
@@ -362,10 +390,16 @@ describe('formatSyncOutcome', () => {
       formatSyncOutcome({
         collection: 'lego-minecraft-3',
         ok: true,
-        result: { added: ids('LE23'), renamed: ids('1', '2'), vanished: ids('12'), nowListed: [] },
+        result: {
+          added: ids('LE23'),
+          renamed: ids('1', '2'),
+          vanished: ids('12'),
+          nowListed: [],
+          repictured: [],
+        },
       })
     ).toBe(
-      'LEGO Minecraft Serie 3 "On Fire": 1 added, 2 renamed, 1 vanished (12), 0 manual now listed'
+      'LEGO Minecraft Serie 3 "On Fire": 1 added, 2 renamed, 1 vanished (#12), 0 manual now listed'
     );
     expect(
       formatSyncOutcome({

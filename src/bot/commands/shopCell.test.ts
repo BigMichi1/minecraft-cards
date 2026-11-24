@@ -32,6 +32,8 @@ describe('listingState', () => {
     ['ended', { format: 'auction' as const, auctionEndsAt: now - 1, onHold: true }],
     ['paused', { onHold: true, matchStatus: 'mismatch' as const }],
     ['held_back', { matchStatus: 'mismatch' as const }],
+    // An old mismatch waiting for its re-match is held back from DMs too.
+    ['held_back', { matchStatus: 'pending' as const, rematchFrom: 'mismatch' as const }],
     ['in_stock', { format: 'auction' as const, auctionEndsAt: now + 1 }],
   ])('%p', (state, over) => {
     expect(listingState(listing('ebay', ids('12'), over), now)).toBe(state);
@@ -39,11 +41,11 @@ describe('listingState', () => {
 });
 
 describe('pictureBacked', () => {
-  test('reference and confirmed are backed; unconfirmed and bundle are not', () => {
-    const of = (matchStatus: 'reference' | 'confirmed' | 'unconfirmed' | 'bundle') =>
+  test('confirmed is backed; pending, unconfirmed and bundle are not', () => {
+    const of = (matchStatus: 'pending' | 'confirmed' | 'unconfirmed' | 'bundle') =>
       pictureBacked(listing('ebay', ids('12'), { matchStatus }));
-    expect([of('reference'), of('confirmed'), of('unconfirmed'), of('bundle')]).toEqual([
-      true,
+    expect([of('pending'), of('confirmed'), of('unconfirmed'), of('bundle')]).toEqual([
+      false,
       true,
       false,
       false,
@@ -120,9 +122,9 @@ describe('shopCells', () => {
 
   test('a backed picture beats a cheaper unconfirmed one; then the lower price wins', () => {
     const unconfirmed = listing('ebay', ids('12'), { matchStatus: 'unconfirmed', ...euro(10) });
-    const backed = listing('ebay', ids('12'), euro(90));
+    const backed = listing('ebay', ids('12'), { matchStatus: 'confirmed', ...euro(90) });
     const cheaper = listing('ebay', ids('12'), { matchStatus: 'confirmed', ...euro(80) });
-    const noPrice = listing('ebay', ids('12'), { price: null });
+    const noPrice = listing('ebay', ids('12'), { matchStatus: 'confirmed', price: null });
     const c = shopCells(ctx({ listings: [unconfirmed, backed, noPrice, cheaper] }))(
       cid('12'),
       'ebay'
@@ -136,7 +138,7 @@ describe('shopCells', () => {
     const bundle = listing('ebay', ids('12', '13'), { matchStatus: 'bundle', ...euro(10) });
     const pending = listing('ebay', ids('12'), { matchStatus: 'pending', ...euro(30) });
     const unconfirmed = listing('ebay', ids('12'), { matchStatus: 'unconfirmed', ...euro(20) });
-    const single = listing('ebay', ids('12'), euro(500));
+    const single = listing('ebay', ids('12'), { matchStatus: 'confirmed', ...euro(500) });
     const at = (listings: ReturnType<typeof listing>[]) => {
       const c = shopCells(ctx({ listings }))(cid('12'), 'ebay');
       return c.kind === 'listed' ? c.offers : [];

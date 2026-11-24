@@ -36,7 +36,7 @@ function listing(shop: ShopId, cards: CardId[], over: Partial<StoredListing> = {
     available: true,
     availableSince: T,
     cardIds: cards,
-    matchStatus: 'reference',
+    matchStatus: 'confirmed',
     similarity: null,
     matchCheckedAt: null,
     idConflict: false,
@@ -45,6 +45,7 @@ function listing(shop: ShopId, cards: CardId[], over: Partial<StoredListing> = {
     lastSeenAt: T,
     idSource: 'title',
     pictureCardId: null,
+    rematchFrom: null,
     ...over,
   };
 }

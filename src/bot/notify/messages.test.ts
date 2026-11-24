@@ -40,6 +40,7 @@ function listing(i: number, over: Partial<StoredListing> = {}): StoredListing {
     lastSeenAt: 1,
     idSource: 'title',
     pictureCardId: null,
+    rematchFrom: null,
     ...over,
   };
 }
@@ -179,9 +180,9 @@ describe('notification messages', () => {
     expect(f({ matchStatus: 'model_unavailable' }).footer.text).toBe(
       'ℹ️ picture check unavailable'
     );
-    const ref = f({ matchStatus: 'reference', shop: 'sammel-ente' });
-    expect(ref.footer).toBeUndefined();
-    expect(ref.fields.map((x: { value: string }) => x.value).join('|')).toContain('sammel-ente');
+    const ente = f({ matchStatus: 'confirmed', similarity: 0.95, shop: 'sammel-ente' });
+    expect(ente.footer.text).toBe('✅ picture matches reference (0.95)');
+    expect(ente.fields.map((x: { value: string }) => x.value).join('|')).toContain('sammel-ente');
     expect(f({ imageUrl: null }).image).toBeUndefined();
     const noRef = f({ matchStatus: 'unconfirmed', cardIds: [cid('45')] });
     expect(noRef.thumbnail).toBeUndefined();

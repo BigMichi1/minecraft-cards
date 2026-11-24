@@ -99,6 +99,10 @@ run = "bun run db:studio"
 description = "Measure image similarity of true and false card pairs per model (needs network)"
 run = "bun run scripts/measure-threshold.ts"
 
+[tasks."measure:laststicker"]
+description = "Measure laststicker scans as image references against shop pictures (needs network)"
+run = "bun run scripts/measure-laststicker.ts"
+
 [tasks."model:download"]
 description = "Download IMAGE_MODEL into MODEL_CACHE_DIR (default ./models) once"
 run = "bun run scripts/download-model.ts"

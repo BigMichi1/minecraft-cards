@@ -82,7 +82,7 @@ const links = () =>
 
 function setReference(url: string | null) {
   db.update(cards)
-    .set({ name: 'Squid', referenceImageUrl: url })
+    .set({ name: 'Squid', shopImageUrl: url })
     .where(eq(cards.cardId, cid('12')))
     .run();
 }
@@ -223,7 +223,7 @@ describe('/card', () => {
     expect(embed().thumbnail).toBeUndefined();
     setReference(REF);
     db.update(cards)
-      .set({ referenceImageUrl: REF })
+      .set({ shopImageUrl: REF })
       .where(eq(cards.cardId, cid('13')))
       .run();
     await execute(command('12'), ctx());

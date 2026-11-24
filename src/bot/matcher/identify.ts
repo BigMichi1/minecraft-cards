@@ -11,7 +11,9 @@ export const DECISION_GAP = 0.02;
 /**
  * Two reference pictures at least this alike show the same art: the picture cannot tell those
  * cards apart. Measured on 2026-11-18 over the 251 sammel-ente references: #59 and XXL1
- * (Charged Creeper) 0.945; the next most alike pair 0.866 (LE5 and LE13).
+ * (Charged Creeper) 0.945; the next most alike pair 0.866 (LE5 and LE13). With laststicker's
+ * scans (2026-11-24) #59's scan and XXL1's sammel-ente picture score below it, so the collection
+ * names the pair in `knownTwins`.
  */
 export const TWIN_SIMILARITY = 0.9;
 
@@ -32,6 +34,8 @@ export interface ReferenceVector {
   vector: Float32Array;
   /** A puzzle card: pieces of one big picture, alike, see rule 5. */
   puzzle: boolean;
+  /** A twin by the collection's `knownTwins`, whatever the pictures score. */
+  knownTwin?: true;
 }
 
 /**
@@ -112,9 +116,12 @@ export function identifyPicture(
   }
   if (best === null) return null;
   const { ref } = best;
-  const twin = references.some(
-    (other) => other !== ref && atLeast(cosineSimilarity(other.vector, ref.vector), TWIN_SIMILARITY)
-  );
+  const twin =
+    ref.knownTwin === true ||
+    references.some(
+      (other) =>
+        other !== ref && atLeast(cosineSimilarity(other.vector, ref.vector), TWIN_SIMILARITY)
+    );
   return {
     cardId: ref.cardId,
     similarity: best.similarity,

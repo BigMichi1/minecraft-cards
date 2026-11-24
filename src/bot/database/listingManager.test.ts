@@ -171,7 +171,7 @@ describe('listingManager', () => {
           },
         ],
         2000,
-        { moveFrom: true }
+        { moveFromOtherCollections: true }
       );
       expect(moved.map((l) => l.url)).toEqual([item.url]);
       expect(listingManager.getByUrl(item.url)).toMatchObject({
@@ -181,6 +181,75 @@ describe('listingManager', () => {
       });
       // A new availability period: the old collection's alert is no alert for this one.
       expect(listingManager.getByUrl(item.url)!.availableSince).toBe(2000);
+    });
+
+    test('a moved listing with the same card numbers is compared again in its new collection', () => {
+      const item = {
+        ...blue12,
+        shop: 'ebay' as const,
+        url: 'https://www.ebay.de/itm/3',
+        format: 'fixed_price' as const,
+      };
+      const [l] = listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [item], 1000);
+      listingManager.setMatch(
+        l!.id,
+        { status: 'confirmed', similarity: 0.93, picture: { cardId: cid('12'), similarity: 0.93 } },
+        1500
+      );
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-1', [item], 2000, {
+        moveFromOtherCollections: true,
+      });
+      expect(listingManager.getByUrl(item.url)).toMatchObject({
+        collection: 'lego-minecraft-1',
+        cardIds: ids('12'),
+        matchStatus: 'pending',
+        similarity: null,
+        pictureCardId: null,
+        rematchFrom: null,
+      });
+      // A bundle that moves is a bundle there.
+      const bundle = { ...item, url: 'https://www.ebay.de/itm/4', cardIds: ids('12', '13') };
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [bundle], 1000);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-1', [bundle], 2000, {
+        moveFromOtherCollections: true,
+      });
+      expect(listingManager.getByUrl(bundle.url)!.matchStatus).toBe('bundle');
+    });
+
+    test('a listing the run saw in another collection is not marked gone', () => {
+      const item = {
+        ...blue12,
+        shop: 'ebay' as const,
+        url: 'https://www.ebay.de/itm/5',
+        format: 'fixed_price' as const,
+      };
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [item], 1000);
+      const later = 1000 + 7 * 24 * 60 * 60 * 1000;
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [], later, {
+        seenUrls: new Set([item.url]),
+      });
+      expect(listingManager.getByUrl(item.url)!.available).toBe(true);
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [], later);
+      expect(listingManager.getByUrl(item.url)!.available).toBe(false);
+    });
+
+    test('a listing of another shop is never moved', () => {
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
+      expect(
+        listingManager.upsertFromRun(
+          'ebay',
+          'lego-minecraft-1',
+          [{ ...blue12, shop: 'ebay' }],
+          2000,
+          {
+            moveFromOtherCollections: true,
+          }
+        )
+      ).toEqual([]);
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        shop: 'blue-ocean',
+        collection: 'lego-minecraft-3',
+      });
     });
 
     test('an admin-mapped eBay listing stays in its collection', () => {
@@ -197,7 +266,9 @@ describe('listingManager', () => {
         1500
       );
       expect(
-        listingManager.upsertFromRun('ebay', 'lego-minecraft-1', [item], 2000, { moveFrom: true })
+        listingManager.upsertFromRun('ebay', 'lego-minecraft-1', [item], 2000, {
+          moveFromOtherCollections: true,
+        })
       ).toEqual([]);
       expect(listingManager.getByUrl(item.url)).toMatchObject({ collection: 'lego-minecraft-3' });
     });

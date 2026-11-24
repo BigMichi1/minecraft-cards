@@ -243,7 +243,7 @@ Per-shop settings and parser changes:
   URL suffix disagree keeps today's `idConflict` handling.
 - **eBay**: see below.
 
-Shop errors and alerts (eBay excepted, see below) are keyed per (shop, collection) (`shop:collect-it:lego-minecraft-1`), and
+Shop errors and alerts (eBay excepted, see below) are keyed per (shop, collection) (`shop-error:collect-it:lego-minecraft-1`), and
 a failing fetch leaves only that (shop, collection)'s stored listings untouched. `/admin status`
 lists results per collection and shop.
 
@@ -256,7 +256,7 @@ One adapter run covers all collections, so items found by several queries are fe
   (`Serie 1`, `Series 1`, `TCC 1`), series 2 (`Serie 2`, `Boom-Bastic`), series 3 (`Serie 3`,
   `On Fire`, today's pattern), Turbo Attax 2026 (`Turbo Attax` and `2026`, and no other year).
   A title matching exactly one collection belongs to it; none or several gives no ids
-  (`skippedExcluded`, reason `no collection` / `several collections`).
+  (`skippedExcluded`, reason `no series` / `several collections`).
 - The title id forms, `COUNT_WORDS`, pick-list, range and variation rules apply as today, read
   with the collection's id rule. The series-1/2 exclusion in today's series 3 rules becomes the
   general "exactly one collection" rule.
@@ -269,7 +269,7 @@ One adapter run covers all collections, so items found by several queries are fe
 - Picture candidates (rule 4, a title naming no card) stay series 3 only.
 - Errors: as today, any failing or malformed query fails the whole eBay run, so no collection's
   eBay listings are touched (an item found by one collection's query may belong to another, so a
-  narrower scope could mark real listings unavailable). One alert key `shop:ebay`. A cut search
+  narrower scope could mark real listings unavailable). One alert key `shop-error:ebay`. A cut search
   still alerts (`shop-truncated:ebay`) and the run goes on, as today.
 
 ### Matcher
@@ -428,12 +428,18 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   the definition); `classifyTitle` places a title by every known marker, and the fetcher tags
   each listing with its collection (`Listing.collection`). An adapter covering several
   collections (`ShopAdapter.collections`) is stored per collection by the runner, and its
-  failure alerts once under the shop (`shop-error:ebay`), as designed above.
+  fetch error, cut searches and unloaded card lists alert once under the shop
+  (`shop-error:ebay`, `shop-truncated:ebay`, `shop-names:ebay`); storing stays per collection.
+  `checkAdapters` refuses a shared adapter that overlaps another or does not cover its own
+  `collection`, under which the run's skipped counts are filed.
 - An unmapped eBay listing whose title names another collection moves there
-  (`upsertFromRun(…, { moveFrom: true })`); admin-mapped ones stay. Other shops keep the
-  foreign-listing alert.
-- Series 3's name check refuses a name series 1 or 2 has at that number; picture candidates and
-  the name check stay series 3 only. Step 4 (Turbo Attax) adds its marker (`Turbo Attax` and
+  (`upsertFromRun(…, { moveFromOtherCollections: true })`), as `pending` with a new
+  availability period; admin-mapped ones stay where the admin put them and are kept fresh
+  there. A listing the run saw is never marked gone in another collection (`seenUrls`).
+- A series list with one series word (`Serie 1-2`) names several collections.
+- Series 3's name check refuses a name series 1 or 2 has at that number, and reads no title by
+  name while their card list is not loaded; picture candidates and the name check stay series
+  3 only. Step 4 (Turbo Attax) adds its marker (`Turbo Attax` and
   `2026`) and its id rule's title forms.
 
 ## Left to the builder

@@ -67,9 +67,9 @@ export interface FetchResult {
    */
   skippedNoId?: number;
   /**
-   * eBay items whose title cannot offer a series 3 single card: series 1 or 2, no series word
-   * (unless its catalog name confirms its number, see nameMatchedCardIds), a pick list, a number
-   * range, or a listing with variations. Not "without card number". sammel-ente and collect-it:
+   * eBay items whose title cannot offer a single card of the collection it names: several series
+   * or none (unless its catalog name confirms a series 3 number, see nameMatchedCardIds), a
+   * pick list, a number range, or a listing with variations. Not "without card number". sammel-ente and collect-it:
    * card titles of another series than the category's.
    */
   skippedExcluded?: number;
@@ -80,11 +80,16 @@ export interface FetchResult {
    * sends a throttled admin alert: listings past the cap are not seen.
    */
   truncated?: string[];
+  /**
+   * eBay: the collections whose card list is not loaded yet, so no title without a series word
+   * was read by catalog name this run (nameMatchedCardIds). The runner alerts the admin.
+   */
+  namesUnknown?: readonly CollectionId[];
 }
 
 /**
- * One shop's fetch for one collection's settings, not yet bound to it (`shops/adapters.ts` binds
- * one per (collection, shop) the definition lists).
+ * One shop's fetch, not yet bound to its collection (`shops/adapters.ts` binds one per
+ * (collection, shop) the definition lists; eBay's one fetch covers every collection on eBay).
  */
 export interface ShopFetcher {
   readonly id: ShopId;
@@ -93,11 +98,13 @@ export interface ShopFetcher {
 
 /**
  * A shop checked for one collection: its listings are stored in `collection`. eBay's one run
- * covers several (`collections`): each listing is stored in the collection it names.
+ * covers several (`collections`, a shared run): each listing is stored in the collection it
+ * names (`Listing.collection`), and the run's skipped counts are filed under `collection`, one
+ * of them (checkAdapters).
  */
 export interface ShopAdapter extends ShopFetcher {
   readonly collection: CollectionId;
-  /** The collections this adapter's run covers (eBay); default `[collection]`. */
+  /** The collections a shared run covers (eBay): none twice, `collection` among them. */
   readonly collections?: readonly CollectionId[];
 }
 

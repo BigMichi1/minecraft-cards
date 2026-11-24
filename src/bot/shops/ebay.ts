@@ -1,5 +1,10 @@
 import { compareCardIds, normalizeCardId } from '../cards/cardId';
-import { LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
+import {
+  LEGACY_COLLECTION,
+  type CollectionDefinition,
+  type CollectionId,
+  type EbayCollectionSettings,
+} from '../collections/ids';
 import { COLLECTIONS } from '../collections/index';
 import type { CardId } from '../cards/cardId';
 import { errorMessage, sleep as realSleep } from '../utils/async';
@@ -31,16 +36,15 @@ const tolerance = (total: number) =>
   Math.max(TOTAL_TOLERANCE_MIN, Math.ceil(total * TOTAL_TOLERANCE_SHARE));
 
 /** Every collection read on eBay: its id, searches and series marker (CollectionDefinition). */
-export interface EbayCollection {
-  readonly id: CollectionId;
-  readonly queries: readonly string[];
-  readonly series: RegExp;
+export type EbayCollection = EbayCollectionSettings & { readonly id: CollectionId };
+
+/** The definitions that name eBay settings, as eBay collections, in their order. */
+export function ebayCollectionsOf(definitions: readonly CollectionDefinition[]): EbayCollection[] {
+  return definitions.flatMap((d) => (d.shops.ebay ? [{ id: d.id, ...d.shops.ebay }] : []));
 }
 
 /** The collections whose definition names eBay settings, in registry order. */
-export const EBAY_COLLECTIONS: readonly EbayCollection[] = COLLECTIONS.flatMap((d) =>
-  d.shops.ebay ? [{ id: d.id, queries: d.shops.ebay.queries, series: d.shops.ebay.series }] : []
-);
+export const EBAY_COLLECTIONS: readonly EbayCollection[] = ebayCollectionsOf(COLLECTIONS);
 
 /** Every collection's searches, each once, in registry order. */
 export const EBAY_QUERIES: readonly string[] = [
@@ -267,10 +271,11 @@ function hasRange(title: string): boolean {
 export type TitleExclusion =
   'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
 
-// A series word followed by a list of series numbers ("Serie 1-2", "Serie 1, 2, 3"); series
-// numbers have one or two digits, so "Serie 3 - 2026" is a year, no list.
+// A series word followed by a list of series numbers ("Serie 1-2", "Serie 1, 2, 3"). Only the
+// series numbers there are (1 to 3) count, and one followed by more digits or by a dash and a
+// name is no series: "Serie 3 - 2026" is a year, "Serie 3 - 12 - Steve" card #12.
 const SERIES_LIST =
-  /\b(?:Series?|Staffel|TCC)\s*\d{1,2}(?:\s*(?:[-–/&+,]|\bund\b|\band\b|\bu\.)\s*\d{1,2}(?!\d))+/i;
+  /\b(?:Series?|Staffel|TCC)\s*[1-3](?:\s*(?:[-–/&+,]|\bund\b|\band\b|\bu\.)\s*[1-3](?!\d|\s*[-–]\s*[A-Za-zÄÖÜäöüß]))+/i;
 
 /**
  * The collection a title names by its series marker (`Serie 1`, `Boom-Bastic`, `On Fire`), or
@@ -280,13 +285,13 @@ const SERIES_LIST =
 export function classifyTitle(
   title: string,
   collections: readonly EbayCollection[] = EBAY_COLLECTIONS
-): { collection: CollectionId } | { exclusion: 'several collections' | 'no collection' } {
+): { collection: CollectionId } | { exclusion: 'several collections' | 'no series' } {
   // "Serie 1-2", "Serie 1 und 2", "Serie 2/3": one series word for several series.
   if (SERIES_LIST.test(title)) return { exclusion: 'several collections' };
   const named = collections.filter((c) => c.series.test(title));
   if (named.length > 1) return { exclusion: 'several collections' };
   const [only] = named;
-  return only ? { collection: only.id } : { exclusion: 'no collection' };
+  return only ? { collection: only.id } : { exclusion: 'no series' };
 }
 
 /**
@@ -301,9 +306,7 @@ export function titleExclusion(
   collections: readonly EbayCollection[] = EBAY_COLLECTIONS
 ): TitleExclusion | null {
   const placed = classifyTitle(title, collections);
-  if ('exclusion' in placed) {
-    return placed.exclusion === 'several collections' ? 'several collections' : 'no series';
-  }
+  if ('exclusion' in placed) return placed.exclusion;
   if (placed.collection !== collection) return 'other series';
   if (MULTI_PICK_PATTERN.test(title)) return 'pick list';
   if (hasRange(title)) return 'range';
@@ -610,9 +613,11 @@ export function createEbayFetcher(
     cardNames?: (collection: CollectionId) => ReadonlyMap<CardId, string>;
     /**
      * The collections read (default every one with eBay settings): their queries are searched,
-     * and their titles stored. A title naming another known collection is `other series`.
+     * their markers place the titles, and their titles are stored. A title naming a registry
+     * collection not read here is `other series`; one naming several, or none, is excluded as
+     * `several collections` or `no series` (series 3's name check apart).
      */
-    collections?: readonly Pick<EbayCollection, 'id' | 'queries'>[];
+    collections?: readonly EbayCollection[];
   } & AdapterOptions
 ): ShopFetcher {
   const fetchFn = opts.fetchFn ?? fetch;
@@ -861,17 +866,30 @@ export function createEbayFetcher(
     id: 'ebay',
     async fetchListings(): Promise<FetchResult> {
       const collections = opts.collections ?? EBAY_COLLECTIONS;
+      // Every known marker places a title: the collections read, then the registry's others.
+      const known = [
+        ...collections,
+        ...EBAY_COLLECTIONS.filter((k) => !collections.some((c) => c.id === k.id)),
+      ];
       const queries = [...new Set(collections.flatMap((c) => c.queries))];
       const namesOf = (collection: CollectionId) =>
         opts.cardNames?.(collection) ?? new Map<CardId, string>();
       // Series 3's names, and the other series' to refuse a name they have at that number.
       const series3 = collections.some((c) => c.id === LEGACY_COLLECTION);
       const names = series3 ? namesOf(LEGACY_COLLECTION) : new Map<CardId, string>();
-      const otherNames = collections
+      const others = collections
         .filter((c) => c.id !== LEGACY_COLLECTION)
-        .map((c) => namesOf(c.id));
-      // An other series' catalog not synced yet cannot rule a name out: no title read by name.
-      const namesKnown = otherNames.every((n) => n.size > 0);
+        .map((c) => ({ id: c.id, names: namesOf(c.id) }));
+      const otherNames = others.map((o) => o.names);
+      // An other series' catalog not synced yet cannot rule a name out: no title read by name
+      // (the runner alerts the admin, `namesUnknown`).
+      const namesUnknown = series3 ? others.filter((o) => o.names.size === 0) : [];
+      if (namesUnknown.length > 0) {
+        logger.warn(
+          `eBay: no title is read by catalog name while the card list of ${namesUnknown.map((c) => c.id).join(', ')} is not loaded`
+        );
+      }
+      const namesKnown = namesUnknown.length === 0;
       const byUrl = new Map<string, Listing>();
       const noId = new Set<string>();
       const excluded = new Set<string>();
@@ -900,17 +918,19 @@ export function createEbayFetcher(
           if (byUrl.has(url) || noId.has(url) || excluded.has(url)) continue;
           // Placed by every known series marker; a collection this run does not read is
           // another series here.
-          const placed = classifyTitle(title);
-          const named = 'collection' in placed ? placed.collection : LEGACY_COLLECTION;
-          const read = collections.some((c) => c.id === named);
-          const collection = read ? named : LEGACY_COLLECTION;
+          const placed = classifyTitle(title, known);
+          const read =
+            'collection' in placed && collections.some((c) => c.id === placed.collection);
+          const collection = 'collection' in placed ? placed.collection : LEGACY_COLLECTION;
           // A listing with variations (`SELLER_DEFINED_VARIATIONS`) sells a choice of cards
           // under one title; which of them is in stock is not in the search answer.
           const reason = item.itemGroupType
             ? 'variations'
-            : read
-              ? titleExclusion(title, collection)
-              : 'other series';
+            : 'exclusion' in placed
+              ? placed.exclusion
+              : read
+                ? titleExclusion(title, collection, known)
+                : 'other series';
           const byName =
             reason === 'no series' && series3 && namesKnown
               ? nameMatchedCardIds(title, names, otherNames)
@@ -928,13 +948,10 @@ export function createEbayFetcher(
             continue;
           }
           const cardIds = extractCardIdsFromTitle(title, collection);
-          if (
-            cardIds.length === 0 &&
-            collection === LEGACY_COLLECTION &&
-            isPictureCandidate(title)
-          ) {
+          // isPictureCandidate is series 3's only (it needs a title naming series 3).
+          if (cardIds.length === 0 && isPictureCandidate(title)) {
             // No card id, but one single card: passed on without ids for the picture to decide.
-            byUrl.set(url, toListing(item, url, title, 'picture', collection));
+            byUrl.set(url, toListing(item, url, title, 'picture', LEGACY_COLLECTION));
             continue;
           }
           if (cardIds.length === 0) {
@@ -956,6 +973,7 @@ export function createEbayFetcher(
         skippedExcluded: excluded.size,
         skippedInvalid: invalid.size,
         ...(truncated.length > 0 ? { truncated } : {}),
+        ...(namesUnknown.length > 0 ? { namesUnknown: namesUnknown.map((c) => c.id) } : {}),
       };
     },
   };

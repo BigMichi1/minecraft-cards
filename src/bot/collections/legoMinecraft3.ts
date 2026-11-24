@@ -29,7 +29,7 @@ export const legoMinecraft3: CollectionDefinition<'lego-minecraft-3'> = {
         'lego minecraft karten serie 3',
       ],
       // "Serie 3", "Series 3", "Serie3", "On Fire".
-      series: /\bSeries?\s*3\b|\bOn\s*Fire\b/i,
+      series: /\b(?:Series?|Staffel)\s*3\b|\bTCC\s*3\b|\bOn\s*Fire\b/i,
     },
   },
 };

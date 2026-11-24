@@ -2061,6 +2061,29 @@ describe('series markers (2026-11-24 probe)', () => {
     expect(extractCardIdsFromTitle(title)).toEqual([]);
   });
 
+  test('a card number after "Serie N -" is no series list', () => {
+    const s3 = 'LEGO Minecraft Serie 3 - 12 - Steve - Charakterkarte';
+    expect(classifyTitle(s3)).toEqual({ collection: 'lego-minecraft-3' });
+    expect(extractCardIdsFromTitle(s3)).toEqual(ids('12'));
+    expect(classifyTitle('LEGO Minecraft Serie 1 - 68 - Yeti - Skin Karte')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+    expect(classifyTitle('LEGO Minecraft Serie 1 - 2 - Steve - Skin Karte')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+    // A series list stays one, also before "Karte".
+    expect(classifyTitle('LEGO Minecraft Serie 1 - 2 Karte 45')).toEqual({
+      exclusion: 'several collections',
+    });
+  });
+
+  test('Staffel 3 and TCC 3 name series 3', () => {
+    for (const title of ['LEGO Minecraft Staffel 3 Karte 12', 'LEGO Minecraft TCC 3 Karte 12']) {
+      expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
+    }
+    expect(classifyTitle('LEGO Minecraft TCC 30 Karte 12')).toEqual({ exclusion: 'no series' });
+  });
+
   test('Boom-Bastic, TNT Boom and Staffel 2 name series 2', () => {
     for (const title of [
       'Blue Ocean LEGO Minecraft 2025 Sammelkarte 216 Trading Cards Boom-Bastic TNT',
@@ -2104,9 +2127,9 @@ describe('series markers (2026-11-24 probe)', () => {
     });
   });
 
-  test('a title naming no series is "no collection"', () => {
+  test('a title naming no series is "no series"', () => {
     expect(classifyTitle('LEGO Minecraft Sammelkarte / Trading Card Nr. 242')).toEqual({
-      exclusion: 'no collection',
+      exclusion: 'no series',
     });
   });
 
@@ -2194,5 +2217,37 @@ describe('one eBay run for every collection', () => {
     expect((await run(new Map([[cid('1'), 'Steve']]))).listings.map((l) => l.cardIds)).toEqual([
       ids('104'),
     ]);
+  });
+
+  test('the fetcher stores each title in the collection it names', async () => {
+    const at = (n: number, title: string) => ({
+      itemId: `v1|24000000000${n}|0`,
+      legacyItemId: `24000000000${n}`,
+      title,
+      itemWebUrl: `https://www.ebay.de/itm/24000000000${n}`,
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    });
+    const items = [
+      at(1, 'LEGO Minecraft Serie 1 Trading Card 134 - Neon Lohe - Mob Karte - Neon'),
+      at(2, 'LEGO MINECRAFT TNT BOOM Serie 2 ULTRA RARE CREEPER 12 Karte Trading Card'),
+      at(3, 'LEGO Minecraft On Fire Karte 12'),
+    ];
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: items.length, itemSummaries: items }),
+    });
+    const { listings, namesUnknown } = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    }).fetchListings();
+    expect(listings.map((l) => [l.collection, l.cardIds])).toEqual([
+      ['lego-minecraft-1', ids('134')],
+      ['lego-minecraft-2', ids('12')],
+      ['lego-minecraft-3', ids('12')],
+    ]);
+    // Without catalog names nothing was read by name; series 1 and 2 are named for the alert.
+    expect(namesUnknown).toEqual(['lego-minecraft-1', 'lego-minecraft-2']);
   });
 });

@@ -34,6 +34,7 @@ import {
   type NotificationSender,
   type PendingNotifications,
   type RunDeps,
+  type RunSummary,
   IMAGE_RETRY_MS,
   formatWindow,
 } from './runner';
@@ -311,14 +312,108 @@ describe('runCheck', () => {
       format: 'fixed_price',
       collection,
     });
-    const shared = (items: Listing[] | Error): ShopAdapter => ({
+    const shared = (
+      items: Listing[] | Error,
+      more: Omit<FetchResult, 'listings'> = {}
+    ): ShopAdapter => ({
       id: 'ebay',
       collection: 'lego-minecraft-3',
       collections: ['lego-minecraft-1', 'lego-minecraft-3'],
       fetchListings: async () => {
         if (items instanceof Error) throw items;
-        return { listings: items };
+        return { listings: items, ...more };
       },
+    });
+
+    test('cut searches alert once under the shop; skipped counts are filed once', async () => {
+      const s = await runCheck(
+        depsWith([
+          shared([item('1', 'lego-minecraft-1')], {
+            truncated: ['q (total 1200, read 1000)'],
+            skippedNoId: 2,
+            skippedExcluded: 3,
+          }),
+        ])
+      );
+      expect(alerts.filter((a) => a.includes('cut at the page cap'))).toHaveLength(1);
+      expect(runManager.lastAlertAt('shop-truncated:ebay')).toBeDefined();
+      expect(runManager.lastAlertAt('shop-truncated:ebay:lego-minecraft-1')).toBeUndefined();
+      expect(runManager.lastAlertAt('shop-truncated:ebay:lego-minecraft-3')).toBeUndefined();
+      expect(s.shops.ebay).toEqual({
+        listings: 0,
+        skippedNoId: 2,
+        skippedExcluded: 3,
+        truncated: 1,
+      });
+      expect(s.collections?.['lego-minecraft-1']?.ebay).toEqual({ listings: 1 });
+    });
+
+    test("a shared run's listing without a collection is stored under the adapter's", async () => {
+      const { collection: _named, ...plain } = item('6', 'lego-minecraft-1');
+      await runCheck(depsWith([shared([plain as Listing])]));
+      expect(listingManager.getByUrl(plain.url)).toMatchObject({ collection: 'lego-minecraft-3' });
+    });
+
+    test('an unloaded card list alerts once under the shop, naming the collection', async () => {
+      await runCheck(
+        depsWith([shared([item('1', 'lego-minecraft-3')], { namesUnknown: ['lego-minecraft-1'] })])
+      );
+      const names = alerts.filter((a) => a.includes('not read by card name'));
+      expect(names).toHaveLength(1);
+      expect(names[0]).toContain('LEGO Minecraft Serie 1');
+      expect(runManager.lastAlertAt('shop-names:ebay')).toBeDefined();
+    });
+
+    test('a failure placing the listings is a shop error of every collection, not a run error', async () => {
+      const read = spyOn(listingManager, 'getByUrl').mockImplementation(() => {
+        throw new Error('database is locked');
+      });
+      const log = spyOn(logger, 'log').mockImplementation(() => logger);
+      let s: RunSummary;
+      try {
+        s = await runCheck(depsWith([shared([item('1', 'lego-minecraft-1')])]));
+      } finally {
+        read.mockRestore();
+        log.mockRestore();
+      }
+      expect(s.shops.ebay?.error).toContain('database is locked');
+      expect(s.collections?.['lego-minecraft-1']?.ebay?.error).toContain('database is locked');
+      expect(alerts.filter((a) => a.startsWith('Shop ebay check failed'))).toHaveLength(1);
+      expect(runManager.lastAlertAt('shop-error:ebay')).toBeDefined();
+    });
+
+    test('a moved listing alerts the new collection once, and not the old one again', async () => {
+      catalogManager.syncCollection(
+        'lego-minecraft-1',
+        [
+          {
+            cardId: cid('12'),
+            name: 'X',
+            kind: 'Skin Karte',
+            variant: 'Basis Karte',
+            puzzle: false,
+            pictureUrl: null,
+          },
+        ],
+        clock
+      );
+      setCatalogCards('lego-minecraft-1', [
+        { cardId: cid('12'), imageUrl: 'https://ente/s1-12.jpg' },
+      ]);
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('12'), imageUrl: 'https://ente/12.jpg' }]);
+      userManager.setList('u2', 'lego-minecraft-1', '12');
+      const sentTo = () =>
+        db
+          .select()
+          .from(notifications)
+          .all()
+          .map((n) => n.discordId)
+          .sort();
+      await runCheck(depsWith([shared([item('8', 'lego-minecraft-3')])]));
+      expect(sentTo()).toEqual(['u1']);
+      await runCheck(depsWith([shared([item('8', 'lego-minecraft-1')])]));
+      await runCheck(depsWith([shared([item('8', 'lego-minecraft-1')])]));
+      expect(sentTo()).toEqual(['u1', 'u2']);
     });
 
     test("one eBay run stores each collection's listings and marks each one's gone ones", async () => {

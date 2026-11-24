@@ -625,11 +625,13 @@ function runCounts(result: FetchResult): Partial<ShopSummary> {
 
 /**
  * Fetch one shop and store what it returned; a failure is recorded on the shop, not thrown. An
- * adapter covering several collections (eBay) is fetched once and stored per collection: each
- * listing in the collection its title names, and every covered collection is stored, so its
- * gone listings are marked unavailable as for a shop of one collection. Its fetch errors and
- * cut searches alert once, under the shop alone (`shop-error:ebay`): a failure touches none of
- * its collections.
+ * adapter covering several collections (eBay, a shared run) is fetched once and stored per
+ * collection: each listing in the collection its title names (an admin-mapped one where the
+ * admin put it), and every covered collection is stored, so its gone listings are marked
+ * unavailable as for a shop of one collection. Its fetch errors, cut searches and unloaded
+ * card lists alert once, under the shop alone (`shop-error:ebay`, `shop-truncated:ebay`,
+ * `shop-names:ebay`): a failure touches none of its collections. Storing stays per collection
+ * (`shop-error:ebay:<collection>`, and the drop and foreign alerts).
  */
 async function checkShop(
   deps: RunDeps,
@@ -641,7 +643,7 @@ async function checkShop(
 ): Promise<void> {
   const covered = adapter.collections ?? [adapter.collection];
   const shared = adapter.collections !== undefined;
-  // Keys and texts name the collection too: one shop is checked once per collection.
+  // Keys and texts name the collection, but a shared run's, which are the shop's alone.
   const runKey = shared ? adapter.id : `${adapter.id}:${adapter.collection}`;
   const runShop = shared ? adapter.id : `${adapter.id} (${collectionName(adapter.collection)})`;
   let result: FetchResult;
@@ -660,13 +662,24 @@ async function checkShop(
       `Shop ${runShop}: ${result.truncated.length} search(es) cut at the page cap, later results are not seen: ${result.truncated.join('; ')}`
     );
   }
-  // A listing the admin mapped stays in the collection they put it in, kept fresh there,
-  // whatever its title names now.
-  const home = (l: Listing): CollectionId => {
-    const stored = listingManager.getByUrl(l.url);
-    return stored?.manualOverride ? stored.collection : (l.collection ?? adapter.collection);
-  };
-  const homes = shared ? new Map(result.listings.map((l) => [l.url, home(l)])) : undefined;
+  if (result.namesUnknown && result.namesUnknown.length > 0) {
+    await alert(
+      `shop-names:${runKey}`,
+      `Shop ${runShop}: titles without a series word are not read by card name while the card list of ${result.namesUnknown.map(collectionName).join(', ')} is not loaded (laststicker sync, /admin catalog sync).`
+    );
+  }
+  let homes: Map<string, CollectionId> | undefined;
+  try {
+    homes = shared ? homesOf(adapter, covered, result.listings) : undefined;
+  } catch (error) {
+    const message = `storing listings failed: ${errorMessage(error)}`;
+    logError(`shop ${runShop}: storing listings failed`, error);
+    for (const c of covered) setShopEntry(summary, c, adapter.id, { listings: 0, error: message });
+    await alert(`shop-error:${runKey}`, `Shop ${runShop} check failed: ${message}`);
+    return;
+  }
+  // A shared run's listings are seen, wherever stored: none is marked gone in another collection.
+  const seenUrls = homes ? new Set(homes.keys()) : undefined;
   for (const collection of covered) {
     const found = homes
       ? result.listings.filter((l) => homes.get(l.url) === collection)
@@ -681,9 +694,38 @@ async function checkShop(
       result,
       summary,
       stored,
-      fetched
+      fetched,
+      seenUrls
     );
   }
+}
+
+/**
+ * Where each listing of a shared run is stored: the collection its title names, or, for a
+ * listing the admin mapped, the collection they put it in (kept fresh there, whatever its title
+ * names now). A collection the run does not cover (no eBay settings, or none in this build)
+ * falls back to the title's, and is logged.
+ */
+function homesOf(
+  adapter: ShopAdapter,
+  covered: readonly CollectionId[],
+  listings: readonly Listing[]
+): Map<string, CollectionId> {
+  const homes = new Map<string, CollectionId>();
+  const outside: string[] = [];
+  for (const l of listings) {
+    const named = l.collection ?? adapter.collection;
+    const stored = listingManager.getByUrl(l.url);
+    const mapped = stored?.manualOverride ? stored.collection : named;
+    if (!covered.includes(mapped)) outside.push(`${clipText(l.url, 120)} (${mapped})`);
+    homes.set(l.url, covered.includes(mapped) ? mapped : named);
+  }
+  if (outside.length > 0) {
+    logger.warn(
+      `shop ${adapter.id}: ${outside.length} admin-mapped listing(s) in a collection this run does not cover, stored by their title: ${outside.slice(0, MAX_NAMED).join(', ')}`
+    );
+  }
+  return homes;
 }
 
 /** Store one collection's part of a shop's fetch, and raise its alerts. */
@@ -697,7 +739,8 @@ async function storeShopResult(
   result: FetchResult,
   summary: RunSummary,
   stored: StoredListing[],
-  fetched: Map<string, Listing>
+  fetched: Map<string, Listing>,
+  seenUrls?: ReadonlySet<string>
 ): Promise<void> {
   const key = `${adapter.id}:${collection}`;
   const shop = `${adapter.id} (${collectionName(collection)})`;
@@ -705,20 +748,25 @@ async function storeShopResult(
   try {
     const peak = recentPeak(adapter.id, collection, deps.now());
     const ours = listingManager.upsertFromRun(adapter.id, collection, found, deps.now(), {
-      moveFrom: shared,
+      moveFromOtherCollections: shared,
+      ...(seenUrls ? { seenUrls } : {}),
     });
     stored.push(...ours);
     // Only listings stored under this collection count here: a URL another collection holds is
     // neither matched, nor a picture source, of this one.
     const ownUrls = new Set(ours.map((l) => l.url));
     const foreign = found.filter((l) => !ownUrls.has(l.url)).map((l) => l.url);
-    // A shared run (eBay) moves listings between its collections; what stays elsewhere is
-    // admin-mapped there, the admin's decision, so it raises no alert.
-    if (foreign.length > 0 && !shared) {
+    // A shared run (eBay) moves listings between its collections and stores an admin-mapped
+    // one where it is, so a foreign listing there is a listing of another shop, or a mapping
+    // made during the run.
+    if (foreign.length > 0) {
+      const why = shared
+        ? 'stored by another shop or mapped during this run'
+        : 'moving a listing between collections is not supported for this shop';
       await alert(
         `shop-foreign:${key}`,
         clipText(
-          `Shop ${shop}: ${foreign.length} listing(s) are stored under another collection and not read here (moving a listing between collections is not supported yet): ${foreign.slice(0, MAX_NAMED).join(' ')}${foreign.length > MAX_NAMED ? ` … and ${foreign.length - MAX_NAMED} more` : ''}`,
+          `Shop ${shop}: ${foreign.length} listing(s) are stored under another collection and not read here (${why}): ${foreign.slice(0, MAX_NAMED).join(' ')}${foreign.length > MAX_NAMED ? ` … and ${foreign.length - MAX_NAMED} more` : ''}`,
           DISCORD_MESSAGE_LIMIT
         )
       );
@@ -775,7 +823,8 @@ async function storeShopResult(
     }
     record({
       listings: own.length,
-      // A shared run's skipped counts are the run's: filed with its own collection once.
+      // A shared run's skipped and cut counts are the whole run's: filed once, under the
+      // adapter's `collection` (series 3 for eBay), not under each collection it covers.
       ...(collection === adapter.collection ? runCounts(result) : {}),
     });
   } catch (error) {

@@ -97,7 +97,7 @@ export const userManager = {
   },
 
   /** discordId -> which of the collection's `cardIds` that user wants (sorted). */
-  usersWanting(collection: CollectionId, cardIds: CardId[]): Map<string, CardId[]> {
+  usersWanting(collection: CollectionId, cardIds: readonly CardId[]): Map<string, CardId[]> {
     const result = new Map<string, CardId[]>();
     if (cardIds.length === 0) return result;
     const rows = db

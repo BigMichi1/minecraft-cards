@@ -334,7 +334,7 @@ function toShopListing(source: Listing, l: StoredListing): Listing {
   const base = { ...source, imageUrl: l.imageUrl };
   return l.idSource === 'picture' && l.cardIds.length === 0
     ? { ...base, idSource: 'picture', cardIds: [] }
-    : { ...base, idSource: 'title', cardIds: l.cardIds };
+    : { ...base, idSource: 'title', cardIds: [...l.cardIds] };
 }
 
 /** The baseline for the drop check; a failed lookup is logged and only skips that check. */

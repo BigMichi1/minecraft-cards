@@ -32,7 +32,7 @@ export type StoredListing = Readonly<{
   auctionEndsAt: number | null;
   available: boolean;
   availableSince: number | null;
-  cardIds: CardId[];
+  cardIds: readonly CardId[];
   matchStatus: MatchStatus;
   similarity: number | null;
   /** When the picture was last compared; null before the first comparison. */
@@ -98,7 +98,7 @@ function auctionEnded(auctionEndsAt: number | null, now: number): boolean {
   return auctionEndsAt !== null && auctionEndsAt < now;
 }
 
-function toStored(row: ListingRow, cardIds: CardId[]): StoredListing {
+function toStored(row: ListingRow, cardIds: readonly CardId[]): StoredListing {
   return {
     id: row.id,
     collection: row.collection,
@@ -153,7 +153,7 @@ function load(tx: Tx, rows: ListingRow[]): StoredListing[] {
 }
 
 /** The status of a listing whose picture has not been compared (yet). */
-function defaultMatchStatus(shop: ShopId, cardIds: CardId[]): MatchStatus {
+function defaultMatchStatus(shop: ShopId, cardIds: readonly CardId[]): MatchStatus {
   if (shop === 'sammel-ente') return 'reference';
   return cardIds.length > 1 ? 'bundle' : 'pending';
 }
@@ -374,7 +374,7 @@ export const listingManager = {
    * and every title of it naming no card whose picture decided nothing (a fuller reference set
    * may decide it now).
    */
-  rematchMismatches(collection: CollectionId, cardIds: CardId[]): void {
+  rematchMismatches(collection: CollectionId, cardIds: readonly CardId[]): void {
     if (cardIds.length === 0) return;
     db.transaction((tx) => {
       tx.update(listings)
@@ -571,7 +571,7 @@ export const listingManager = {
   },
 
   /** Every stored listing of the collection (any shop, available or not) carrying one of `cardIds`. */
-  listingsForCards(collection: CollectionId, cardIds: CardId[]): StoredListing[] {
+  listingsForCards(collection: CollectionId, cardIds: readonly CardId[]): StoredListing[] {
     if (cardIds.length === 0) return [];
     return db.transaction((tx) => {
       const ids = tx

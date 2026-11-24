@@ -14,7 +14,7 @@ import type { Money, ShopId } from '../shops/types';
 
 export interface NotificationItem {
   listing: StoredListing;
-  cardIds: CardId[];
+  cardIds: readonly CardId[];
 }
 
 export const ITEMS_PER_MESSAGE = 5;

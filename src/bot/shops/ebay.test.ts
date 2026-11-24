@@ -2133,6 +2133,22 @@ describe('series markers (2026-11-24 probe)', () => {
     ]) {
       expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
     }
+    // A closing bracket ends the series; a word that is no list word ends the separator.
+    for (const [title, collection, id] of [
+      ['LEGO Minecraft (Serie 3) 2 - Alex - Charakterkarte', 'lego-minecraft-3', '2'],
+      ['LEGO Minecraft Sammelkarte (Serie 3) 1 - Steve - Charakterkarte', 'lego-minecraft-3', '1'],
+      ['LEGO Minecraft (TCC 3) 2 - Alex - Charakterkarte', 'lego-minecraft-3', '2'],
+      ['LEGO Minecraft (Serie 1) 2 - Alex - Charakterkarte', 'lego-minecraft-1', '2'],
+    ] as const) {
+      expect(classifyTitle(title)).toEqual({ collection });
+      expect(extractCardIdsFromTitle(title, collection)).toEqual(ids(id));
+    }
+    expect(classifyTitle('LEGO Minecraft Serie 3 Toto 1 Karte 5')).toEqual({
+      collection: 'lego-minecraft-3',
+    });
+    expect(classifyTitle('LEGO Minecraft Serie 3 ― 1 ― Steve ― Charakterkarte')).toEqual({
+      collection: 'lego-minecraft-3',
+    });
     expect(classifyTitle('LEGO Minecraft Serie 1 2/50 Alex')).toEqual({
       collection: 'lego-minecraft-1',
     });
@@ -2194,6 +2210,12 @@ describe('series markers (2026-11-24 probe)', () => {
       'LEGO Minecraft Serie 1 ~ 2 Karte 45',
       'LEGO Minecraft Serie 3 - 1 - 2 - Steve - Charakterkarte',
       'LEGO Minecraft Serie 1 UND 2 Karte 45',
+      'LEGO Minecraft Serie 3 UND 1 Karte 5',
+      'LEGO Minecraft Serie 3 (1) Karte 5',
+      'LEGO Minecraft Serie 1 ― 2 Karte 45',
+      'LEGO Minecraft Serie 1 ＆ 2 Karte 45',
+      'LEGO Minecraft Serie 1 ／ 2 Karte 45',
+      'LEGO Minecraft Serie 1 [2] Karte 45',
       // A card number after the list does not hide it.
       'LEGO Minecraft Serie 1 und 2 1 Karte 5',
       'LEGO Minecraft Serie 1 & 2 - 1 - Steve - Charakterkarte',
@@ -2547,9 +2569,22 @@ describe('one eBay run for every collection', () => {
     ).rejects.toThrow('returned no usable item (1 without link or title)');
   });
 
-  test('a long run of signs after a series is read in linear time', () => {
-    for (const sign of ['-', '.', '~', '|', ' -', '–']) {
-      const title = `LEGO Minecraft Serie 3 ${sign.repeat(60)} Steve Karte 5`;
+  test('a long run of signs or list words after a series is read in linear time', () => {
+    for (const sign of [
+      '-',
+      '.',
+      '~',
+      '|',
+      ' -',
+      '–',
+      'u.',
+      'o.',
+      'bzw.',
+      'und/oder',
+      'u. ',
+      'u.o.',
+    ]) {
+      const title = `LEGO Minecraft Serie 3 ${sign.repeat(Math.ceil(60 / sign.length))} Steve`;
       const started = performance.now();
       classifyTitle(title);
       expect(performance.now() - started).toBeLessThan(50);

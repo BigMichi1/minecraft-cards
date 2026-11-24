@@ -279,33 +279,68 @@ export type TitleExclusion =
 // numbers (SERIES_NUMBER) right after the series word are read pair by pair; a number followed
 // by another digit is a card number or a year ("Serie 3 - 12 - Steve - Charakterkarte" is #12,
 // "Serie 3 - 2026" a year), and one followed by "/NN" a card fraction ("Serie 1 2/150"). A
-// separator is one run of spaces, signs, brackets and list words. Holding a list word or one of
-// `/ & + , ( )`, it makes the pair a list in any order; made only of spaces, dashes and title
-// signs (`| · ; ~ .`), which sellers also put between a series and a card number, only going
-// upward ("Serie 3 - 1 - Steve - Charakterkarte" and "Serie 3 | 2 - Alex - Charakterkarte" are
-// cards #1 and #2). Any pair that is a list makes the title one: "Serie 1 - 2 - Steve" may be
-// series 1 #2 or a list, unclear, so no ids.
-const LIST_WORD = '(?:und\\/oder|und|and|oder|or|bis|to|sowie|plus|auch|bzw\\.?|u\\.?|o\\.?)';
+// separator is a run of spaces, signs and list words, read one character at a time (no regular
+// expression: any run is read in linear time). Holding a list word or a list sign (LIST_SIGNS),
+// it makes the pair a list in any order; made only of spaces, dashes and title signs
+// (TITLE_SIGNS), which sellers also put between a series and a card number, only going upward
+// ("Serie 3 - 1 - Steve - Charakterkarte" and "Serie 3 | 2 - Alex - Charakterkarte" are cards
+// #1 and #2). A closing bracket ends the series ("(Serie 3) 2 - Alex" is card #2). Any pair that
+// is a list makes the title one: "Serie 1 - 2 - Steve" may be series 1 #2 or a list, unclear,
+// so no ids.
+const LIST_WORDS = new Set([
+  'und',
+  'and',
+  'oder',
+  'or',
+  'bis',
+  'to',
+  'sowie',
+  'plus',
+  'auch',
+  'bzw',
+  'u',
+  'o',
+]);
 /** Dashes (hyphen, en, em, figure, bar, minus, fullwidth) and title signs. */
-const TITLE_SIGNS = '\\-‐‑‒–—―−－|·;~.';
-const LIST_SIGNS = '/&+,()';
+const TITLE_SIGNS = new Set([...' -‐‑‒–—―−－|·•;:~._']);
+/** Signs that join series: slash, ampersand, plus, comma, opening brackets (fullwidth too). */
+const LIST_SIGNS = new Set([...'/&+,([／＆＋，（［']);
 const SERIES_START = new RegExp(`\\b(?:Series?|Staffel|TCC)\\s*(${SERIES_NUMBER})(?!\\d)`, 'gi');
-// One flat run (no nested quantifier: a long run of signs must not backtrack exponentially).
-const NEXT_SERIES = new RegExp(
-  `((?:[\\s${TITLE_SIGNS}${LIST_SIGNS}]|${LIST_WORD})+)(${SERIES_NUMBER})(?!\\d|\\/\\d{2})`,
-  'iy'
-);
-const DEFINITE_JOIN = new RegExp(`[${LIST_SIGNS}]|${LIST_WORD}`, 'i');
+const LETTERS = /[A-Za-zÄÖÜäöüß]+/y;
+const ONE_SERIES_NUMBER = new RegExp(`^${SERIES_NUMBER}$`);
 
 /** Whether a title names a list of series with one series word (see SERIES_START). */
 function namesSeriesList(title: string): boolean {
   for (const m of title.matchAll(SERIES_START)) {
     let previous = Number(m[1]);
-    NEXT_SERIES.lastIndex = m.index + m[0].length;
-    for (let next = NEXT_SERIES.exec(title); next; next = NEXT_SERIES.exec(title)) {
-      const number = Number(next[2]);
-      if (DEFINITE_JOIN.test(next[1]!) || number > previous) return true;
+    let at = m.index + m[0].length;
+    for (;;) {
+      // The separator: spaces, signs and list words.
+      let end = at;
+      let definite = false;
+      while (end < title.length) {
+        const ch = title[end]!;
+        if (TITLE_SIGNS.has(ch) || /\s/.test(ch)) {
+          end++;
+        } else if (LIST_SIGNS.has(ch)) {
+          definite = true;
+          end++;
+        } else {
+          LETTERS.lastIndex = end;
+          const word = LETTERS.exec(title)?.[0];
+          if (!word || !LIST_WORDS.has(word.toLowerCase())) break;
+          definite = true;
+          end += word.length;
+        }
+      }
+      const digit = title[end] ?? '';
+      if (end === at || !ONE_SERIES_NUMBER.test(digit)) break;
+      const rest = title.slice(end + 1, end + 4);
+      if (/^\d/.test(rest) || /^\/\d{2}/.test(rest)) break;
+      const number = Number(digit);
+      if (definite || number > previous) return true;
       previous = number;
+      at = end + 1;
     }
   }
   return false;

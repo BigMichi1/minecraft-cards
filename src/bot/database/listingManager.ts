@@ -2,7 +2,12 @@ import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-o
 import { compareCardIds, type CardId } from '../cards/cardId';
 import type { CollectionCards, CollectionId } from '../collections/ids';
 import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
-import { isConfirmable, type MatchResult, type MatchStatus } from '../matcher/matchStatus';
+import {
+  isConfirmable,
+  type LegacyMatchStatus,
+  type MatchResult,
+  type MatchStatus,
+} from '../matcher/matchStatus';
 import type {
   IdSource,
   ListingFormat,
@@ -49,7 +54,7 @@ export type StoredListing = Readonly<{
    * The status before the reference switch (migration 0008) while the listing waits to be
    * compared again; an old value may be `reference`, a status no longer in use.
    */
-  rematchFrom: string | null;
+  rematchFrom: LegacyMatchStatus | null;
 }>;
 
 /** One listing to tell a user about: the cards of it they want, for this availability period. */
@@ -155,6 +160,11 @@ function load(tx: Tx, rows: ListingRow[]): StoredListing[] {
     rows.map((r) => r.id)
   );
   return rows.map((r) => toStored(r, cards.get(r.id) ?? []));
+}
+
+/** A status the next run compares again (`needsMatch`): not the end of a re-match. */
+function isRetryStatus(status: MatchStatus): boolean {
+  return status === 'image_unavailable' || status === 'model_unavailable' || status === 'pending';
 }
 
 /** The status of a listing whose picture has not been compared (yet). */
@@ -273,6 +283,8 @@ export const listingManager = {
                   similarity: null,
                   matchCheckedAt: null,
                   pictureCardId: null,
+                  // A bundle is never compared: its re-match is over.
+                  ...(newCards.length > 1 ? { rematchFrom: null } : {}),
                 }
               : {}),
           })
@@ -334,6 +346,8 @@ export const listingManager = {
           matchCheckedAt: now,
           pictureCardId,
           mismatchNotedAt: null,
+          // A final status ends the re-match in the same write; a retry status keeps it waiting.
+          ...(isRetryStatus(result.status) ? {} : { rematchFrom: null }),
         })
         .where(eq(listings.id, listingId))
         .run();
@@ -370,18 +384,6 @@ export const listingManager = {
 
   markMismatchNoted(listingId: number, now: number): void {
     db.update(listings).set({ mismatchNotedAt: now }).where(eq(listings.id, listingId)).run();
-  },
-
-  /**
-   * The listing was compared again after the reference switch: clear `rematchFrom`. With
-   * `mismatchNotedAt` its mismatch is marked noted, so it gets no note of its own (the run's
-   * summary names it). Call it after setMatch, which makes a new mismatch's note due.
-   */
-  finishRematch(listingId: number, mismatchNotedAt: number | null): void {
-    db.update(listings)
-      .set({ rematchFrom: null, ...(mismatchNotedAt !== null ? { mismatchNotedAt } : {}) })
-      .where(eq(listings.id, listingId))
-      .run();
   },
 
   /**
@@ -528,6 +530,8 @@ export const listingManager = {
           matchStatus: 'confirmed',
           similarity: null,
           pictureCardId: null,
+          // The admin decided: never compared again, so its re-match is over.
+          rematchFrom: null,
           onHold: false,
           availableSince: row.available ? now : null,
         })
@@ -567,6 +571,8 @@ export const listingManager = {
           matchStatus: 'confirmed',
           similarity: null,
           pictureCardId: null,
+          // The admin decided: never compared again, so its re-match is over.
+          rematchFrom: null,
           onHold: false,
         })
         .where(eq(listings.id, row.id))

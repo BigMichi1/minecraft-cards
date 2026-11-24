@@ -30,6 +30,9 @@ export const MATCH_STATUSES = [
 ] as const;
 export type MatchStatus = (typeof MATCH_STATUSES)[number];
 
+/** A status as rows from before the reference switch hold it (`listings.rematch_from`). */
+export type LegacyMatchStatus = MatchStatus | 'reference';
+
 /** What a comparison yields: any status but `pending`, which only a listing waiting for one has. */
 export type ResolvedMatchStatus = Exclude<MatchStatus, 'pending'>;
 

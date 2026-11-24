@@ -17,6 +17,7 @@ import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { userManager } from '../database/userManager';
 import { ImageUnavailableError, ModelError, type ImageEmbedder } from '../matcher/embedder';
+import type { LegacyMatchStatus } from '../matcher/matchStatus';
 import logger from '../utils/logger';
 import { HttpError } from '../utils/http';
 import {
@@ -27,6 +28,7 @@ import {
   type ShopId,
 } from '../shops/types';
 import {
+  rematchText,
   runCheck,
   type NotificationSender,
   type PendingNotifications,
@@ -989,7 +991,7 @@ describe('runCheck', () => {
       const mismatchNotes = () => notes().filter((a) => a.startsWith('Picture mismatch'));
       const summaries = () => notes().filter((a) => a.startsWith('Reference switch'));
       /** What migration 0008 does to the stored listing, with `from` as its old status. */
-      const resetAsMigration = (from: string) =>
+      const resetAsMigration = (from: LegacyMatchStatus) =>
         db
           .update(listings)
           .set({
@@ -1018,13 +1020,10 @@ describe('runCheck', () => {
         });
         expect(mismatchNotes()).toHaveLength(1);
         expect(summaries()).toHaveLength(1);
-        expect(summaries()[0]).toContain('compared 1 listing(s) again, 1 changed');
-        expect(summaries()[0]).toContain(`#12 blue-ocean confirmed→mismatch ${blue12.url}`);
-        expect(r.rematch).toEqual({
-          compared: 1,
-          changed: 1,
-          changes: [`#12 blue-ocean confirmed→mismatch ${blue12.url}`],
-        });
+        const line = `#12 blue-ocean confirmed→mismatch (picture #45) ${blue12.url}`;
+        expect(summaries()[0]).toContain('compared 1 listing(s) again, 1 changed.');
+        expect(summaries()[0]).toContain(`Mismatches, not sent to users: ${line};`);
+        expect(r.rematch).toEqual({ compared: 1, changed: 1, changes: [line] });
         clock += DAY_AND_MORE;
         expect((await run(shopsAt(60))).rematch).toBeUndefined();
         expect(summaries()).toHaveLength(1);
@@ -1044,7 +1043,7 @@ describe('runCheck', () => {
         expect(mismatchNotes()).toHaveLength(2);
       });
 
-      test('a listing that stays a mismatch gets no new note', async () => {
+      test('a listing that stays a mismatch is named in the summary, not in a new note', async () => {
         await run(shopsAt(60));
         expect(mismatchNotes()).toHaveLength(1);
         resetAsMigration('mismatch');
@@ -1052,7 +1051,11 @@ describe('runCheck', () => {
         const r = await run(shopsAt(60));
         expect(r.rematch).toEqual({ compared: 1, changed: 0, changes: [] });
         expect(mismatchNotes()).toHaveLength(1);
-        expect(summaries()).toEqual([]);
+        // The old picture card and whether its note went out are unknown: the summary names it.
+        expect(summaries()).toHaveLength(1);
+        expect(summaries()[0]).toContain(
+          `#12 blue-ocean mismatch→mismatch (picture #45) ${blue12.url}`
+        );
       });
 
       test('an old mismatch that cannot be compared yet is not notified', async () => {
@@ -1065,6 +1068,52 @@ describe('runCheck', () => {
           rematchFrom: 'mismatch',
         });
         expect(r.notified).toBe(0);
+      });
+
+      test('an old mismatch decided right now reaches its users', async () => {
+        await run(shopsAt(60));
+        resetAsMigration('mismatch');
+        const r = await run(shopsAt(5));
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+          matchStatus: 'confirmed',
+          rematchFrom: null,
+        });
+        expect(summaries()[0]).toContain('mismatch→confirmed');
+        expect(r.notified).toBe(1);
+      });
+
+      test('a failing summary step is logged and alerted; the users still get their DMs', async () => {
+        await run(shopsAt(60));
+        resetAsMigration('confirmed');
+        clock += DAY_AND_MORE;
+        const spy = spyOn(listingManager, 'markMismatchNoted').mockImplementation(() => {
+          throw new Error('db locked');
+        });
+        try {
+          await run(shopsAt(60));
+          expect(alerts.some((a) => a.startsWith('The re-match summary failed: db locked'))).toBe(
+            true
+          );
+          // The run went on to the notes and the DMs: sendMismatchNotes tried to mark one too.
+          expect(spy.mock.calls.length).toBeGreaterThan(1);
+        } finally {
+          spy.mockRestore();
+        }
+      });
+
+      test('a title naming no card is named "no card" in the summary', async () => {
+        const listing = candidateAt(30);
+        await run([ok('sammel-ente', references), ok('ebay', [listing])]);
+        expect(listingManager.getByUrl(listing.url)).toMatchObject({
+          matchStatus: 'unconfirmed',
+          cardIds: [],
+        });
+        db.update(listings)
+          .set({ rematchFrom: 'confirmed', matchStatus: 'pending', matchCheckedAt: null })
+          .where(eq(listings.url, listing.url))
+          .run();
+        const r = await run([ok('sammel-ente', references), ok('ebay', [listing])]);
+        expect(r.rematch?.changes).toEqual([`no card ebay confirmed→unconfirmed ${listing.url}`]);
       });
 
       test('an unchanged re-match sends no summary; reference counts as confirmed', async () => {
@@ -1539,5 +1588,37 @@ describe('runCheck', () => {
       ]);
       expect(s.pictures).toEqual({ decided: 2, undecided: 1, puzzle: 1 });
     });
+  });
+});
+
+describe('rematchText', () => {
+  const line = (n: number, to = 'unconfirmed') =>
+    `#${n} ebay confirmed→${to} https://www.ebay.de/itm/${'9'.repeat(150)}${n}`;
+
+  test('names the mismatches first, then at most the changes that fit, and how many more', () => {
+    const changes = Array.from({ length: 10 }, (_, i) => line(i + 1));
+    const { text, named } = rematchText({
+      compared: 30,
+      changed: 12,
+      changes,
+      mismatches: [{ id: 7, line: line(99, 'mismatch') }],
+    });
+    expect(text.startsWith('Reference switch: compared 30 listing(s) again, 12 changed.')).toBe(
+      true
+    );
+    expect(text.indexOf(line(99, 'mismatch'))).toBeLessThan(text.indexOf(line(1)));
+    expect(named).toEqual([7]);
+    expect(text.length).toBeLessThanOrEqual(2000);
+    expect(text).toMatch(/… and \d+ more$/);
+  });
+
+  test('a mismatch without room keeps its own note', () => {
+    const mismatches = Array.from({ length: 20 }, (_, i) => ({ id: i, line: line(i, 'mismatch') }));
+    const { text, named } = rematchText({ compared: 20, changed: 20, changes: [], mismatches });
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.length).toBeLessThan(20);
+    expect(text).toContain(`… and ${20 - named.length} more, each with its own note.`);
+    for (const id of named) expect(text).toContain(mismatches[id]!.line);
+    expect(text.length).toBeLessThanOrEqual(2000);
   });
 });

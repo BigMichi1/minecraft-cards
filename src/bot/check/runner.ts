@@ -16,7 +16,12 @@ import {
   type LoadedReferenceSet,
 } from '../matcher/embedder';
 import { isTransient, type ReferenceSet } from '../matcher/identify';
-import type { MatchResult, PictureRejection } from '../matcher/matchStatus';
+import type {
+  LegacyMatchStatus,
+  MatchResult,
+  MatchStatus,
+  PictureRejection,
+} from '../matcher/matchStatus';
 import type { FetchResult, Listing, ShopAdapter, ShopId } from '../shops/types';
 import { errorMessage } from '../utils/async';
 import { DISCORD_MESSAGE_LIMIT, clipText } from '../utils/messageLimit';
@@ -268,49 +273,79 @@ function countPicture(counts: PictureCounts, result: MatchResult): void {
   if (key) counts[key] = (counts[key] ?? 0) + 1;
 }
 
-interface RematchTally {
+export interface RematchTally {
   compared: number;
   changed: number;
+  /** One line per changed listing, at most MAX_REMATCH_NAMED. */
   changes: string[];
-  /** Listings that became a mismatch: their own note is left out once the summary is sent. */
-  mismatches: number[];
+  /**
+   * Every listing that is a mismatch after its re-match, changed or not (the old picture card and
+   * whether its note went out are not known after migration 0008): named in the summary first;
+   * the ones named count as noted once it is delivered, the rest keep their own notes.
+   */
+  mismatches: { id: number; line: string }[];
 }
 
 /** The old status as the new statuses name it: sammel-ente's `reference` was its confirmation. */
-const asCurrent = (status: string): string => (status === 'reference' ? 'confirmed' : status);
-
-/**
- * A listing waiting for its re-match (rematchFrom) was compared: count it unless the result is
- * retried anyway (image or model unavailable), and clear its rematchFrom. A listing that stays a
- * mismatch is marked noted: its note went out before the switch.
- */
-function countRematch(
-  deps: RunDeps,
-  tally: RematchTally,
-  l: StoredListing,
-  result: MatchResult
-): void {
-  if (result.status === 'image_unavailable' || result.status === 'model_unavailable') return;
-  const from = asCurrent(l.rematchFrom!);
-  tally.compared++;
-  if (from !== result.status) {
-    tally.changed++;
-    if (tally.changes.length < MAX_REMATCH_NAMED) {
-      const card = l.cardIds.map((id) => `#${id}`).join(', ') || 'no card';
-      tally.changes.push(`${card} ${l.shop} ${from}→${result.status} ${l.url}`);
-    }
-    if (result.status === 'mismatch') tally.mismatches.push(l.id);
-    listingManager.finishRematch(l.id, null);
-    return;
-  }
-  // Still the same mismatch: its note went out before the switch.
-  listingManager.finishRematch(l.id, result.status === 'mismatch' ? deps.now() : null);
+function asCurrent(status: LegacyMatchStatus): MatchStatus {
+  return status === 'reference' ? 'confirmed' : status;
 }
 
 /**
- * The re-match's one summary for the admin instead of a note per new mismatch: sent when
- * something changed; once it is delivered, the new mismatches count as noted. A summary that
- * fails leaves their notes due, so they go out one by one instead.
+ * A listing waiting for its re-match (`from`, its old status) was compared: count it, unless the
+ * result is retried anyway (image or model unavailable: setMatch keeps rematchFrom then).
+ */
+function countRematch(
+  tally: RematchTally,
+  l: StoredListing,
+  from: LegacyMatchStatus,
+  result: MatchResult
+): void {
+  if (result.status === 'image_unavailable' || result.status === 'model_unavailable') return;
+  const before = asCurrent(from);
+  tally.compared++;
+  const card = l.cardIds.map((id) => `#${id}`).join(', ') || 'no card';
+  const picture = result.picture ? ` (picture #${result.picture.cardId})` : '';
+  const line = `${card} ${l.shop} ${before}→${result.status}${picture} ${l.url}`;
+  if (result.status === 'mismatch') tally.mismatches.push({ id: l.id, line });
+  if (before === result.status) return;
+  tally.changed++;
+  if (tally.changes.length < MAX_REMATCH_NAMED) tally.changes.push(line);
+}
+
+/** The summary text, and the mismatches it names in full (mismatches first, then the changes). */
+export function rematchText(tally: RematchTally): { text: string; named: number[] } {
+  let text = `Reference switch: compared ${tally.compared} listing(s) again, ${tally.changed} changed.`;
+  const named: number[] = [];
+  const room = DISCORD_MESSAGE_LIMIT - 40; // keeps space for the "… and N more" tails
+  if (tally.mismatches.length > 0) {
+    text += ' Mismatches, not sent to users:';
+    for (const m of tally.mismatches) {
+      if (text.length + m.line.length + 2 > room) break;
+      text += ` ${m.line};`;
+      named.push(m.id);
+    }
+    const rest = tally.mismatches.length - named.length;
+    if (rest > 0) text += ` … and ${rest} more, each with its own note.`;
+  }
+  const others = tally.changes.filter((line) => !tally.mismatches.some((m) => m.line === line));
+  const shown: string[] = [];
+  let length = text.length + ' Other changes: '.length;
+  for (const line of others) {
+    if (length + line.length + 2 > room) break;
+    shown.push(line);
+    length += line.length + 2;
+  }
+  if (shown.length > 0) text += ` Other changes: ${shown.join('; ')}`;
+  const hidden = tally.changed - (tally.changes.length - others.length) - shown.length;
+  if (shown.length > 0 && hidden > 0) text += `; … and ${hidden} more`;
+  return { text: clipText(text, DISCORD_MESSAGE_LIMIT), named };
+}
+
+/**
+ * The re-match's one summary for the admin instead of a note per mismatch: sent when something
+ * changed or a mismatch was found; once it is delivered, the mismatches it names count as noted.
+ * A summary that fails, or a mismatch it had no room for, keeps its own note due.
  */
 async function reportRematch(
   deps: RunDeps,
@@ -321,16 +356,12 @@ async function reportRematch(
   if (tally.compared === 0) return;
   const { compared, changed, changes } = tally;
   summary.rematch = { compared, changed, changes };
-  if (changed === 0) return;
-  const more = changed > changes.length ? `; … and ${changed - changes.length} more` : '';
-  const text = clipText(
-    `Reference switch: compared ${compared} listing(s) again, ${changed} changed: ${changes.join('; ')}${more}. New mismatches are not sent to users and get no note of their own.`,
-    DISCORD_MESSAGE_LIMIT
-  );
+  if (changed === 0 && tally.mismatches.length === 0) return;
+  const { text, named } = rematchText(tally);
   // Keyed per run: a later run's re-matches are other listings, never throttled away.
   const outcome = await alert(`rematch-summary:${summary.startedAt}`, text);
   if (outcome === 'failed') return;
-  for (const id of tally.mismatches) listingManager.markMismatchNoted(id, deps.now());
+  for (const id of named) listingManager.markMismatchNoted(id, deps.now());
 }
 
 /** One collection's reference lookups for a run: the title card's picture, and the whole set. */
@@ -418,7 +449,7 @@ async function matchPending(
       );
       listingManager.setMatch(l.id, result, deps.now());
       countPicture(counts, result);
-      if (l.rematchFrom !== null) countRematch(deps, rematch, l, result);
+      if (l.rematchFrom !== null) countRematch(rematch, l, l.rematchFrom, result);
     } catch (error) {
       // One listing's failure (the embedding cache's database, a bug) must not stop every DM:
       // the listing stays as it was (pending or retryable) and is tried again next run.
@@ -434,7 +465,13 @@ async function matchPending(
     );
   }
   if (Object.keys(counts).length > 0) summary.pictures = counts;
-  await reportRematch(deps, alert, summary, rematch);
+  try {
+    await reportRematch(deps, alert, summary, rematch);
+  } catch (error) {
+    // The summary is the admin's; it must not cost the users their DMs. Notes stay due.
+    logError('the re-match summary failed', error);
+    await alert('rematch-summary-error', `The re-match summary failed: ${errorMessage(error)}`);
+  }
   for (const [status, reasons] of unavailable) {
     logger.warn(
       `image match unavailable (${status}) for ${reasons.length} listings this run: ${reasons[0]}`

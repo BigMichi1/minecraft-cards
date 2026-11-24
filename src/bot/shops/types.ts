@@ -36,6 +36,11 @@ interface ListingFields {
   auctionEndsAt: number | null;
   /** blue-ocean only: the card number in the URL and in the image file name disagree. */
   idConflict: boolean;
+  /**
+   * eBay only: the collection the title names (one run serves every collection); other shops'
+   * listings belong to their adapter's collection.
+   */
+  collection?: CollectionId;
 }
 
 /**
@@ -86,9 +91,14 @@ export interface ShopFetcher {
   fetchListings(): Promise<FetchResult>;
 }
 
-/** A shop checked for one collection: its listings are stored in `collection`. */
+/**
+ * A shop checked for one collection: its listings are stored in `collection`. eBay's one run
+ * covers several (`collections`): each listing is stored in the collection it names.
+ */
 export interface ShopAdapter extends ShopFetcher {
   readonly collection: CollectionId;
+  /** The collections this adapter's run covers (eBay); default `[collection]`. */
+  readonly collections?: readonly CollectionId[];
 }
 
 /**

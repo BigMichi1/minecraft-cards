@@ -17,5 +17,10 @@ export const legoMinecraft2: CollectionDefinition<'lego-minecraft-2'> = {
       category: 'https://shop-sammel-ente.de/Minecraft/Serie-2/',
       series: 'Serie 2',
     },
+    // Mostly category lots ("Sammelkarten Serie 2\"NETHER\""), a few "Boom-Bastic" singles.
+    ebay: {
+      queries: ['lego minecraft karten serie 2', 'lego minecraft boom bastic karte'],
+      series: /\b(?:Series?|Staffel)\s*2\b|\bBoom[-\s]?Bastic\b/i,
+    },
   },
 };

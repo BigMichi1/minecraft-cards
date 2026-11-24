@@ -20,6 +20,16 @@ export const legoMinecraft3: CollectionDefinition<'lego-minecraft-3'> = {
       category: 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten',
       series: 'Serie 3',
     },
-    ebay: {},
+    ebay: {
+      queries: [
+        'lego minecraft on fire karte',
+        'lego minecraft tcc serie 3',
+        'lego minecraft trading card on fire',
+        // Most single cards ("LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)").
+        'lego minecraft karten serie 3',
+      ],
+      // "Serie 3", "Series 3", "Serie3", "On Fire".
+      series: /\bSeries?\s*3\b|\bOn\s*Fire\b/i,
+    },
   },
 };

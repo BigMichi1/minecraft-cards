@@ -152,6 +152,54 @@ describe('listingManager', () => {
       expect(listingManager.pendingNotifications({ now: 1000 })).toEqual(new Map());
     });
 
+    test('an eBay listing whose title names another collection moves there', () => {
+      const item = {
+        ...blue12,
+        shop: 'ebay' as const,
+        url: 'https://www.ebay.de/itm/1',
+        format: 'fixed_price' as const,
+      };
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [item], 1000);
+      const moved = listingManager.upsertFromRun(
+        'ebay',
+        'lego-minecraft-1',
+        [
+          {
+            ...item,
+            title: 'LEGO Minecraft Serie 1 Trading Card 45 - X - Skin Karte',
+            cardIds: ids('45'),
+          },
+        ],
+        2000,
+        { moveFrom: true }
+      );
+      expect(moved.map((l) => l.url)).toEqual([item.url]);
+      expect(listingManager.getByUrl(item.url)).toMatchObject({
+        collection: 'lego-minecraft-1',
+        cardIds: ids('45'),
+        matchStatus: 'pending',
+      });
+    });
+
+    test('an admin-mapped eBay listing stays in its collection', () => {
+      const item = {
+        ...blue12,
+        shop: 'ebay' as const,
+        url: 'https://www.ebay.de/itm/2',
+        format: 'fixed_price' as const,
+      };
+      listingManager.upsertFromRun('ebay', 'lego-minecraft-3', [item], 1000);
+      listingManager.overrideCards(
+        item.url,
+        { collection: 'lego-minecraft-3', ids: ids('12') },
+        1500
+      );
+      expect(
+        listingManager.upsertFromRun('ebay', 'lego-minecraft-1', [item], 2000, { moveFrom: true })
+      ).toEqual([]);
+      expect(listingManager.getByUrl(item.url)).toMatchObject({ collection: 'lego-minecraft-3' });
+    });
+
     test('overrideCards sets the collection, and a rescrape keeps cards and collection', () => {
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const mapped = listingManager.overrideCards(

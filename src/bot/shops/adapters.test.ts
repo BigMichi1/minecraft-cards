@@ -35,12 +35,18 @@ describe('createShopAdapters', () => {
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(true);
   });
 
-  test('with eBay credentials, eBay checks series 3, and no warning', () => {
+  test('with eBay credentials, one eBay adapter covers every collection, and no warning', () => {
     const { value, warned } = withWarnings(() =>
       createShopAdapters({ clientId: 'id', clientSecret: 'secret' })
     );
-    expect(value.map(key).at(-1)).toBe('ebay:lego-minecraft-3');
-    expect(value.filter((a) => a.id === 'ebay')).toHaveLength(1);
+    const ebay = value.filter((a) => a.id === 'ebay');
+    expect(ebay).toHaveLength(1);
+    expect(ebay[0]!.collections).toEqual([
+      'lego-minecraft-1',
+      'lego-minecraft-2',
+      'lego-minecraft-3',
+    ]);
+    expect(enabledShopsOf(value).get('lego-minecraft-2')).toEqual(['sammel-ente', 'ebay']);
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(false);
   });
 
@@ -73,7 +79,7 @@ describe('createShopAdapters', () => {
     );
   });
 
-  test('a collect-it category on another host, or eBay for another collection, is refused', () => {
+  test('a collect-it category on another host is refused', () => {
     const host = {
       ...legoMinecraft1,
       shops: {
@@ -83,10 +89,6 @@ describe('createShopAdapters', () => {
     expect(() => createShopAdapters(null, undefined, { collections: [host] })).toThrow(
       'lego-minecraft-1: collect-it category is on collect-it.de, not www.collect-it.de'
     );
-    const ebay = { ...legoMinecraft1, shops: { ebay: {} } };
-    expect(() =>
-      createShopAdapters({ clientId: 'id', clientSecret: 's' }, undefined, { collections: [ebay] })
-    ).toThrow('lego-minecraft-1: ebay is read for lego-minecraft-3 only');
   });
 
   test('without a fetch given, the shops are read with the global fetch', async () => {
@@ -185,7 +187,8 @@ describe('createShopAdapters', () => {
     } finally {
       fetchSpy.mockRestore();
     }
-    expect(reads).toBe(1);
-    expect(asked).toEqual(['lego-minecraft-3']);
+    // One read per collection, at the start of the one eBay fetch.
+    expect(reads).toBe(3);
+    expect(asked).toEqual(['lego-minecraft-3', 'lego-minecraft-1', 'lego-minecraft-2']);
   });
 });

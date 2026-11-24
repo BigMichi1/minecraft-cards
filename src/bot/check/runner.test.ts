@@ -303,6 +303,67 @@ describe('runCheck', () => {
     expect(runManager.lastAlertAt('shop-foreign:blue-ocean:lego-minecraft-1')).toBeDefined();
   });
 
+  describe('one eBay run for every collection', () => {
+    const item = (n: string, collection: CollectionId): Listing => ({
+      ...blue12,
+      shop: 'ebay',
+      url: `https://www.ebay.de/itm/${n}`,
+      format: 'fixed_price',
+      collection,
+    });
+    const shared = (items: Listing[] | Error): ShopAdapter => ({
+      id: 'ebay',
+      collection: 'lego-minecraft-3',
+      collections: ['lego-minecraft-1', 'lego-minecraft-3'],
+      fetchListings: async () => {
+        if (items instanceof Error) throw items;
+        return { listings: items };
+      },
+    });
+
+    test("one eBay run stores each collection's listings and marks each one's gone ones", async () => {
+      const s = await runCheck(
+        depsWith([shared([item('1', 'lego-minecraft-1'), item('3', 'lego-minecraft-3')])])
+      );
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/1')).toMatchObject({
+        collection: 'lego-minecraft-1',
+      });
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/3')).toMatchObject({
+        collection: 'lego-minecraft-3',
+      });
+      expect(s.shops.ebay).toEqual({ listings: 1 });
+      expect(s.collections?.['lego-minecraft-1']?.ebay).toEqual({ listings: 1 });
+      // A later run without the series 1 listing, past eBay's grace: series 1's is gone.
+      clock += 7 * 24 * 60 * 60 * 1000;
+      await runCheck(depsWith([shared([item('3', 'lego-minecraft-3')])]));
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/1')!.available).toBe(false);
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/3')!.available).toBe(true);
+    });
+
+    test('a failing eBay run touches no collection and alerts once', async () => {
+      await runCheck(
+        depsWith([shared([item('1', 'lego-minecraft-1'), item('3', 'lego-minecraft-3')])])
+      );
+      clock += 7 * 24 * 60 * 60 * 1000;
+      const s = await runCheck(depsWith([shared(new ShopLayoutError('eBay: all searches empty'))]));
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/1')!.available).toBe(true);
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/3')!.available).toBe(true);
+      expect(alerts.filter((a) => a.startsWith('Shop ebay check failed'))).toHaveLength(1);
+      expect(runManager.lastAlertAt('shop-error:ebay')).toBeDefined();
+      expect(s.collections?.['lego-minecraft-1']?.ebay?.error).toContain('all searches empty');
+      expect(s.shops.ebay?.error).toContain('all searches empty');
+    });
+
+    test('a listing whose title now names another collection moves there', async () => {
+      await runCheck(depsWith([shared([item('9', 'lego-minecraft-3')])]));
+      await runCheck(depsWith([shared([item('9', 'lego-minecraft-1')])]));
+      expect(listingManager.getByUrl('https://www.ebay.de/itm/9')).toMatchObject({
+        collection: 'lego-minecraft-1',
+      });
+      expect(alerts.filter((a) => a.includes('stored under another collection'))).toEqual([]);
+    });
+  });
+
   test('a failing shop keeps its stored state and alerts once per 24 h', async () => {
     await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     const failed = () => failing('blue-ocean', new ShopLayoutError('no cards'));

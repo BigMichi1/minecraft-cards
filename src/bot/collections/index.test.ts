@@ -65,11 +65,24 @@ describe('collectionChoices', () => {
 });
 
 describe('definition rules', () => {
-  test('blue-ocean and eBay are read for series 3 only, until their parsers take settings', () => {
+  test('blue-ocean is read for series 3 only, until its parser takes settings', () => {
     for (const d of COLLECTIONS) {
       if (d.id === 'lego-minecraft-3') continue;
       expect(d.shops['blue-ocean']).toBeUndefined();
-      expect(d.shops.ebay).toBeUndefined();
+    }
+  });
+
+  test('every collection is on eBay, and every series marker names only its own series', () => {
+    const titles: Record<string, string> = {
+      'lego-minecraft-1': 'LEGO Minecraft Serie 1 Trading Card 68 - Yeti - Skin Karte',
+      'lego-minecraft-2': 'LEGO Minecraft Boom-Bastic Karte 12',
+      'lego-minecraft-3': 'LEGO Minecraft On Fire Karte 12',
+    };
+    for (const d of COLLECTIONS) {
+      expect(d.shops.ebay?.queries.length).toBeGreaterThan(0);
+      for (const [id, title] of Object.entries(titles)) {
+        expect(d.shops.ebay!.series.test(title)).toBe(id === d.id);
+      }
     }
   });
 

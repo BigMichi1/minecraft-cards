@@ -207,7 +207,8 @@ export const listingManager = {
     shop: ShopId,
     collection: CollectionId,
     found: ShopListing[],
-    now: number
+    now: number,
+    options: { readonly moveFrom?: boolean } = {}
   ): StoredListing[] {
     const foreign: string[] = [];
     const stored = db.transaction((tx) => {
@@ -216,10 +217,25 @@ export const listingManager = {
         const item = auctionEnded(scraped.auctionEndsAt, now)
           ? { ...scraped, available: false }
           : scraped;
-        const existing = tx.select().from(listings).where(eq(listings.url, item.url)).get();
+        let existing = tx.select().from(listings).where(eq(listings.url, item.url)).get();
         if (existing && existing.collection !== collection) {
-          foreign.push(`${clipText(item.url, MAX_LOGGED_URL)} (${existing.collection})`);
-          continue;
+          if (!options.moveFrom || existing.manualOverride) {
+            foreign.push(`${clipText(item.url, MAX_LOGGED_URL)} (${existing.collection})`);
+            continue;
+          }
+          // Its title now names this collection (eBay): it moves, and is compared again here.
+          tx.update(listings)
+            .set({
+              collection,
+              matchStatus: 'pending',
+              similarity: null,
+              matchCheckedAt: null,
+              pictureCardId: null,
+              rematchFrom: null,
+            })
+            .where(eq(listings.id, existing.id))
+            .run();
+          existing = tx.select().from(listings).where(eq(listings.id, existing.id)).get()!;
         }
         const fields = {
           title: item.title,

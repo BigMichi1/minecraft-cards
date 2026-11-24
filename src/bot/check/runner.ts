@@ -613,7 +613,24 @@ function recentPeak(shop: ShopId, collection: CollectionId, now: number): number
   }
 }
 
-/** Fetch one shop and store what it returned; a failure is recorded on the shop, not thrown. */
+/** A fetch's skipped and cut counts, as the run summary files them. */
+function runCounts(result: FetchResult): Partial<ShopSummary> {
+  return {
+    ...(result.skippedNoId ? { skippedNoId: result.skippedNoId } : {}),
+    ...(result.skippedExcluded ? { skippedExcluded: result.skippedExcluded } : {}),
+    ...(result.skippedInvalid ? { skippedInvalid: result.skippedInvalid } : {}),
+    ...(result.truncated?.length ? { truncated: result.truncated.length } : {}),
+  };
+}
+
+/**
+ * Fetch one shop and store what it returned; a failure is recorded on the shop, not thrown. An
+ * adapter covering several collections (eBay) is fetched once and stored per collection: each
+ * listing in the collection its title names, and every covered collection is stored, so its
+ * gone listings are marked unavailable as for a shop of one collection. Its fetch errors and
+ * cut searches alert once, under the shop alone (`shop-error:ebay`): a failure touches none of
+ * its collections.
+ */
 async function checkShop(
   deps: RunDeps,
   alert: AlertFn,
@@ -622,31 +639,75 @@ async function checkShop(
   stored: StoredListing[],
   fetched: Map<string, Listing>
 ): Promise<void> {
+  const covered = adapter.collections ?? [adapter.collection];
+  const shared = adapter.collections !== undefined;
   // Keys and texts name the collection too: one shop is checked once per collection.
-  const key = `${adapter.id}:${adapter.collection}`;
-  const shop = `${adapter.id} (${collectionName(adapter.collection)})`;
-  const record = (entry: ShopSummary) =>
-    setShopEntry(summary, adapter.collection, adapter.id, entry);
+  const runKey = shared ? adapter.id : `${adapter.id}:${adapter.collection}`;
+  const runShop = shared ? adapter.id : `${adapter.id} (${collectionName(adapter.collection)})`;
   let result: FetchResult;
   try {
     result = await adapter.fetchListings();
   } catch (error) {
     const message = errorMessage(error);
-    logError(`shop ${shop} failed`, error);
-    record({ listings: 0, error: message });
-    await alert(`shop-error:${key}`, `Shop ${shop} check failed: ${message}`);
+    logError(`shop ${runShop} failed`, error);
+    for (const c of covered) setShopEntry(summary, c, adapter.id, { listings: 0, error: message });
+    await alert(`shop-error:${runKey}`, `Shop ${runShop} check failed: ${message}`);
     return;
   }
-  const found = result.listings;
+  if (result.truncated && result.truncated.length > 0) {
+    await alert(
+      `shop-truncated:${runKey}`,
+      `Shop ${runShop}: ${result.truncated.length} search(es) cut at the page cap, later results are not seen: ${result.truncated.join('; ')}`
+    );
+  }
+  for (const collection of covered) {
+    const found = shared
+      ? result.listings.filter((l) => (l.collection ?? adapter.collection) === collection)
+      : result.listings;
+    await storeShopResult(
+      deps,
+      alert,
+      adapter,
+      collection,
+      shared,
+      found,
+      result,
+      summary,
+      stored,
+      fetched
+    );
+  }
+}
+
+/** Store one collection's part of a shop's fetch, and raise its alerts. */
+async function storeShopResult(
+  deps: RunDeps,
+  alert: AlertFn,
+  adapter: ShopAdapter,
+  collection: CollectionId,
+  shared: boolean,
+  found: Listing[],
+  result: FetchResult,
+  summary: RunSummary,
+  stored: StoredListing[],
+  fetched: Map<string, Listing>
+): Promise<void> {
+  const key = `${adapter.id}:${collection}`;
+  const shop = `${adapter.id} (${collectionName(collection)})`;
+  const record = (entry: ShopSummary) => setShopEntry(summary, collection, adapter.id, entry);
   try {
-    const peak = recentPeak(adapter.id, adapter.collection, deps.now());
-    const ours = listingManager.upsertFromRun(adapter.id, adapter.collection, found, deps.now());
+    const peak = recentPeak(adapter.id, collection, deps.now());
+    const ours = listingManager.upsertFromRun(adapter.id, collection, found, deps.now(), {
+      moveFrom: shared,
+    });
     stored.push(...ours);
     // Only listings stored under this collection count here: a URL another collection holds is
     // neither matched, nor a picture source, of this one.
     const ownUrls = new Set(ours.map((l) => l.url));
     const foreign = found.filter((l) => !ownUrls.has(l.url)).map((l) => l.url);
-    if (foreign.length > 0) {
+    // A shared run (eBay) moves listings between its collections; what stays elsewhere is
+    // admin-mapped there, the admin's decision, so it raises no alert.
+    if (foreign.length > 0 && !shared) {
       await alert(
         `shop-foreign:${key}`,
         clipText(
@@ -674,18 +735,12 @@ async function checkShop(
         `Shop ${shop}: ${own.length} card listings, down from ${peak} at most in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)} — check the pagination and markup.`
       );
     }
-    if (result.truncated && result.truncated.length > 0) {
-      await alert(
-        `shop-truncated:${key}`,
-        `Shop ${shop}: ${result.truncated.length} search(es) cut at the page cap, later results are not seen: ${result.truncated.join('; ')}`
-      );
-    }
     for (const l of found) if (ownUrls.has(l.url)) fetched.set(l.url, l);
     // A row's collection may have no definition in this build (collectionName).
-    const definition: CollectionDefinition | undefined = collectionById(adapter.collection);
+    const definition: CollectionDefinition | undefined = collectionById(collection);
     if (definition?.referenceFallbackShop === adapter.id) {
       const changed = catalogManager.updateShopPictures(
-        adapter.collection,
+        collection,
         found.flatMap((l) => {
           if (!ownUrls.has(l.url)) return [];
           const [cardId] = l.cardIds;
@@ -697,13 +752,13 @@ async function checkShop(
       );
       // A new reference picture may settle a mismatch either way: compare those again.
       try {
-        listingManager.rematchMismatches(adapter.collection, changed);
+        listingManager.rematchMismatches(collection, changed);
       } catch (error) {
         // The listings are stored; only the re-check is lost, and these cards are known only now.
         logError(`shop ${shop}: re-matching the cards with new pictures failed`, error);
         await alert(
           // Per card list: another run's failure names other cards and must not be throttled.
-          `shop-rematch:${adapter.collection}:${changed.join(',')}`,
+          `shop-rematch:${collection}:${changed.join(',')}`,
           clipText(
             `Shop ${shop}: could not compare the mismatches of ${changed.length} card(s) again: ${namedCards(changed)} — ${errorMessage(error)}`,
             DISCORD_MESSAGE_LIMIT
@@ -713,10 +768,8 @@ async function checkShop(
     }
     record({
       listings: own.length,
-      ...(result.skippedNoId ? { skippedNoId: result.skippedNoId } : {}),
-      ...(result.skippedExcluded ? { skippedExcluded: result.skippedExcluded } : {}),
-      ...(result.skippedInvalid ? { skippedInvalid: result.skippedInvalid } : {}),
-      ...(result.truncated?.length ? { truncated: result.truncated.length } : {}),
+      // A shared run's skipped counts are the run's: filed with its own collection once.
+      ...(collection === adapter.collection ? runCounts(result) : {}),
     });
   } catch (error) {
     const message = `storing listings failed: ${errorMessage(error)}`;

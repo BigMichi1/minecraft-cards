@@ -42,6 +42,13 @@ export interface LaststickerSetOptions {
   readonly numberAliases?: Readonly<Record<string, string>>;
 }
 
+/** How eBay is searched for a collection, and how its titles are told from other series'. */
+export interface EbayCollectionSettings {
+  readonly queries: readonly string[];
+  /** A title naming the collection; a title matching several collections' gives no ids. */
+  readonly series: RegExp;
+}
+
 /** A collection's settings per shop; a collection lists only the shops that sell it. */
 export interface CollectionShops {
   /** The category page (`?p=N` pages). */
@@ -50,8 +57,8 @@ export interface CollectionShops {
   readonly 'collect-it'?: CategoryShopSettings;
   /** Series 3 only, today's category (PR 3c reads the TCC categories). */
   readonly 'blue-ocean'?: Record<string, never>;
-  /** Series 3 only until eBay is read for every collection (PR 3b). */
-  readonly ebay?: Record<string, never>;
+  /** The collection's eBay searches and the series marker its titles name (`Serie 1`). */
+  readonly ebay?: EbayCollectionSettings;
 }
 
 /** One card set the bot watches: its own catalog, shops and wanted lists. */

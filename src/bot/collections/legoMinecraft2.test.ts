@@ -17,6 +17,10 @@ describe('legoMinecraft2', () => {
           category: 'https://shop-sammel-ente.de/Minecraft/Serie-2/',
           series: 'Serie 2',
         },
+        ebay: {
+          queries: ['lego minecraft karten serie 2', 'lego minecraft boom bastic karte'],
+          series: /\b(?:Series?|Staffel)\s*2\b|\bBoom[-\s]?Bastic\b/i,
+        },
       },
     });
   });

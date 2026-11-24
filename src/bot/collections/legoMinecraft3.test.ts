@@ -21,7 +21,7 @@ describe('legoMinecraft3', () => {
           category: 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten',
           series: 'Serie 3',
         },
-        ebay: {},
+        ebay: legoMinecraft3.shops.ebay,
       },
     });
   });

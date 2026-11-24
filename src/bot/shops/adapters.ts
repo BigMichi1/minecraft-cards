@@ -45,8 +45,8 @@ export interface AdapterDeps {
 
 /**
  * Throws for settings a run would get wrong: a category on another host than its shop (it would
- * skip the shop's pacer), or blue-ocean or eBay for a collection their series 3 parsers do not
- * read (they would store series 3 listings under it).
+ * skip the shop's pacer), or blue-ocean for a collection its series 3 parser does not read (it
+ * would store series 3 listings under it).
  */
 function checkSettings(definition: CollectionDefinition): void {
   for (const shop of ['sammel-ente', 'collect-it'] as const) {
@@ -57,17 +57,18 @@ function checkSettings(definition: CollectionDefinition): void {
       throw new Error(`${definition.id}: ${shop} category is on ${host}, not ${SHOP_HOSTS[shop]}`);
     }
   }
-  for (const shop of ['blue-ocean', 'ebay'] as const) {
-    if (definition.shops[shop] && definition.id !== LEGACY_COLLECTION) {
-      throw new Error(`${definition.id}: ${shop} is read for ${LEGACY_COLLECTION} only`);
-    }
+  if (definition.shops['blue-ocean'] && definition.id !== LEGACY_COLLECTION) {
+    throw new Error(`${definition.id}: blue-ocean is read for ${LEGACY_COLLECTION} only`);
   }
 }
 
 /** The shops checked per collection, from the adapters (`/missing status`, `/stock`, `/card`). */
 export function enabledShopsOf(adapters: readonly ShopAdapter[]): EnabledShops {
   const enabled = new Map<CollectionId, ShopId[]>();
-  for (const a of adapters) enabled.set(a.collection, [...(enabled.get(a.collection) ?? []), a.id]);
+  for (const a of adapters) {
+    for (const c of a.collections ?? [a.collection])
+      enabled.set(c, [...(enabled.get(c) ?? []), a.id]);
+  }
   return enabled;
 }
 
@@ -140,18 +141,33 @@ export function createShopAdapters(
   };
   const definitions = deps.collections ?? COLLECTIONS;
   for (const definition of definitions) checkSettings(definition);
-  return checkOneAdapterPerShopAndCollection(
-    definitions.flatMap((definition) =>
-      SHOP_IDS.flatMap((shop): ShopAdapter[] => {
-        if (shop === 'ebay') {
-          if (!ebay || !definition.shops.ebay) return [];
-          const collection = definition.id;
-          const names = cardNames ? { cardNames: () => cardNames(collection) } : {};
-          return [forCollection(createEbayFetcher({ ...ebay, ...names }), collection)];
-        }
-        const fetcher = fetcherFor(shop, definition, pacedFor(shop));
-        return fetcher ? [forCollection(fetcher, definition.id)] : [];
-      })
-    )
+  const perCollection = definitions.flatMap((definition) =>
+    SHOP_IDS.flatMap((shop): ShopAdapter[] => {
+      if (shop === 'ebay') return [];
+      const fetcher = fetcherFor(shop, definition, pacedFor(shop));
+      return fetcher ? [forCollection(fetcher, definition.id)] : [];
+    })
   );
+  // One eBay run for every collection with eBay settings: an item found by several queries is
+  // fetched once, and each title is stored in the collection it names.
+  const onEbay = definitions.flatMap((d) =>
+    d.shops.ebay ? [{ id: d.id, queries: d.shops.ebay.queries, series: d.shops.ebay.series }] : []
+  );
+  const ebayAdapters: ShopAdapter[] =
+    ebay && onEbay.length > 0
+      ? [
+          {
+            ...forCollection(
+              createEbayFetcher({
+                ...ebay,
+                collections: onEbay,
+                ...(cardNames ? { cardNames } : {}),
+              }),
+              LEGACY_COLLECTION
+            ),
+            collections: onEbay.map((c) => c.id),
+          },
+        ]
+      : [];
+  return checkOneAdapterPerShopAndCollection([...perCollection, ...ebayAdapters]);
 }

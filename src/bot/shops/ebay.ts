@@ -1,4 +1,6 @@
 import { compareCardIds, normalizeCardId } from '../cards/cardId';
+import { LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
+import { COLLECTIONS } from '../collections/index';
 import type { CardId } from '../cards/cardId';
 import { errorMessage, sleep as realSleep } from '../utils/async';
 import { REQUEST_TIMEOUT_MS, USER_AGENT, HttpError } from '../utils/http';
@@ -28,19 +30,24 @@ const TOTAL_TOLERANCE_SHARE = 0.02;
 const tolerance = (total: number) =>
   Math.max(TOTAL_TOLERANCE_MIN, Math.ceil(total * TOTAL_TOLERANCE_SHARE));
 
-export const EBAY_QUERIES = [
-  'lego minecraft on fire karte',
-  'lego minecraft tcc serie 3',
-  'lego minecraft trading card on fire',
-  // Most single cards ("LEGO Minecraft Karten 30 - Steve - Charakterkarte Serie 3 (2026)").
-  'lego minecraft karten serie 3',
+/** Every collection read on eBay: its id, searches and series marker (CollectionDefinition). */
+export interface EbayCollection {
+  readonly id: CollectionId;
+  readonly queries: readonly string[];
+  readonly series: RegExp;
+}
+
+/** The collections whose definition names eBay settings, in registry order. */
+export const EBAY_COLLECTIONS: readonly EbayCollection[] = COLLECTIONS.flatMap((d) =>
+  d.shops.ebay ? [{ id: d.id, queries: d.shops.ebay.queries, series: d.shops.ebay.series }] : []
+);
+
+/** Every collection's searches, each once, in registry order. */
+export const EBAY_QUERIES: readonly string[] = [
+  ...new Set(EBAY_COLLECTIONS.flatMap((c) => c.queries)),
 ];
 
 const LETTER = 'A-Za-zÄÖÜäöüß';
-// "Serie 3", "Series 3", "Serie3", "On Fire".
-const SERIES_3_PATTERN = /\bSeries?\s*3\b|\bOn\s*Fire\b/i;
-// "Serie 1", "Series 2", but not "Serie 12".
-const SERIES_1_2_PATTERN = /\bSeries?\s*[12]\b/i;
 // A listing the buyer picks a card from: "zum aussuchen", "auswählen", "Auswahl", "du wählst",
 // "waehlen". `pick` only as a whole word: "Pickaxe" is a card name.
 const MULTI_PICK_PATTERN = /aussuch|auswahl|w(?:ä|ae)hl|\bchoos|\bpick\b/i;
@@ -253,34 +260,61 @@ function hasRange(title: string): boolean {
 }
 
 /**
- * Why a title gives no card ids by the title forms, whatever it names; see titleExclusion. Only
- * `no series 3` may still give ids, by catalog name (nameMatchedCardIds).
+ * Why a title gives no card ids by the title forms for a collection, whatever it names; see
+ * titleExclusion. Only `no series` may still give series 3 ids, by catalog name
+ * (nameMatchedCardIds).
  */
-export type TitleExclusion = 'other series' | 'no series 3' | 'pick list' | 'range';
+export type TitleExclusion =
+  'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
 
 /**
- * Why a title cannot name a series 3 card, or null when it can. It must name series 3
- * ("Serie 3", "On Fire") and no other series (a lot mixing series 1 or 2 is ambiguous; a title
- * without any series word may be series 1 or 2, which used the same title forms), and must not
- * be a listing to pick cards from or name a number range ("Einzelkarten 1 - 228 zum
- * aussuchen"): a range or a choice is not stock.
+ * The collection a title names by its series marker (`Serie 1`, `Boom-Bastic`, `On Fire`), or
+ * why none: several (a lot mixing series is ambiguous) or none (series 1, 2 and 3 used the same
+ * title forms, so a number alone may be any series' card).
  */
-export function titleExclusion(title: string): TitleExclusion | null {
-  if (SERIES_1_2_PATTERN.test(title)) return 'other series';
-  if (!SERIES_3_PATTERN.test(title)) return 'no series 3';
+export function classifyTitle(
+  title: string,
+  collections: readonly EbayCollection[] = EBAY_COLLECTIONS
+): { collection: CollectionId } | { exclusion: 'several collections' | 'no collection' } {
+  const named = collections.filter((c) => c.series.test(title));
+  if (named.length > 1) return { exclusion: 'several collections' };
+  const [only] = named;
+  return only ? { collection: only.id } : { exclusion: 'no collection' };
+}
+
+/**
+ * Why a title cannot name a card of `collection` (series 3 unless given), or null when it can.
+ * It must name that collection's series and no other's, and must not be a listing to pick
+ * cards from or name a number range ("Einzelkarten 1 - 228 zum aussuchen"): a range or a
+ * choice is not stock.
+ */
+export function titleExclusion(
+  title: string,
+  collection: CollectionId = LEGACY_COLLECTION,
+  collections: readonly EbayCollection[] = EBAY_COLLECTIONS
+): TitleExclusion | null {
+  const placed = classifyTitle(title, collections);
+  if ('exclusion' in placed) {
+    return placed.exclusion === 'several collections' ? 'several collections' : 'no series';
+  }
+  if (placed.collection !== collection) return 'other series';
   if (MULTI_PICK_PATTERN.test(title)) return 'pick list';
   if (hasRange(title)) return 'range';
   return null;
 }
 
 /**
- * Card ids named in an eBay title, only for a title titleExclusion lets through. Prefixed forms
- * (`#12`, `Nr. 12`, `Karte 12`, `LE8`), `n/228`, `132 - Name - Charakterkarte` (also after
- * "Karten") and `ZOMBIE 68 Karte` (a card name word from CARD_NAME_WORDS) count; bare numbers
- * (`Serie 3`, `2026`) and counts (`6 Karten`) never do.
+ * Card ids of `collection` (series 3 unless given) named in an eBay title, only for a title
+ * titleExclusion lets through for it. Prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `Card 134`,
+ * `LE8`), `n/228`, `132 - Name - Charakterkarte` (also after "Karten") and `ZOMBIE 68 Karte` (a
+ * card name word from CARD_NAME_WORDS) count; bare numbers (`Serie 3`, `2026`) and counts
+ * (`6 Karten`) never do.
  */
-export function extractCardIdsFromTitle(title: string): CardId[] {
-  if (titleExclusion(title) !== null) return [];
+export function extractCardIdsFromTitle(
+  title: string,
+  collection: CollectionId = LEGACY_COLLECTION
+): CardId[] {
+  if (titleExclusion(title, collection) !== null) return [];
   return readCardIds(title);
 }
 
@@ -403,8 +437,12 @@ const NAME_TITLE_WORD_SET = new Set(NAME_TITLE_WORDS);
  * #104 (Ghast is #15, #102, #104 and #131). A series 1 or 2 card sharing number and name passes
  * too; its picture is compared as for every title (docs/image-matching.md).
  */
-export function nameMatchedCardIds(title: string, names: ReadonlyMap<CardId, string>): CardId[] {
-  if (titleExclusion(title) !== 'no series 3') return [];
+export function nameMatchedCardIds(
+  title: string,
+  names: ReadonlyMap<CardId, string>,
+  otherSeriesNames: readonly ReadonlyMap<CardId, string>[] = []
+): CardId[] {
+  if (titleExclusion(title) !== 'no series') return [];
   if (MULTI_PICK_PATTERN.test(title) || hasRange(title) || ANY_COUNT_WORD.test(title)) return [];
   const candidates = new Set(readCardIds(title));
   for (const pattern of [NUMBER_DASH_PATTERN, SPACED_LE_XXL_PATTERN]) {
@@ -418,9 +456,13 @@ export function nameMatchedCardIds(title: string, names: ReadonlyMap<CardId, str
   // them are taken out at once, and only allowed words may be left.
   let rest = nameText(title);
   const spans: RegExp[] = [];
+  const sameName = (a: string, b: string) => nameWords(a).join(' ') === nameWords(b).join(' ');
   for (const id of candidates) {
-    const namePattern = cardNamePattern(names.get(id) ?? '');
+    const name = names.get(id) ?? '';
+    const namePattern = cardNamePattern(name);
     if (!namePattern) return [];
+    // Series 1 or 2 has this name at this number too: the title cannot be placed.
+    if (otherSeriesNames.some((other) => sameName(other.get(id) ?? '', name))) return [];
     const num = cardIdPattern(id);
     const beside = new RegExp(
       `${num}${BESIDE}${namePattern}|${namePattern}${BESIDE}${NUMBER_PREFIX}${num}`,
@@ -517,7 +559,13 @@ function listingUrl(item: EbayItem): string | null {
 }
 
 /** `ids`: the title's card ids, or `picture` for a title naming none (isPictureCandidate). */
-function toListing(item: EbayItem, url: string, title: string, ids: CardId[] | 'picture'): Listing {
+function toListing(
+  item: EbayItem,
+  url: string,
+  title: string,
+  ids: CardId[] | 'picture',
+  collection: CollectionId
+): Listing {
   const isAuction = item.buyingOptions?.includes('AUCTION') ?? false;
   const endsAt = isAuction && item.itemEndDate ? Date.parse(item.itemEndDate) : Number.NaN;
   const fields = {
@@ -531,6 +579,7 @@ function toListing(item: EbayItem, url: string, title: string, ids: CardId[] | '
     format: isAuction ? ('auction' as const) : ('fixed_price' as const),
     auctionEndsAt: Number.isNaN(endsAt) ? null : endsAt,
     idConflict: false,
+    collection,
   };
   return ids === 'picture'
     ? { ...fields, idSource: 'picture', cardIds: [] }
@@ -546,13 +595,17 @@ export function createEbayFetcher(
     clientSecret: string;
     fetchFn?: FetchFn;
     /**
-     * The catalog names (laststicker's, or the admin's for a manual card) of the collection this
-     * fetcher is bound to
-     * (`shops/adapters.ts` binds it), read once per fetch: a title without a series word counts
-     * only by a name beside its number (nameMatchedCardIds). Without it, such titles stay
+     * Each collection's catalog names (laststicker's, or the admin's for a manual card), read
+     * once per fetch: a title without a series word is series 3's only by a name beside its
+     * number that no other series has there (nameMatchedCardIds). Without it, such titles stay
      * excluded.
      */
-    cardNames?: () => ReadonlyMap<CardId, string>;
+    cardNames?: (collection: CollectionId) => ReadonlyMap<CardId, string>;
+    /**
+     * The collections read (default every one with eBay settings): their queries are searched,
+     * and their titles stored. A title naming another known collection is `other series`.
+     */
+    collections?: readonly EbayCollection[];
   } & AdapterOptions
 ): ShopFetcher {
   const fetchFn = opts.fetchFn ?? fetch;
@@ -800,7 +853,16 @@ export function createEbayFetcher(
   return {
     id: 'ebay',
     async fetchListings(): Promise<FetchResult> {
-      const names = opts.cardNames?.() ?? new Map<CardId, string>();
+      const collections = opts.collections ?? EBAY_COLLECTIONS;
+      const queries = [...new Set(collections.flatMap((c) => c.queries))];
+      const namesOf = (collection: CollectionId) =>
+        opts.cardNames?.(collection) ?? new Map<CardId, string>();
+      // Series 3's names, and the other series' to refuse a name they have at that number.
+      const series3 = collections.some((c) => c.id === LEGACY_COLLECTION);
+      const names = series3 ? namesOf(LEGACY_COLLECTION) : new Map<CardId, string>();
+      const otherNames = collections
+        .filter((c) => c.id !== LEGACY_COLLECTION)
+        .map((c) => namesOf(c.id));
       const byUrl = new Map<string, Listing>();
       const noId = new Set<string>();
       const excluded = new Set<string>();
@@ -813,7 +875,7 @@ export function createEbayFetcher(
       const pace = async () => {
         if (requests++ > 0) await sleep(delayMs);
       };
-      for (const query of EBAY_QUERIES) {
+      for (const query of queries) {
         const items = await search(query, pace, truncated);
         itemsSeen += items.length;
         for (const item of items) {
@@ -827,15 +889,26 @@ export function createEbayFetcher(
             continue;
           }
           if (byUrl.has(url) || noId.has(url) || excluded.has(url)) continue;
+          // Placed by every known series marker; a collection this run does not read is
+          // another series here.
+          const placed = classifyTitle(title);
+          const named = 'collection' in placed ? placed.collection : LEGACY_COLLECTION;
+          const read = collections.some((c) => c.id === named);
+          const collection = read ? named : LEGACY_COLLECTION;
           // A listing with variations (`SELLER_DEFINED_VARIATIONS`) sells a choice of cards
           // under one title; which of them is in stock is not in the search answer.
-          const reason = item.itemGroupType ? 'variations' : titleExclusion(title);
-          const byName = reason === 'no series 3' ? nameMatchedCardIds(title, names) : [];
+          const reason = item.itemGroupType
+            ? 'variations'
+            : read
+              ? titleExclusion(title, collection)
+              : 'other series';
+          const byName =
+            reason === 'no series' && series3 ? nameMatchedCardIds(title, names, otherNames) : [];
           if (byName.length > 0) {
             logger.debug(
               `eBay: "${clip(title)}" names no series, read by catalog name as ${byName.join(', ')}`
             );
-            byUrl.set(url, toListing(item, url, title, byName));
+            byUrl.set(url, toListing(item, url, title, byName, LEGACY_COLLECTION));
             continue;
           }
           if (reason) {
@@ -843,10 +916,14 @@ export function createEbayFetcher(
             logger.debug(`eBay: skipped "${clip(title)}" (${reason})`);
             continue;
           }
-          const cardIds = extractCardIdsFromTitle(title);
-          if (cardIds.length === 0 && isPictureCandidate(title)) {
+          const cardIds = extractCardIdsFromTitle(title, collection);
+          if (
+            cardIds.length === 0 &&
+            collection === LEGACY_COLLECTION &&
+            isPictureCandidate(title)
+          ) {
             // No card id, but one single card: passed on without ids for the picture to decide.
-            byUrl.set(url, toListing(item, url, title, 'picture'));
+            byUrl.set(url, toListing(item, url, title, 'picture', collection));
             continue;
           }
           if (cardIds.length === 0) {
@@ -854,13 +931,13 @@ export function createEbayFetcher(
             logger.debug(`eBay: skipped "${clip(title)}" (no card id)`);
             continue;
           }
-          byUrl.set(url, toListing(item, url, title, cardIds));
+          byUrl.set(url, toListing(item, url, title, cardIds, collection));
         }
       }
       // Same rule as the shops: an answer with nothing in it is an API or query problem,
       // and must not mark every stored eBay listing unavailable.
       if (itemsSeen === 0) {
-        throw new ShopLayoutError(`eBay: all ${EBAY_QUERIES.length} searches returned no items`);
+        throw new ShopLayoutError(`eBay: all ${queries.length} searches returned no items`);
       }
       return {
         listings: [...byUrl.values()],

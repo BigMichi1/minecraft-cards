@@ -145,6 +145,21 @@ describe('createShopAdapters', () => {
     expect(() => createShopAdapters(null, undefined, { collections: [noCode] })).toThrow(
       'lego-minecraft-1: blue-ocean settings without a product code'
     );
+    for (const productCode of ['70.351', '70+351']) {
+      const bad = { ...legoMinecraft1, shops: { 'blue-ocean': { productCode } } };
+      expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+        'lego-minecraft-1: the blue-ocean product code must be letters and digits'
+      );
+    }
+    for (const empty of [{ picture: '' }, { categoryPath: '' }]) {
+      const bad = {
+        ...legoMinecraft1,
+        shops: { 'blue-ocean': { productCode: '702351', ...empty } },
+      };
+      expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+        'lego-minecraft-1: blue-ocean settings with an empty picture or category path'
+      );
+    }
     for (const title of [/TCC 1/g, /TCC 1/y]) {
       const bad = { ...legoMinecraft1, shops: { 'blue-ocean': { productCode: '702351', title } } };
       expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(

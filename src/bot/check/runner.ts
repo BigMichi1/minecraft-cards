@@ -126,6 +126,13 @@ const ALERT_PRUNE_MARGIN_MS = 24 * 60 * 60 * 1000;
 
 /** A shop returning fewer than this share of its recent peak count alerts the admin. */
 const DROP_ALERT_SHARE = 0.5;
+/**
+ * A shared run's collection it found nothing of is a shop error of that collection (its listings
+ * kept) only when its recent peak (`SHOP_PEAK_WINDOW_MS`) reached this many listings: a series
+ * with fewer, such as blue-ocean's last series 3 singles, has sold out, and its listings are
+ * marked gone. Without a recent successful run it stays a shop error.
+ */
+const EMPTY_COLLECTION_FLOOR = 5;
 
 /**
  * A window as text: days with at most one decimal (whole days print plainly); below one day it
@@ -696,8 +703,10 @@ async function checkShop(
   }
   const empty = new Set(result.emptyCollections ?? []);
   for (const collection of covered) {
-    if (empty.has(collection)) {
-      // Nothing of it found: a query, API or layout problem there, not every card sold.
+    const peak = empty.has(collection) ? recentPeak(adapter.id, collection, deps.now()) : undefined;
+    if (empty.has(collection) && (peak === undefined || peak >= EMPTY_COLLECTION_FLOOR)) {
+      // Nothing of it found after a healthy run: a query, API or layout problem there, not
+      // every card sold.
       const message =
         adapter.id === 'ebay'
           ? `all searches of ${collectionName(collection)} returned no usable items`
@@ -705,7 +714,7 @@ async function checkShop(
       const homes = [...(placement?.homes.values() ?? [])];
       const dropped = homes.filter((c) => c === collection).length;
       logger.warn(
-        `shop ${adapter.id}: ${message}; ${dropped} listing(s) other searches found for it are not stored this run`
+        `shop ${adapter.id}: ${message}; ${dropped} listing(s) placed in it are not stored this run`
       );
       setShopEntry(summary, collection, adapter.id, {
         listings: 0,
@@ -718,6 +727,11 @@ async function checkShop(
         `Shop ${adapter.id} (${collectionName(collection)}) check failed: ${message}`
       );
       continue;
+    }
+    if (empty.has(collection)) {
+      logger.warn(
+        `shop ${adapter.id}: nothing of ${collectionName(collection)} found, at most ${peak} listing(s) recently: read as sold out`
+      );
     }
     const found = placement
       ? result.listings.filter((l) => placement.homes.get(l.url) === collection)

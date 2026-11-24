@@ -46,7 +46,9 @@ export interface AdapterDeps {
 /**
  * Throws for settings a run would get wrong: a category on another host than its shop (it would
  * skip the shop's pacer), blue-ocean settings without a product code (nothing would be placed in
- * the collection) or with a `g`/`y` title, or eBay settings without a search (the collection's
+ * the collection), with one that is not letters and digits (it is put into a regular expression),
+ * with an empty picture part or category path (in every URL or file name), or with a `g`/`y`
+ * title, or eBay settings without a search (the collection's
  * listings would be marked gone, never searched) or with a `g`/`y` marker (`test` would keep
  * state between titles).
  */
@@ -62,6 +64,13 @@ function checkSettings(definition: CollectionDefinition): void {
   const blueOcean = definition.shops['blue-ocean'];
   if (blueOcean && blueOcean.productCode.length === 0) {
     throw new Error(`${definition.id}: blue-ocean settings without a product code`);
+  }
+  // The code is put into a regular expression; a picture part '' would be in every file name.
+  if (blueOcean && !/^[a-z0-9]+$/i.test(blueOcean.productCode)) {
+    throw new Error(`${definition.id}: the blue-ocean product code must be letters and digits`);
+  }
+  if (blueOcean && (blueOcean.picture === '' || blueOcean.categoryPath === '')) {
+    throw new Error(`${definition.id}: blue-ocean settings with an empty picture or category path`);
   }
   if (blueOcean?.title && (blueOcean.title.global || blueOcean.title.sticky)) {
     throw new Error(`${definition.id}: the blue-ocean title must not use the g or y flag`);

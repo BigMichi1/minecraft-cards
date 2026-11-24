@@ -46,7 +46,8 @@ changes or a new one is suggested.
   (`Nummer 266 I Never trust this chef`), which must equal the URL's number (else
   `skippedNoId`); a picture number other than the id is an id conflict. A collection without a
   card in the whole walk is a shop error of that collection (`emptyCollections`), its listings
-  untouched.
+  untouched, unless it had fewer than 5 listings at its recent peak (3 days): then it sold out
+  there (series 3 had 3 singles left on 2026-11-24) and its listings are marked gone.
 
 ## eBay details
 

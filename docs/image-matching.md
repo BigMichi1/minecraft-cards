@@ -357,8 +357,8 @@ puzzle cards #154 to #180), so 261 load and those 22 use sammel-ente's picture.
 ## Data quality finding
 
 The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",
-URLs ending `-tcc-1`). Card ids come from the URL suffix, so those listings would get a
-card id too (for example `1` from `…-tcc-1`) that is not the series 3 card of that number;
+URLs ending `-tcc-1`). Card ids came from the URL suffix, so those listings would have got a
+card id too (for example `1` from `…-tcc-1`) that was not the series 3 card of that number;
 in the measurement 250 of 456 blue-ocean listings were such cards. The blue-ocean parser
 now places every product in its own collection by its URL (`docs/shops.md`), and the
 measurement script reads series 3 only.

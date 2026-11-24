@@ -62,7 +62,10 @@ export interface BlueOceanSettings {
   readonly categoryPath?: string;
   /** The product code before a root URL's card number (`702351` in `…-702351-09`). */
   readonly productCode: string;
-  /** The picture file part naming the series (`_tcc-01`); series 3 has none. */
+  /**
+   * A part of the picture file name naming the series (`_tcc-01`, series 3 `tcg3_.p`), compared
+   * lowercase: a product at another collection's URL with such a picture is excluded.
+   */
   readonly picture?: string;
   /**
    * A title of the collection must match this (series 1 `TCC 1`, series 3 `On Fire`; series 2

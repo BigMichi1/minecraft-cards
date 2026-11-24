@@ -211,6 +211,7 @@ describe('parseBlueOceanPage across collections', () => {
         'Nummer 012 I Steve I LEGO Minecraft TCC 1',
         'https://x.test/012_lego_minecraft_tcc-02.jpg'
       ),
+      box(`${S2}/nummer-012-i-steve`, 'Nummer 012 I Steve', 'https://x.test/a/LMC_TCG3_.P12.jpg'),
       box(
         '/nr.-12-steve-lego-minecraft-tcc-on-fire-2dd00088-12',
         'Nr. 12 Steve LEGO Minecraft TCC 1 "On Fire"',

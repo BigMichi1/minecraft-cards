@@ -472,7 +472,8 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   which must equal the URL's number (else `skippedNoId`); series 3's stay the URL suffix.
 - `FetchResult.emptySearches` is now `emptyCollections`: a shared run's collections it found
   nothing of (eBay: searches without a usable item; blue-ocean: no card in the whole walk), a
-  shop error of that collection whose listings stay untouched.
+  shop error of that collection whose listings stay untouched, unless its recent peak was below
+  5 listings (`EMPTY_COLLECTION_FLOOR`): then it sold out and is stored empty.
 
 ## Left to the builder
 

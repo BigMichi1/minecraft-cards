@@ -164,6 +164,8 @@ export const IMAGE_HOSTS: ReadonlySet<string> = new Set([
   'www.blue-ocean.de',
   'www.collect-it.de',
   'i.ebayimg.com',
+  // laststicker's scans, the card references (catalog/laststicker.ts).
+  'www.laststicker.com',
 ]);
 const MAX_REDIRECTS = 3;
 

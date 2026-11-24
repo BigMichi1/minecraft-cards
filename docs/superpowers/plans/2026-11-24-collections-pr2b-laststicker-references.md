@@ -5,6 +5,7 @@
 **Goal:** Make laststicker's scans the image reference of `lego-minecraft-3`, with sammel-ente's picture as the fallback. Compare sammel-ente listings like any other shop's. Re-match every listing once, with one summary for the admin.
 
 **Architecture:**
+
 - A measurement (Task 1) decides whether the switch can ship, and with which threshold values.
 - `catalogManager.referenceCatalog` becomes the one source-aware accessor: it picks the admin's picture, the laststicker scan or the shop picture for each card, and says which one.
 - The reference loader falls back to the shop picture in the same run when a scan answers 404, and records the 404.
@@ -55,11 +56,13 @@
 ### Task 1: Measure laststicker scans against shop pictures (go/no-go)
 
 **Files:**
+
 - Modify: `scripts/measure-threshold.ts` (new `--reference laststicker` mode)
 - Modify: `docs/image-matching.md` (new section "Measurement on laststicker scans (2026-11-24)")
 - Maybe modify: `src/bot/matcher/embedder.ts` (`DEFAULT_IMAGE_MATCH_THRESHOLD`) and `src/bot/matcher/identify.ts` (`DECISION_GAP`, `TWIN_SIMILARITY`), with their tests. Only if step 3 shows they must change.
 
 **Interfaces:**
+
 - Consumes: `fetchLaststickerSet(set)` → `{ rows: LaststickerRow[] }` (`pictureUrl`, `cardId`, `puzzle`); `createSammelEnteFetcher`, `createCollectItFetcher`, `createEbayFetcher` (credentials from env); `createTransformersEmbedder`, `cosineSimilarity`, `identifyPicture` from `matcher/identify.ts`.
 - Produces: the recorded numbers and, if needed, new constant values. Later tasks use the constants by name only.
 
@@ -101,12 +104,14 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
 ### Task 2: Store shop pictures and missing scans apart
 
 **Files:**
+
 - Modify: `src/bot/database/schema/cards.ts`
 - Create (generated): `src/bot/database/migrations/0007_*.sql`, plus `meta/`
 - Modify: `src/bot/database/db.test.ts`
 - Modify: `src/bot/collections/ids.ts`, `src/bot/collections/legoMinecraft3.ts`, `src/bot/collections/index.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `cards.shopImageUrl: string | null`: the newest picture of the card from the collection's fallback shop.
   - `cards.laststickerScanMissingAt: number | null`: when the scan last answered 404.
@@ -136,12 +141,14 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
 ### Task 3: One source-aware reference accessor
 
 **Files:**
+
 - Modify: `src/bot/database/catalogManager.ts`, `catalogManager.test.ts`
 - Modify: `src/bot/catalog/sync.ts`, `sync.test.ts`
 - Modify: `src/bot/check/runner.ts`, `runner.test.ts` (sammel-ente branch)
 - Modify: `src/test/catalog.ts` (`setCatalogCards` gains `shopImageUrl` and `scanUrl`)
 
 **Interfaces:**
+
 - Consumes: the Task 2 columns and `referenceFallbackShop`.
 - Produces:
   - `export type ReferenceSource = 'laststicker' | 'shop' | 'manual'`.
@@ -179,12 +186,14 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
 ### Task 4: 404 fallback in the reference loader, and paced laststicker downloads
 
 **Files:**
+
 - Create: `src/bot/utils/pacedFetch.ts`, `pacedFetch.test.ts`
 - Modify: `src/bot/matcher/embedder.ts`, `embedder.test.ts`
 - Modify: `src/bot/check/runner.ts`, `runner.test.ts`
 - Modify: `src/bot/bot.ts` (wiring only)
 
 **Interfaces:**
+
 - Consumes: `ReferenceCard.fallbackUrl` and `source` (Task 3), `catalogManager.markScanMissing`.
 - Produces:
   - `createPacedFetch(fetchFn: FetchFn, hosts: ReadonlySet<string>, delayMs: number, deps?: { now?: () => number; sleep?: (ms: number) => Promise<void> }): FetchFn`.
@@ -219,6 +228,7 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
 ### Task 5: sammel-ente listings are compared like any shop's
 
 **Files:**
+
 - Modify:
   - `src/bot/matcher/matchStatus.ts` (+ test)
   - `src/bot/matcher/embedder.ts` (+ test)
@@ -229,6 +239,7 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
   - `src/test/listings.ts`
 
 **Interfaces:**
+
 - Produces:
   - `MATCH_STATUSES` without `reference`; the doc comment loses that line.
   - `defaultMatchStatus(shop, cardIds)` → `bundle` for more than one card, else `pending`, for every shop.
@@ -248,6 +259,7 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
 ### Task 6: The one-time re-match with one summary
 
 **Files:**
+
 - Modify: `src/bot/database/schema/listings.ts`
 - Create (generated): `src/bot/database/migrations/0008_*.sql`
 - Modify:
@@ -257,6 +269,7 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
   - `src/bot/commands/admin.ts` (`formatSummary`, + test)
 
 **Interfaces:**
+
 - Consumes: Task 5's statuses.
 - Produces:
   - `listings.rematchFrom: text | null`: the status before the reference switch, until the listing is compared again. `StoredListing.rematchFrom: string | null`.
@@ -295,6 +308,7 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
 ### Task 7: Docs
 
 **Files:**
+
 - Modify: `docs/image-matching.md`, `docs/shops.md`, `docs/deployment.md`, `CLAUDE.md`, the spec ("Notes from PR 2b")
 
 - [ ] **Step 1: Update the docs**

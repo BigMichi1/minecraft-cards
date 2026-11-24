@@ -271,8 +271,8 @@ One adapter run covers all collections, so items found by several queries are fe
   eBay listings are touched (an item found by one collection's query may belong to another, so a
   narrower scope could mark real listings unavailable). One alert key `shop-error:ebay`; only a
   collection whose own searches all come back empty, and storing, fail per collection
-  (`shop-error:ebay:<collection>`, 3b). A cut search
-  still alerts (`shop-truncated:ebay`) and the run goes on, as today.
+  (`shop-error:ebay:<collection>`, 3b). A cut search still alerts (`shop-truncated:ebay`) and
+  the run goes on, as today.
 
 ### Matcher
 
@@ -430,17 +430,18 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   the definition); `classifyTitle` places a title by every known marker, and the fetcher tags
   each listing with its collection (`Listing.collection`). An adapter covering several
   collections (`ShopAdapter.collections`) is stored per collection by the runner, and its
-  fetch error, cut searches and unloaded card lists alert once under the shop
-  (`shop-error:ebay`, `shop-truncated:ebay`, `shop-names:ebay:<collections>`); storing stays
-  per collection.
+  fetch error, cut searches, unloaded card lists and mappings outside its collections alert
+  once under the shop (`shop-error:ebay`, `shop-truncated:ebay`,
+  `shop-names:ebay:<collections>`, `shop-outside:ebay`); storing stays per collection.
   `checkAdapters` refuses a shared adapter that overlaps another or does not cover its own
   `collection`, under which the run's skipped counts are filed.
 - An unmapped eBay listing whose title names another collection moves there
   (`upsertFromRun(…, { moveFromOtherCollections: true })`), with a fresh match status
-  (`pending`, or `bundle`) and a new availability period; admin-mapped ones stay where the admin put them and are kept fresh
-  there. A listing the run saw is never marked gone in another collection (`seenUrls`).
-- A series list with one series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 1 bis 3`)
-  names several collections; a list holds only series numbers 1 to 3, going upward, so
+  (`pending`, or `bundle`) and a new availability period; admin-mapped ones stay where the
+  admin put them and are kept fresh there. A listing the run saw is never marked gone in another collection (`seenUrls`).
+- A series list with one series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 1 bis 3`,
+  `Serie 3 und 1`) names several collections; the first two numbers decide (series numbers 1
+  to 3, joined by a word or `/ & + ,` in any order, by a dash or space only going upward), so
   `Serie 3 - 12 - Steve - Charakterkarte` is card #12 and `Serie 3 - 1 - …` card #1. Series 3's
   marker also takes `Staffel 3` (as series 1 and 2 take theirs) and `TCC 3` (as series 1
   takes `TCC 1`).

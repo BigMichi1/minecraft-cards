@@ -339,6 +339,7 @@ describe('runCheck', () => {
       expect(runManager.lastAlertAt('shop-truncated:ebay')).toBeDefined();
       expect(runManager.lastAlertAt('shop-truncated:ebay:lego-minecraft-1')).toBeUndefined();
       expect(runManager.lastAlertAt('shop-truncated:ebay:lego-minecraft-3')).toBeUndefined();
+      expect(runManager.lastAlertAt('shop-outside:ebay')).toBeUndefined();
       expect(s.shops.ebay).toEqual({
         listings: 0,
         skippedNoId: 2,
@@ -370,12 +371,21 @@ describe('runCheck', () => {
       );
       clock += 7 * 24 * 60 * 60 * 1000;
       const s = await runCheck(
-        depsWith([shared([item('3', 'lego-minecraft-3')], { emptySearches: ['lego-minecraft-1'] })])
+        depsWith([
+          shared([item('3', 'lego-minecraft-3')], {
+            emptySearches: ['lego-minecraft-1'],
+            skippedNoId: 2,
+          }),
+        ])
       );
       expect(listingManager.getByUrl('https://www.ebay.de/itm/1')!.available).toBe(true);
       expect(listingManager.getByUrl('https://www.ebay.de/itm/3')!.lastSeenAt).toBe(clock);
-      expect(s.collections?.['lego-minecraft-1']?.ebay?.error).toContain('returned no items');
+      expect(s.collections?.['lego-minecraft-1']?.ebay).toEqual({
+        listings: 0,
+        error: 'all searches of LEGO Minecraft Serie 1 returned no usable items',
+      });
       expect(s.shops.ebay?.error).toBeUndefined();
+      expect(s.shops.ebay).toMatchObject({ skippedNoId: 2 });
       expect(runManager.lastAlertAt('shop-error:ebay:lego-minecraft-1')).toBeDefined();
     });
 
@@ -423,6 +433,29 @@ describe('runCheck', () => {
       ).toBeDefined();
     });
 
+    test("series 3's store failing: the run's counts are still filed under it", async () => {
+      const real = listingManager.upsertFromRun.bind(listingManager);
+      const upsert = spyOn(listingManager, 'upsertFromRun').mockImplementation(
+        (shop, collection, ...rest) => {
+          if (collection === 'lego-minecraft-3') throw new Error('disk full');
+          return real(shop, collection, ...rest);
+        }
+      );
+      const log = spyOn(logger, 'log').mockImplementation(() => logger);
+      let s: RunSummary;
+      try {
+        s = await runCheck(
+          depsWith([shared([item('1', 'lego-minecraft-1')], { skippedExcluded: 3 })])
+        );
+      } finally {
+        upsert.mockRestore();
+        log.mockRestore();
+      }
+      expect(s.shops.ebay).toMatchObject({ skippedExcluded: 3 });
+      expect(s.shops.ebay?.error).toContain('disk full');
+      expect(s.collections?.['lego-minecraft-1']?.ebay).toEqual({ listings: 1 });
+    });
+
     test("series 3's searches all empty: the run's counts are still filed under it", async () => {
       const s = await runCheck(
         depsWith([
@@ -434,7 +467,7 @@ describe('runCheck', () => {
         ])
       );
       expect(s.shops.ebay).toMatchObject({ listings: 0, skippedNoId: 4, truncated: 1 });
-      expect(s.shops.ebay?.error).toContain('returned no items');
+      expect(s.shops.ebay?.error).toContain('returned no usable items');
       expect(s.collections?.['lego-minecraft-1']?.ebay).toEqual({ listings: 1 });
     });
 
@@ -466,6 +499,7 @@ describe('runCheck', () => {
       expect(s.collections?.['lego-minecraft-1']?.ebay?.error).toContain('database is locked');
       expect(alerts.filter((a) => a.startsWith('Shop ebay check failed'))).toHaveLength(1);
       expect(runManager.lastAlertAt('shop-error:ebay')).toBeDefined();
+      expect(s.shops.ebay?.error).toContain('placing listings failed');
       // Nothing stored this run: the listing stays available.
       expect(listingManager.getByUrl('https://www.ebay.de/itm/1')!.available).toBe(true);
     });

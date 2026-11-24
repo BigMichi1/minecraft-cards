@@ -1,6 +1,6 @@
 # Collections PR 3b: eBay across collections — Implementation Plan
 
-> **Shipped differently:** the code and `docs/` are authoritative; names here are the plan's (for example the exclusion reason `no collection` shipped as `no series`, `moveFrom` as `moveFromOtherCollections`, and eBay serves every collection since PR 3b).
+> **Shipped differently:** the code and `docs/` are authoritative; names here are the plan's (for example the exclusion reason `no collection` shipped as `no series`, `moveFrom` as `moveFromOtherCollections`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

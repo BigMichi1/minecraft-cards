@@ -73,10 +73,11 @@ not be built, and a shop's listings that are stored under another collection
 (`shop-foreign:<shop>:<collection>`: not read for this one; eBay moves an unmapped listing to
 the collection its title names instead, so there it names only another shop's listing or a
 mapping made during the run; a listing mapped into a collection eBay does not cover is left
-alone and logged). eBay's one run alerts a failed run, cut searches and a series'
-card list that is not loaded yet once, under the shop (`shop-error:ebay`,
-`shop-truncated:ebay`, `shop-names:ebay:<collections>`); a collection whose own eBay searches
-all came back empty is a shop error of that collection (`shop-error:ebay:<collection>`). Failed slash command registration and an image model that failed to load are DMed
+alone, logged and alerted, `shop-outside:ebay`). eBay's one run alerts a failed run, cut
+searches, a series' card list that is not loaded yet and mappings outside its collections once,
+under the shop (`shop-error:ebay`, `shop-truncated:ebay`, `shop-names:ebay:<collections>`,
+`shop-outside:ebay`); a collection whose own eBay searches all came back empty is a shop error
+of that collection (`shop-error:ebay:<collection>`). Failed slash command registration and an image model that failed to load are DMed
 once per start, not throttled. A wrong-card report whose admin DM failed is sent again with the
 next check; one still unsent after a day also logs a warning, once a day.
 

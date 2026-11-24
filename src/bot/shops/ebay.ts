@@ -57,6 +57,8 @@ const LETTER = 'A-Za-zÄÖÜäöüß';
 const MULTI_PICK_PATTERN = /aussuch|auswahl|w(?:ä|ae)hl|\bchoos|\bpick\b/i;
 // Not right after a series word: "Serie 3 - Steve" and "TCC 3 - Steve" name the series, not
 // card 3.
+/** The numbered series there are (1 to 3): raise it with a new numbered series. */
+const SERIES_NUMBER = '[1-3]';
 const NOT_AFTER_SERIES = '(?<!\\b(?:Serie|Series|Staffel|TCC)\\s*)';
 // A number range: "1 - 228", "151-254", "LE1 - LE22", "1 bis 228". Only 1 to 3 digits, so
 // "Serie 3 - 2026" (a year) is not one; the first number must be the smaller (see hasRange).
@@ -273,23 +275,24 @@ export type TitleExclusion =
   'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
 
 // A series word followed by a list of series numbers ("Serie 1-2", "Serie 1 & 2 - Karte 45",
-// "Serie 1 bis 3", "Serie 1 2 3"). A list holds only series numbers (1 to 3; raise it with a new
-// numbered series), each not followed by another digit, going upward. Any other number is a card
-// number or a year: "Serie 3 - 12 - Steve - Charakterkarte" is #12, "Serie 3 - 1 - Steve -
-// Charakterkarte" #1, "Serie 3 - 2026" a year. "Serie 1 - 2 - Steve" may be series 1 #2 or a
-// list: unclear, so no ids.
-const SERIES_SEPARATOR =
-  '(?:\\s*(?:[-–/&+,]|\\bund\\b|\\band\\b|\\bu\\.|\\bbis\\b|\\boder\\b|\\bor\\b|\\bto\\b)\\s*|\\s+)';
-const SERIES_LIST = new RegExp(
-  `\\b(?:Series?|Staffel|TCC)\\s*([1-3](?!\\d)(?:${SERIES_SEPARATOR}[1-3](?!\\d))+)`,
+// "Serie 1 bis 3", "Serie 3 und 1", "Serie 1 2 3"). Only the first two numbers decide, each a
+// series number (SERIES_NUMBER) not followed by another digit:
+// joined by a word or `/ & + ,` they are a list in any order; joined by a dash or a space only
+// going upward, as a smaller number there is a card number ("Serie 3 - 1 - Steve -
+// Charakterkarte" is #1). A larger number is a card number or a year ("Serie 3 - 12 - Steve -
+// Charakterkarte" is #12, "Serie 3 - 2026" a year). "Serie 1 - 2 - Steve" may be series 1 #2
+// or a list: unclear, so no ids.
+const SERIES_PAIR = new RegExp(
+  `\\b(?:Series?|Staffel|TCC)\\s*(${SERIES_NUMBER})(?!\\d)(\\s*(?:[-–/&+,]|\\bund\\b|\\band\\b|\\bu\\.|\\bbis\\b|\\boder\\b|\\bor\\b|\\bto\\b)\\s*|\\s+)(${SERIES_NUMBER})(?!\\d)`,
   'gi'
 );
 
-/** Whether a title names a list of series with one series word (see SERIES_LIST). */
+/** Whether a title names a list of series with one series word (see SERIES_PAIR). */
 function namesSeriesList(title: string): boolean {
-  for (const m of title.matchAll(SERIES_LIST)) {
-    const numbers = (m[1]!.match(/[1-3]/g) ?? []).map(Number);
-    if (numbers.every((n, i) => i === 0 || n > numbers[i - 1]!)) return true;
+  for (const m of title.matchAll(SERIES_PAIR)) {
+    const separator = m[2]!.trim();
+    const ambiguous = separator === '' || separator === '-' || separator === '–';
+    if (!ambiguous || Number(m[3]) > Number(m[1])) return true;
   }
   return false;
 }
@@ -505,7 +508,10 @@ export function nameMatchedCardIds(
 
 // The numbers a single-card title may carry without naming a card: the series ("Serie 3",
 // "Series3", "TCC 3"; series numbers 1 to 3 only) and a year ("2026").
-const SERIES_OR_YEAR = /\b(?:Series?|Staffel|TCC)\s*[1-3]\b|\b(?:19|20)\d{2}\b/gi;
+const SERIES_OR_YEAR = new RegExp(
+  `\\b(?:Series?|Staffel|TCC)\\s*${SERIES_NUMBER}\\b|\\b(?:19|20)\\d{2}\\b`,
+  'gi'
+);
 
 /**
  * Whether a title naming no card id may still offer one series 3 single card, so its picture
@@ -513,6 +519,8 @@ const SERIES_OR_YEAR = /\b(?:Series?|Staffel|TCC)\s*[1-3]\b|\b(?:19|20)\d{2}\b/g
  * no COUNT_WORDS word ("Booster", "Lot", "Karten", "Holo", "5 Stück") and no number but the
  * series and a year. A number the id patterns do not read is a count as often as a card
  * ("6 TradingCards ... 1 special Card"), so such a title is not left to the picture.
+ * @param markers the series markers that place the title (default the registry's); the title
+ *   must still name series 3.
  */
 export function isPictureCandidate(
   title: string,
@@ -995,8 +1003,15 @@ export function createEbayFetcher(
       if (itemsSeen === 0) {
         throw new ShopLayoutError(`eBay: all ${queries.length} searches returned no items`);
       }
+      // Items, but none with a link and a title: eBay answered in another shape.
+      if ([...perQuery.values()].every((n) => n === 0)) {
+        throw new ShopLayoutError(
+          `eBay: all ${queries.length} searches returned no usable item (${invalid.size} without link or title)`
+        );
+      }
       // A collection whose own searches all came back empty is a query or API problem there:
-      // the runner leaves its stored listings alone (shop error of that collection).
+      // the runner leaves its stored listings alone (shop error of that collection). A
+      // collection without searches never counts as empty.
       const emptySearches = collections
         .filter((c) => c.queries.length > 0 && c.queries.every((q) => (perQuery.get(q) ?? 0) === 0))
         .map((c) => c.id);

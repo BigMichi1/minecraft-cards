@@ -2085,7 +2085,7 @@ describe('series markers (2026-11-24 probe)', () => {
     ]) {
       expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
     }
-    // A smaller number after the series is a card number: a list goes upward.
+    // A smaller number after a dash is a card number: a list joined by a dash goes upward.
     expect(extractCardIdsFromTitle('LEGO Minecraft Serie 3 - 1 - Steve - Charakterkarte')).toEqual(
       ids('1')
     );
@@ -2095,6 +2095,19 @@ describe('series markers (2026-11-24 probe)', () => {
     expect(classifyTitle('LEGO Minecraft Serie 2 - 1 - Steve - Karte')).toEqual({
       collection: 'lego-minecraft-2',
     });
+    // A later number of two digits is a card number, not series 2; an equal one is no list.
+    expect(classifyTitle('LEGO Minecraft Serie 1 - 23 - Steve - Charakterkarte')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+    expect(
+      extractCardIdsFromTitle(
+        'LEGO Minecraft Serie 1 - 23 - Steve - Charakterkarte',
+        'lego-minecraft-1'
+      )
+    ).toEqual(ids('23'));
+    expect(extractCardIdsFromTitle('LEGO Minecraft Serie 3 - 3 - Steve - Charakterkarte')).toEqual(
+      ids('3')
+    );
     // The series number after TCC is no card number.
     expect(extractCardIdsFromTitle('LEGO Minecraft TCC 3 - Steve - Charakterkarte')).toEqual([]);
     // A series list stays one, also before "Karte" and before a dash and a word; "Serie 1 - 2 -
@@ -2112,6 +2125,23 @@ describe('series markers (2026-11-24 probe)', () => {
       'LEGO Minecraft Serie 1 oder 2 Karte 5',
       'LEGO Minecraft Serie 1 2 3 Karte 5',
       'LEGO Minecraft Serie 2 to 3 Karte 5',
+      'LEGO Minecraft Serie 1 or 2 Karte 5',
+      // A card number after the list does not hide it.
+      'LEGO Minecraft Serie 1 und 2 1 Karte 5',
+      'LEGO Minecraft Serie 1 & 2 - 1 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 2 & 3 - 1 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 1-2 - 1 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 2 & 3 - 2 - Creeper - Charakterkarte',
+      'LEGO Minecraft Serie 2 und 3 - 2 - Creeper - Charakterkarte',
+      'LEGO Minecraft Serie 2 & 3 2 Karte 5',
+      'LEGO Minecraft Serie 2 3 2 - Creeper - Charakterkarte',
+      // Joined by a word or a sign, a list in any order.
+      'LEGO Minecraft Serie 3 und 1 Karte 5',
+      'LEGO Minecraft Serie 3 & 2 Karte 5',
+      'LEGO Minecraft Serie 3 bis 1 Karte 5',
+      'LEGO Minecraft Serie 3 oder 1 Karte 5',
+      'LEGO Minecraft Serie 3 / 1 Karte 5',
+      'LEGO Minecraft Serie 2/1 Karte 5',
     ]) {
       expect(classifyTitle(title)).toEqual({ exclusion: 'several collections' });
     }
@@ -2430,5 +2460,19 @@ describe('one eBay run for every collection', () => {
     ]);
     expect(isPictureCandidate('LEGO Minecraft FOO Ender Dragon', foo)).toBe(true);
     expect(isPictureCandidate('LEGO Minecraft FOO Ender Dragon')).toBe(false);
+  });
+
+  test('searches answering nothing but unusable items are a layout error of the run', async () => {
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 1, itemSummaries: [{ itemId: 'v1|1|0' }] }),
+    });
+    await expect(
+      createEbayFetcher({
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings()
+    ).rejects.toThrow('returned no usable item (1 without link or title)');
   });
 });

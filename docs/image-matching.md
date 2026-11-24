@@ -1,9 +1,42 @@
 # Image matching
 
-The image check is a safety net: it compares a shop listing's picture with the sammel-ente
-picture of the same card number (the reference) and marks the listing `confirmed` when the
-cosine similarity of their embeddings reaches `IMAGE_MATCH_THRESHOLD`. Code:
-`src/bot/matcher/embedder.ts`, `src/bot/matcher/imageInput.ts`.
+The image check is a safety net: it compares a shop listing's picture with the reference
+picture of the same card number and marks the listing `confirmed` when the cosine similarity of
+their embeddings reaches `IMAGE_MATCH_THRESHOLD`. Code: `src/bot/matcher/embedder.ts`,
+`src/bot/matcher/imageInput.ts`.
+
+## Reference pictures
+
+`catalogManager.referenceCatalog` chooses one reference per card, by the card's source (multi-
+collection step 2, measured in "Measurement on laststicker scans" below):
+
+- **A laststicker card**: its laststicker scan (`/i/cards/<set id>/<id>.jpg`, stored by the
+  catalog sync). The collection's `referenceFallbackShop` (sammel-ente for series 3) gives the
+  fallback: the newest picture of that shop's listing of the card.
+- **A scan that answers 404 or 410** (laststicker has none: 17 series 3 cards on 2026-11-24,
+  LE3 to LE12, LE16 to LE19, LE21, LE22, XXL1): the reference loader embeds the fallback in the
+  same run and records the miss (`laststicker_scan_missing_at`). The shop picture is the
+  reference for 7 days (`SCAN_RETRY_MS`), then the scan is tried again; a sync storing another
+  scan URL clears the mark. Any other failure of a scan (5xx, timeout, network) never falls
+  back: it is `image_unavailable`, retried once a day.
+- **A manual card** (`/admin catalog add|edit`): the admin's picture, else the shop picture.
+- No picture at all: `no_picture`, the card's listings are `no_reference`.
+
+A card whose chosen reference changes (a new scan, a shop picture in use that changed) has its
+mismatches compared again. Every download from laststicker (scans for matching, thumbnails in
+DMs and `/card`) goes through one pacer: at most one request per 1500 ms (`pacedImageFetch`).
+The embeddings are cached by URL, so each scan is downloaded once; the first run after the
+switch loads about 234 scans, which takes about 6 minutes before its DMs.
+
+sammel-ente's listings are compared like every other shop's.
+
+**The switch re-matched once.** Migration 0008 set every listing the admin had not mapped and
+that is no bundle back to `pending`, keeping its old status (`rematch_from`). Each run counts
+the ones it compared again: when any changed status, the admin gets one summary
+(`Reference switch: compared N listing(s) again, M changed: …`, up to 10 named) instead of a
+note per new mismatch, and `/admin run` shows `Re-match: N compared, M changed`. If that summary
+cannot be delivered, the new mismatches keep their own notes. Notifications stay recorded per
+listing and availability period, so nobody is notified twice.
 
 ## Defaults
 
@@ -347,17 +380,16 @@ handled as before.
 
 ## Match statuses
 
-| Status              | Meaning                                                                                                                                                                               |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `reference`         | A sammel-ente listing: its picture is the reference                                                                                                                                   |
-| `pending`           | Not compared yet: a new single-card listing of another shop than sammel-ente, or one whose picture, cards or id conflict changed (or title, for a mismatch or a title naming no card) |
-| `confirmed`         | Picture matches the reference, the picture decided the card of an eBay title naming none, or the admin mapped it (`/admin map`)                                                       |
-| `unconfirmed`       | Below the threshold, a blue-ocean id conflict, or no picture to compare; a title naming no card whose picture decided nothing                                                         |
-| `mismatch`          | The picture decides another card than the title names; never sent to users, one admin note per listing                                                                                |
-| `bundle`            | Several cards in one listing; not compared                                                                                                                                            |
-| `no_reference`      | The card has no reference picture yet, or only a placeholder (`_leer.`, one picture for several cards); retried every check                                                           |
-| `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check                                                                                                        |
-| `image_unavailable` | A picture could not be loaded (network, host, redirect, HTTP, size, decoding); retried once a day                                                                                     |
+| Status              | Meaning                                                                                                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pending`           | Not compared yet: a new single-card listing of any shop, or one whose picture, cards or id conflict changed (or title, for a mismatch or a title naming no card) |
+| `confirmed`         | Picture matches the reference, the picture decided the card of an eBay title naming none, or the admin mapped it (`/admin map`)                                  |
+| `unconfirmed`       | Below the threshold, a blue-ocean id conflict, or no picture to compare; a title naming no card whose picture decided nothing                                    |
+| `mismatch`          | The picture decides another card than the title names; never sent to users, one admin note per listing                                                           |
+| `bundle`            | Several cards in one listing; not compared                                                                                                                       |
+| `no_reference`      | The card has no reference picture yet, or only a placeholder (`_leer.`, one picture for several cards); retried every check                                      |
+| `model_unavailable` | No image model loaded, or the model failed on the picture; retried every check                                                                                   |
+| `image_unavailable` | A picture could not be loaded (network, host, redirect, HTTP, size, decoding); retried once a day                                                                |
 
 Only available listings of cards someone wants, and eBay titles naming no card, are compared.
 `image_unavailable` and `model_unavailable` also mark a listing compared while a reference

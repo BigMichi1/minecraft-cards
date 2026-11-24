@@ -49,6 +49,9 @@ docker-compose logs -f minecraft-cards
 ```
 
 On start the log shows "Database migrations applied", the catalog and the model loading. The
+first check run after an update that brings new reference pictures (laststicker's scans,
+multi-collection step 2) downloads them at one per 1.5 s, about 6 minutes for series 3, before
+it sends DMs; later runs read them from the embedding cache. The
 database lives in the `./data` volume (`/app/data/cards.db`): back it up, it holds users'
 missing lists and listing state.
 

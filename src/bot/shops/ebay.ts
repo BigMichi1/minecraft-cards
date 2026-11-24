@@ -1071,7 +1071,7 @@ export function createEbayFetcher(
       // the runner leaves its stored listings alone (shop error of that collection); a search
       // whose items all lack a link or a title found nothing usable either. A
       // collection without searches never counts as empty.
-      const emptySearches = collections
+      const emptyCollections = collections
         .filter((c) => c.queries.length > 0 && c.queries.every((q) => (perQuery.get(q) ?? 0) === 0))
         .map((c) => c.id);
       return {
@@ -1081,7 +1081,7 @@ export function createEbayFetcher(
         skippedInvalid: invalid.size,
         ...(truncated.length > 0 ? { truncated } : {}),
         ...(namesUnknown.length > 0 ? { namesUnknown: namesUnknown.map((c) => c.id) } : {}),
-        ...(emptySearches.length > 0 ? { emptySearches } : {}),
+        ...(emptyCollections.length > 0 ? { emptyCollections } : {}),
       };
     },
   };

@@ -694,11 +694,14 @@ async function checkShop(
       )
     );
   }
-  const empty = new Set(result.emptySearches ?? []);
+  const empty = new Set(result.emptyCollections ?? []);
   for (const collection of covered) {
     if (empty.has(collection)) {
-      // Its own searches found nothing: a query or API problem there, not every card sold.
-      const message = `all searches of ${collectionName(collection)} returned no usable items`;
+      // Nothing of it found: a query, API or layout problem there, not every card sold.
+      const message =
+        adapter.id === 'ebay'
+          ? `all searches of ${collectionName(collection)} returned no usable items`
+          : `no card of ${collectionName(collection)} on any page`;
       const homes = [...(placement?.homes.values() ?? [])];
       const dropped = homes.filter((c) => c === collection).length;
       logger.warn(

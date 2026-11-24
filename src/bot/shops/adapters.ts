@@ -8,7 +8,7 @@ import { COLLECTIONS } from '../collections/index';
 import type { Config } from '../config';
 import logger from '../utils/logger';
 import { createPacedFetch } from '../utils/pacedFetch';
-import { BLUE_OCEAN_COLLECTIONS, createBlueOceanFetcher } from './blueOcean';
+import { blueOceanCollectionsOf, createBlueOceanFetcher } from './blueOcean';
 import { createCollectItFetcher } from './collectIt';
 import { createEbayFetcher, ebayCollectionsOf } from './ebay';
 import { createSammelEnteFetcher } from './sammelEnte';
@@ -90,7 +90,7 @@ export function enabledShopsOf(adapters: readonly ShopAdapter[]): EnabledShops {
  * A `ShopId` missing here is a compile error, so a new shop cannot be left out by accident.
  */
 function fetcherFor(
-  shop: Exclude<ShopId, 'ebay'>,
+  shop: Exclude<ShopId, 'ebay' | 'blue-ocean'>,
   definition: CollectionDefinition,
   fetchFn: FetchFn
 ): ShopFetcher | null {
@@ -103,20 +103,21 @@ function fetcherFor(
       const settings = definition.shops['collect-it'];
       return settings ? createCollectItFetcher(settings, fetchFn) : null;
     }
-    case 'blue-ocean':
-      // The parser reads series 3 only until the shared walk reads every collection's settings.
-      return definition.shops['blue-ocean'] && definition.id === LEGACY_COLLECTION
-        ? createBlueOceanFetcher(
-            fetchFn,
-            {},
-            BLUE_OCEAN_COLLECTIONS.filter((c) => c.id === LEGACY_COLLECTION)
-          )
-        : null;
   }
 }
 
 function forCollection(fetcher: ShopFetcher, collection: CollectionId): ShopAdapter {
   return { id: fetcher.id, collection, fetchListings: () => fetcher.fetchListings() };
+}
+
+/**
+ * One adapter for a run covering several collections (`ids`, at least one). The run's skipped
+ * counts are filed under its `collection`: series 3's (the summary's `shops`) when covered, else
+ * the first.
+ */
+function sharedAdapter(fetcher: ShopFetcher, ids: readonly CollectionId[]): ShopAdapter {
+  const collection = ids.includes(LEGACY_COLLECTION) ? LEGACY_COLLECTION : ids[0]!;
+  return { ...forCollection(fetcher, collection), collections: ids };
 }
 
 /**
@@ -143,7 +144,8 @@ export function checkAdapters(adapters: ShopAdapter[]): ShopAdapter[] {
 
 /**
  * The shops this process checks: per collection (COLLECTIONS order), the shops its definition
- * lists (SHOP_IDS order) but eBay, then one eBay adapter for every collection with eBay
+ * lists (SHOP_IDS order) but blue-ocean and eBay, then one blue-ocean adapter for every
+ * collection with blue-ocean settings, then one eBay adapter for every collection with eBay
  * settings, only when its credentials are set. The fetchers of one shop share
  * one paced fetch, so its pages stay SHOP_DELAY_MS apart across collections too.
  * `cardNames(collection)` gives eBay that collection's catalog names for titles without a series
@@ -172,11 +174,23 @@ export function createShopAdapters(
   for (const definition of definitions) checkSettings(definition);
   const perCollection = definitions.flatMap((definition) =>
     SHOP_IDS.flatMap((shop): ShopAdapter[] => {
-      if (shop === 'ebay') return [];
+      if (shop === 'ebay' || shop === 'blue-ocean') return [];
       const fetcher = fetcherFor(shop, definition, pacedFor(shop));
       return fetcher ? [forCollection(fetcher, definition.id)] : [];
     })
   );
+  // One blue-ocean walk for every collection with blue-ocean settings: its sticker-cards category
+  // lists every series, each product placed by its URL.
+  const onBlueOcean = blueOceanCollectionsOf(definitions);
+  const blueOceanAdapters: ShopAdapter[] =
+    onBlueOcean.length > 0
+      ? [
+          sharedAdapter(
+            createBlueOceanFetcher(pacedFor('blue-ocean'), {}, onBlueOcean),
+            onBlueOcean.map((c) => c.id)
+          ),
+        ]
+      : [];
   // One eBay run for every collection with eBay settings: every query is searched once, an item
   // several queries find is stored once, and each title in the collection it names.
   const onEbay = ebayCollectionsOf(definitions);
@@ -184,19 +198,15 @@ export function createShopAdapters(
   const ebayAdapters: ShopAdapter[] =
     ebay && onEbay.length > 0
       ? [
-          {
-            ...forCollection(
-              createEbayFetcher({
-                ...ebay,
-                collections: onEbay,
-                ...(cardNames ? { cardNames } : {}),
-              }),
-              // The run's skipped counts are filed here: series 3's, the summary's `shops`.
-              ids.includes(LEGACY_COLLECTION) ? LEGACY_COLLECTION : ids[0]!
-            ),
-            collections: ids,
-          },
+          sharedAdapter(
+            createEbayFetcher({
+              ...ebay,
+              collections: onEbay,
+              ...(cardNames ? { cardNames } : {}),
+            }),
+            ids
+          ),
         ]
       : [];
-  return checkAdapters([...perCollection, ...ebayAdapters]);
+  return checkAdapters([...perCollection, ...blueOceanAdapters, ...ebayAdapters]);
 }

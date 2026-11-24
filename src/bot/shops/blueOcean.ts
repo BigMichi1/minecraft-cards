@@ -251,7 +251,19 @@ export function createBlueOceanFetcher(
       if (byUrl.size === 0) {
         throw new ShopLayoutError('blue-ocean: no card listings found on any page');
       }
-      return { listings: [...byUrl.values()], skippedNoId, skippedExcluded, skippedInvalid };
+      // A collection without a card in the whole walk is a layout change there (a new URL
+      // form), not every card sold: the runner leaves its stored listings alone.
+      const listings = [...byUrl.values()];
+      const emptyCollections = collections
+        .filter((c) => !listings.some((l) => l.collection === c.id))
+        .map((c) => c.id);
+      return {
+        listings,
+        skippedNoId,
+        skippedExcluded,
+        skippedInvalid,
+        ...(emptyCollections.length > 0 ? { emptyCollections } : {}),
+      };
     },
   };
 }

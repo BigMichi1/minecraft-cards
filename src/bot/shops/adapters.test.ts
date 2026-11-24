@@ -25,8 +25,8 @@ describe('createShopAdapters', () => {
       'collect-it:lego-minecraft-1',
       'sammel-ente:lego-minecraft-2',
       'sammel-ente:lego-minecraft-3',
-      'blue-ocean:lego-minecraft-3',
       'collect-it:lego-minecraft-3',
+      'blue-ocean:lego-minecraft-3',
     ]);
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(true);
   });
@@ -44,8 +44,31 @@ describe('createShopAdapters', () => {
       'lego-minecraft-2',
       'lego-minecraft-3',
     ]);
-    expect(enabledShopsOf(value).get('lego-minecraft-2')).toEqual(['sammel-ente', 'ebay']);
+    expect(enabledShopsOf(value).get('lego-minecraft-2')).toEqual([
+      'sammel-ente',
+      'blue-ocean',
+      'ebay',
+    ]);
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(false);
+  });
+
+  test('one blue-ocean adapter covers every collection; without series 3 the first one files the counts', () => {
+    const value = withWarnings(() => createShopAdapters(null)).value;
+    const blue = value.filter((a) => a.id === 'blue-ocean');
+    expect(blue).toHaveLength(1);
+    expect(blue[0]!.collection).toBe('lego-minecraft-3');
+    expect(blue[0]!.collections).toEqual([
+      'lego-minecraft-1',
+      'lego-minecraft-2',
+      'lego-minecraft-3',
+    ]);
+    const [only] = createShopAdapters(null, undefined, {
+      collections: [
+        { ...legoMinecraft1, shops: { 'blue-ocean': legoMinecraft1.shops['blue-ocean']! } },
+      ],
+    });
+    expect(only).toMatchObject({ id: 'blue-ocean', collection: 'lego-minecraft-1' });
+    expect(only!.collections).toEqual(['lego-minecraft-1']);
   });
 
   test('a second adapter of one shop and collection is refused', () => {
@@ -155,9 +178,9 @@ describe('createShopAdapters', () => {
 
   test('enabledShopsOf lists the shops checked per collection', () => {
     const enabled = enabledShopsOf(withWarnings(() => createShopAdapters(null)).value);
-    expect(enabled.get('lego-minecraft-1')).toEqual(['sammel-ente', 'collect-it']);
-    expect(enabled.get('lego-minecraft-2')).toEqual(['sammel-ente']);
-    expect(enabled.get('lego-minecraft-3')).toEqual(['sammel-ente', 'blue-ocean', 'collect-it']);
+    expect(enabled.get('lego-minecraft-1')).toEqual(['sammel-ente', 'collect-it', 'blue-ocean']);
+    expect(enabled.get('lego-minecraft-2')).toEqual(['sammel-ente', 'blue-ocean']);
+    expect(enabled.get('lego-minecraft-3')).toEqual(['sammel-ente', 'collect-it', 'blue-ocean']);
   });
 
   test('collect-it is paced across collections, and two shops do not pace each other', async () => {

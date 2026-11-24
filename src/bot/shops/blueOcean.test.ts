@@ -248,6 +248,16 @@ describe('parseBlueOceanPage across collections', () => {
     }
   });
 
+  test('a box without a link is counted invalid, one without a price has none', () => {
+    const noLink = box('', 'Nummer 012 I Steve', 'x.jpg').replace(' href=""', '');
+    expect(parseBlueOceanPage(noLink)).toMatchObject({ listings: [], skippedInvalid: 1 });
+    const noPrice = box(`${S2}/nummer-012-i-steve`, 'Nummer 012 I Steve', 'x.jpg').replace(
+      ' aria-label="Preis: 0.8"',
+      ' aria-label="Preis auf Anfrage"'
+    );
+    expect(parseBlueOceanPage(noPrice).listings[0]?.price).toBeNull();
+  });
+
   test('a pack in a series category is no card and not counted', () => {
     const parsed = parseBlueOceanPage(
       box(`${S1}/lego-minecraft-tcc-1-display`, 'LEGO Minecraft TCC 1 - Display', 'x.jpg')
@@ -319,6 +329,51 @@ describe('createBlueOceanFetcher', () => {
     expect(result.listings).toHaveLength(19);
     expect(result.listings.every((l) => l.collection === 'lego-minecraft-3')).toBe(true);
     expect(result).toMatchObject({ skippedNoId: 0, skippedExcluded: 0, skippedInvalid: 0 });
+  });
+
+  test('one walk serves every collection', async () => {
+    const { fetchFn } = fakeFetch({
+      '?p=1': readFixture('blue-ocean-tcc-p2.html'),
+      '?p=2': readFixture('blue-ocean-tcc-p31.html'),
+      '?p=3': readFixture('blue-ocean-p1.html'),
+      '?p=4': readFixture('blue-ocean-p99.html'),
+    });
+    const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
+    const count = (c: string) => result.listings.filter((l) => l.collection === c).length;
+    expect([
+      count('lego-minecraft-1'),
+      count('lego-minecraft-2'),
+      count('lego-minecraft-3'),
+    ]).toEqual([14, 13, 19]);
+    expect(result.emptyCollections).toBeUndefined();
+  });
+
+  test('a walk without series 2 cards reports it in emptyCollections', async () => {
+    const { fetchFn } = fakeFetch({
+      '?p=1': readFixture('blue-ocean-p1.html'),
+      '?p=2': readFixture('blue-ocean-p99.html'),
+    });
+    const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
+    expect(result.listings).toHaveLength(19);
+    expect(result.emptyCollections).toEqual(['lego-minecraft-1', 'lego-minecraft-2']);
+  });
+
+  test('a failing page request rejects the walk', async () => {
+    const { fetchFn } = fakeFetch({});
+    await expect(createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings()).rejects.toThrow();
+  });
+
+  test('a walk without any card is a layout error', async () => {
+    const { fetchFn } = fakeFetch({
+      '?p=1': readFixture('blue-ocean-tcc-p2.html'),
+      '?p=2': readFixture('blue-ocean-p99.html'),
+    });
+    const s3 = BLUE_OCEAN_COLLECTIONS.filter((c) => c.id === 'lego-minecraft-3');
+    const error = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }, s3)
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toContain('no card listings found on any page');
   });
 
   test('a bot wall on a later page rejects instead of ending pagination', async () => {

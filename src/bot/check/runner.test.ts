@@ -373,7 +373,7 @@ describe('runCheck', () => {
       const s = await runCheck(
         depsWith([
           shared([item('3', 'lego-minecraft-3')], {
-            emptySearches: ['lego-minecraft-1'],
+            emptyCollections: ['lego-minecraft-1'],
             skippedNoId: 2,
           }),
         ])
@@ -387,6 +387,51 @@ describe('runCheck', () => {
       expect(s.shops.ebay?.error).toBeUndefined();
       expect(s.shops.ebay).toMatchObject({ skippedNoId: 2 });
       expect(runManager.lastAlertAt('shop-error:ebay:lego-minecraft-1')).toBeDefined();
+    });
+
+    test("a shared blue-ocean walk stores each collection and keeps an empty one's listings", async () => {
+      const card = (n: string, collection: CollectionId): Listing => ({
+        ...blue12,
+        url: `https://www.blue-ocean.de/p/${collection}/${n}`,
+        collection,
+      });
+      const walk = (
+        items: Listing[] | Error,
+        more: Omit<FetchResult, 'listings'> = {}
+      ): ShopAdapter => ({
+        id: 'blue-ocean',
+        collection: 'lego-minecraft-3',
+        collections: ['lego-minecraft-1', 'lego-minecraft-2', 'lego-minecraft-3'],
+        fetchListings: async () => {
+          if (items instanceof Error) throw items;
+          return { listings: items, ...more };
+        },
+      });
+      const s1 = card('1', 'lego-minecraft-1');
+      const s2 = card('2', 'lego-minecraft-2');
+      const s3 = card('3', 'lego-minecraft-3');
+      await runCheck(depsWith([walk([s1, s2, s3])]));
+      expect(listingManager.getByUrl(s1.url)).toMatchObject({ collection: 'lego-minecraft-1' });
+      expect(listingManager.getByUrl(s2.url)).toMatchObject({ collection: 'lego-minecraft-2' });
+      expect(listingManager.getByUrl(s3.url)).toMatchObject({ collection: 'lego-minecraft-3' });
+
+      clock += 60 * 60 * 1000;
+      const s = await runCheck(
+        depsWith([walk([s1, s3], { emptyCollections: ['lego-minecraft-2'], skippedExcluded: 1 })])
+      );
+      expect(listingManager.getByUrl(s2.url)!.available).toBe(true);
+      expect(listingManager.getByUrl(s1.url)!.lastSeenAt).toBe(clock);
+      expect(s.collections?.['lego-minecraft-2']?.['blue-ocean']).toEqual({
+        listings: 0,
+        error: 'no card of LEGO Minecraft Serie 2 "TNT Boom-Bastic" on any page',
+      });
+      expect(s.shops['blue-ocean']).toEqual({ listings: 1, skippedExcluded: 1 });
+      expect(runManager.lastAlertAt('shop-error:blue-ocean:lego-minecraft-2')).toBeDefined();
+
+      clock += 60 * 60 * 1000;
+      await runCheck(depsWith([walk(new ShopLayoutError('page 2 is not a category page'))]));
+      expect(runManager.lastAlertAt('shop-error:blue-ocean')).toBeDefined();
+      expect(listingManager.getByUrl(s1.url)!.available).toBe(true);
     });
 
     test('an admin-mapped listing in a collection the run does not cover is left alone, with no foreign alert', async () => {
@@ -486,7 +531,7 @@ describe('runCheck', () => {
       const s = await runCheck(
         depsWith([
           shared([item('1', 'lego-minecraft-1')], {
-            emptySearches: ['lego-minecraft-3'],
+            emptyCollections: ['lego-minecraft-3'],
             skippedNoId: 4,
             truncated: ['q (cut)'],
           }),

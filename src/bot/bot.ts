@@ -31,6 +31,7 @@ import {
 import { createDiscordSender } from './notify/sender';
 import { createShopAdapters } from './shops/adapters';
 import { syncCatalogs } from './catalog/sync';
+import { handleCatalogRemove } from './interactions/catalogRemove';
 import { errorMessage } from './utils/async';
 import { replyWithError } from './utils/interactionReply';
 import logger, { logError } from './utils/logger';
@@ -120,7 +121,12 @@ stopScheduler = () => scheduler.stop();
 const commands: Record<string, ChatCommand> = {
   [adminCommand.data.name]: {
     execute: (i) =>
-      adminCommand.execute(i, { adminId: config.botAdminId, trigger: () => scheduler.trigger() }),
+      adminCommand.execute(i, {
+        adminId: config.botAdminId,
+        trigger: () => scheduler.trigger(),
+        syncCatalog: (collection) =>
+          syncCatalogs({ now: Date.now, alert: runAlert, only: collection, force: true }),
+      }),
   },
   [helpCommand.data.name]: helpCommand,
   [missingCommand.data.name]: { execute: (i) => missingCommand.execute(i, { enabledShops }) },
@@ -186,6 +192,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
         'admin-dismiss': () => handleAdminDismiss(interaction, { adminId: config.botAdminId }),
         // No store argument: the module-level store is the one /admin catalog import fills.
         catalog: () => handleCatalogButton(interaction, { adminId: config.botAdminId }),
+        // No store argument: the module-level store is the one /admin catalog remove fills.
+        'catalog-remove': () => handleCatalogRemove(interaction, { adminId: config.botAdminId }),
         stock: () => stockCommand.handleStockButton(interaction, { enabledShops }),
       });
     } else if (interaction.isModalSubmit() && isReportModal(interaction.customId)) {

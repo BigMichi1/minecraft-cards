@@ -94,6 +94,7 @@ const fakeAdmin = (group: string | undefined, sub: string, opts?: Record<string,
 const lastReply = () => replies[replies.length - 1]!;
 
 let ctx: AdminContext;
+let syncCalls: string[] = [];
 
 describe('/admin', () => {
   beforeAll(() => {
@@ -117,7 +118,21 @@ describe('/admin', () => {
       db.delete(t).run();
     }
     catalogManager.seedIfEmpty();
-    ctx = { adminId: 'admin', trigger: async () => summary };
+    syncCalls = [];
+    ctx = {
+      adminId: 'admin',
+      trigger: async () => summary,
+      syncCatalog: async (collection) => {
+        syncCalls.push(collection);
+        return [
+          {
+            collection,
+            ok: true,
+            result: { added: ids('LE23'), renamed: [], vanished: [], nowListed: [] },
+          },
+        ];
+      },
+    };
   });
 
   test('declares map, clear, status, run and the catalog import group', () => {
@@ -392,6 +407,109 @@ describe('/admin', () => {
     ).toBe(
       'ebay: 1 listings\nPictures: 3 decided · not counted: 5 undecided, 1 puzzle, 2 incomplete reference set\nNotified: 4 · DM failures: 1'
     );
+  });
+
+  describe('catalog sync and manual cards', () => {
+    const catalogSub = (name: string) =>
+      (
+        (data.toJSON().options as unknown as { name: string; options: unknown[] }[]).find(
+          (o) => o.name === 'catalog'
+        )!.options as { name: string; options: { name: string; required?: boolean }[] }[]
+      ).find((o) => o.name === name)!;
+
+    test('each subcommand takes the collection first, then its options', () => {
+      const shape = (name: string) =>
+        catalogSub(name).options.map((o) => [o.name, o.required ?? false]);
+      expect(shape('sync')).toEqual([['collection', true]]);
+      expect(shape('add')).toEqual([
+        ['collection', true],
+        ['card', true],
+        ['name', true],
+        ['picture', false],
+      ]);
+      expect(shape('edit')).toEqual([
+        ['collection', true],
+        ['card', true],
+        ['name', false],
+        ['picture', false],
+      ]);
+      expect(shape('remove')).toEqual([
+        ['collection', true],
+        ['card', true],
+      ]);
+      expect(shape('release')).toEqual([
+        ['collection', true],
+        ['card', true],
+      ]);
+    });
+
+    test('sync defers and replies with the outcome', async () => {
+      await adminExecute(fakeAdmin('catalog', 'sync'), ctx);
+      expect(syncCalls).toEqual(['lego-minecraft-3']);
+      expect(deferred).toBe(1);
+      expect(lastReply().content).toBe(
+        'LEGO Minecraft Serie 3 "On Fire": 1 added, 0 renamed, 0 vanished, 0 manual now listed'
+      );
+    });
+
+    test('add stores a manual card and names refusals', async () => {
+      const add = (opts: Record<string, string>) =>
+        adminExecute(fakeAdmin('catalog', 'add', opts), ctx);
+      await add({ card: 'LE23', name: 'Extra', picture: 'https://m/le23.jpg' });
+      expect(lastReply().content).toBe(
+        'Added #LE23 Extra to LEGO Minecraft Serie 3 "On Fire" (manual).'
+      );
+      expect(catalogManager.getCard('lego-minecraft-3', cid('LE23'))).toMatchObject({
+        source: 'manual',
+        referenceImageUrl: 'https://m/le23.jpg',
+      });
+      await add({ card: '12', name: 'X' });
+      expect(lastReply().content).toBe('#12 is already in LEGO Minecraft Serie 3 "On Fire".');
+      await add({ card: 'nope', name: 'X' });
+      expect(lastReply().content).toBe('Not a card number: nope');
+      await add({ card: 'LE24', name: 'X', picture: 'not a url' });
+      expect(lastReply().content).toBe('Not a valid picture URL.');
+      expect(catalogManager.getCard('lego-minecraft-3', cid('LE24'))).toBeUndefined();
+    });
+
+    test('edit and release change manual cards only', async () => {
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 1);
+      await adminExecute(fakeAdmin('catalog', 'edit', { card: '229' }), ctx);
+      expect(lastReply().content).toBe('Nothing to change: give name or picture.');
+      await adminExecute(fakeAdmin('catalog', 'edit', { card: '229', name: 'Better' }), ctx);
+      expect(lastReply().content).toBe('#229 now: Better.');
+      await adminExecute(fakeAdmin('catalog', 'edit', { card: '12', name: 'X' }), ctx);
+      expect(lastReply().content).toBe(
+        '#12 comes from laststicker; only manual cards can be changed here.'
+      );
+      await adminExecute(fakeAdmin('catalog', 'edit', { card: '999', name: 'X' }), ctx);
+      expect(lastReply().content).toBe('No card #999 in LEGO Minecraft Serie 3 "On Fire".');
+      await adminExecute(fakeAdmin('catalog', 'release', { card: '229' }), ctx);
+      expect(lastReply().content).toBe('#229 now follows laststicker from the next sync.');
+      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))?.source).toBe('laststicker');
+    });
+
+    test('remove asks first, naming how many users have the card', async () => {
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 1);
+      userManager.setList('u1', 'lego-minecraft-3', '229');
+      userManager.setList('u2', 'lego-minecraft-3', '229');
+      await adminExecute(fakeAdmin('catalog', 'remove', { card: '229' }), ctx);
+      expect(lastReply().content).toBe(
+        'Remove manual card #229 Extra? 2 user(s) have it on their missing list.'
+      );
+      expect(lastReply().components).toHaveLength(1);
+      expect(catalogManager.getCard('lego-minecraft-3', cid('229'))).toBeDefined();
+      await adminExecute(fakeAdmin('catalog', 'remove', { card: '12' }), ctx);
+      expect(lastReply().content).toBe(
+        '#12 comes from laststicker; only manual cards can be changed here.'
+      );
+    });
+
+    test('an unknown collection is refused before anything runs', async () => {
+      await adminExecute(fakeAdmin('catalog', 'sync', { collection: 'x' }), ctx);
+      expect(syncCalls).toEqual([]);
+      expect(lastReply().content).toBe(UNKNOWN_COLLECTION);
+    });
   });
 
   describe('catalog import', () => {

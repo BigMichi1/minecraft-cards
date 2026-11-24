@@ -6,12 +6,15 @@ import {
   PermissionFlagsBits,
   SlashCommandBuilder,
 } from 'discord.js';
-import type { ChatInputCommandInteraction } from 'discord.js';
-import { formatCardList } from '../cards/cardId';
+import type { ChatInputCommandInteraction, SlashCommandStringOption } from 'discord.js';
+import { formatCardList, normalizeCardId } from '../cards/cardId';
+import { formatSyncOutcome, type SyncOutcome } from '../catalog/sync';
+import { manualRefusal, removeRow, removeStore } from '../interactions/catalogRemove';
+import { validUrl } from '../notify/messages';
 import { parseChecklist } from '../cards/starterCatalog';
 import type { PictureCounts, RunSummary } from '../check/runner';
 import { PICTURE_REJECTIONS, type PictureRejection } from '../matcher/matchStatus';
-import { catalogManager, parseKnownCardList } from '../database/catalogManager';
+import { catalogManager, parseKnownCardList, type ManualResult } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import type { AdminDeps } from '../interactions/adminActions';
@@ -19,7 +22,7 @@ import { buildPreviewText, importStore } from '../interactions/catalogImport';
 import { errorMessage } from '../utils/async';
 import { ephemeral, replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
-import { DISCORD_MESSAGE_LIMIT, joinWithinLimit } from '../utils/messageLimit';
+import { DISCORD_MESSAGE_LIMIT, clipText, joinWithinLimit } from '../utils/messageLimit';
 import type { CollectionId } from '../collections/ids';
 import { collectionName } from '../collections/index';
 import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
@@ -28,7 +31,24 @@ const LIST_OPTION_MAX_LENGTH = 6000;
 
 export interface AdminContext extends AdminDeps {
   trigger: () => Promise<RunSummary | 'busy' | 'stopping'>;
+  /** Sync the collection's catalog from laststicker now (`/admin catalog sync`). */
+  syncCatalog: (collection: CollectionId) => Promise<SyncOutcome[]>;
 }
+
+/** `#XXL123` with room to spare; a card id is never longer. */
+const CARD_MAX_LENGTH = 10;
+const NAME_MAX_LENGTH = 100;
+
+const cardOption = (o: SlashCommandStringOption, required = true) =>
+  o
+    .setName('card')
+    .setDescription('Card number, e.g. 135 or LE8')
+    .setRequired(required)
+    .setMaxLength(CARD_MAX_LENGTH);
+const nameOption = (o: SlashCommandStringOption, required: boolean) =>
+  o.setName('name').setDescription('Card name').setRequired(required).setMaxLength(NAME_MAX_LENGTH);
+const pictureOption = (o: SlashCommandStringOption) =>
+  o.setName('picture').setDescription('Reference picture URL');
 
 export const data = new SlashCommandBuilder()
   .setName('admin')
@@ -72,7 +92,148 @@ export const data = new SlashCommandBuilder()
               .setMaxLength(LIST_OPTION_MAX_LENGTH)
           )
       )
+      .addSubcommand((sub) =>
+        sub
+          .setName('sync')
+          .setDescription('Sync the catalog from laststicker now')
+          .addStringOption(collectionOption)
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName('add')
+          .setDescription('Add a card laststicker lacks')
+          .addStringOption(collectionOption)
+          .addStringOption((o) => cardOption(o))
+          .addStringOption((o) => nameOption(o, true))
+          .addStringOption(pictureOption)
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName('edit')
+          .setDescription('Change a manual card')
+          .addStringOption(collectionOption)
+          .addStringOption((o) => cardOption(o))
+          .addStringOption((o) => nameOption(o, false))
+          .addStringOption(pictureOption)
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName('remove')
+          .setDescription('Remove a manual card (asks first)')
+          .addStringOption(collectionOption)
+          .addStringOption((o) => cardOption(o))
+      )
+      .addSubcommand((sub) =>
+        sub
+          .setName('release')
+          .setDescription('Hand a manual card to laststicker')
+          .addStringOption(collectionOption)
+          .addStringOption((o) => cardOption(o))
+      )
   );
+
+/** A picture option: its URL when valid, `null` when not given, `false` when invalid. */
+function readPicture(interaction: ChatInputCommandInteraction): string | null | false {
+  const raw = interaction.options.getString('picture');
+  if (raw === null) return null;
+  return validUrl(raw.trim()) ?? false;
+}
+
+/** `/admin catalog sync|add|edit|remove|release` for one collection. */
+async function catalogCardCommand(
+  interaction: ChatInputCommandInteraction,
+  sub: string,
+  collection: CollectionId,
+  ctx: AdminContext
+): Promise<void> {
+  const inCollection = collectionName(collection);
+  if (sub === 'sync') {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    const outcomes = await ctx.syncCatalog(collection);
+    await interaction.editReply({
+      content: clipText(outcomes.map(formatSyncOutcome).join('\n') || 'Nothing to sync.'),
+    });
+    return;
+  }
+  const token = interaction.options.getString('card', true).trim();
+  const cardId = normalizeCardId(token);
+  if (!cardId) {
+    await interaction.reply(ephemeral(clipText(`Not a card number: ${token}`, 200)));
+    return;
+  }
+  const now = Date.now();
+  const refused = (result: Exclude<ManualResult, { ok: true }>) =>
+    interaction.reply(ephemeral(manualRefusal(result, cardId, inCollection)));
+  switch (sub) {
+    case 'add': {
+      const name = interaction.options.getString('name', true).trim();
+      const picture = readPicture(interaction);
+      if (picture === false) {
+        await interaction.reply(ephemeral('Not a valid picture URL.'));
+        return;
+      }
+      const result = catalogManager.addManual(collection, cardId, name, picture, now);
+      await interaction.reply(
+        ephemeral(
+          result.ok
+            ? `Added #${cardId} ${name} to ${inCollection} (manual).`
+            : `#${cardId} is already in ${inCollection}.`
+        )
+      );
+      return;
+    }
+    case 'edit': {
+      const name = interaction.options.getString('name')?.trim();
+      const picture = readPicture(interaction);
+      if (picture === false) {
+        await interaction.reply(ephemeral('Not a valid picture URL.'));
+        return;
+      }
+      if (!name && picture === null) {
+        await interaction.reply(ephemeral('Nothing to change: give name or picture.'));
+        return;
+      }
+      const result = catalogManager.editManual(
+        collection,
+        cardId,
+        { ...(name ? { name } : {}), ...(picture ? { pictureUrl: picture } : {}) },
+        now
+      );
+      if (!result.ok) {
+        await refused(result);
+        return;
+      }
+      const card = catalogManager.getCard(collection, cardId);
+      await interaction.reply(ephemeral(`#${cardId} now: ${card?.name ?? '(no name)'}.`));
+      return;
+    }
+    case 'remove': {
+      const card = catalogManager.getCard(collection, cardId);
+      if (!card || card.source !== 'manual') {
+        await refused({ ok: false, reason: card ? 'not_manual' : 'unknown' });
+        return;
+      }
+      const users = catalogManager.wantedCount(collection, cardId);
+      await interaction.reply({
+        content: `Remove manual card #${cardId}${card.name ? ` ${card.name}` : ''}? ${users} user(s) have it on their missing list.`,
+        components: [removeRow(removeStore.put(collection, cardId))],
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    case 'release': {
+      const result = catalogManager.releaseManual(collection, cardId, now);
+      if (!result.ok) {
+        await refused(result);
+        return;
+      }
+      await interaction.reply(ephemeral(`#${cardId} now follows laststicker from the next sync.`));
+      return;
+    }
+    default:
+      throw new Error(`Unknown /admin catalog subcommand: ${sub}`);
+  }
+}
 
 const REJECTION_TEXT: Record<PictureRejection, string> = {
   undecided: 'undecided',
@@ -206,10 +367,11 @@ export async function execute(
   try {
     const group = interaction.options.getSubcommandGroup(false);
     const sub = interaction.options.getSubcommand();
-    if (group === 'catalog' && sub === 'import') {
+    if (group === 'catalog') {
       const collection = readCollection(interaction);
       if (!collection) await interaction.reply(ephemeral(UNKNOWN_COLLECTION));
-      else await importCatalog(interaction, collection);
+      else if (sub === 'import') await importCatalog(interaction, collection);
+      else await catalogCardCommand(interaction, sub, collection, ctx);
       return;
     }
     switch (sub) {

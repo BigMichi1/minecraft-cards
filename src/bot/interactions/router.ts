@@ -9,6 +9,8 @@ const BUTTON_PREFIXES = [
   [DISMISS_PREFIX, 'admin-dismiss'],
   ['catalog-save:', 'catalog'],
   ['catalog-cancel:', 'catalog'],
+  ['catalog-remove:', 'catalog-remove'],
+  ['catalog-keep:', 'catalog-remove'],
   // The /stock paging buttons; handleStockButton validates the rest of the id.
   ['stock:', 'stock'],
 ] as const;

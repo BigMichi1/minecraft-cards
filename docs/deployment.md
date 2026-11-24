@@ -82,3 +82,9 @@ collection laststicker cannot serve (it never removes manual cards, and a synced
 next sync brings laststicker's cards back). Run
 `/admin run` to check the shops once, and `/admin status` to see the last run and the
 listings on hold after a report.
+
+Series 1 and 2 have no starter catalog: their cards arrive with their first laststicker sync
+(the first check run, or `/admin catalog sync` now), and `/missing set` for them refuses every
+card until then. sammel-ente sells two series 2 cards laststicker lacks (LE21 "Chicken Jockey",
+LE22 "Enderman"); add them with `/admin catalog add collection:lego-minecraft-2` if they are
+wanted.

@@ -10,7 +10,9 @@
  * the bot's rules 1 to 5 input) and the decided / right / wrong counts are printed, and every pair
  * of references (fallbacks included) at least TWIN_SIMILARITY alike.
  *
- * Usage: ./bin/mise run measure:laststicker
+ * Usage: ./bin/mise run measure:laststicker [-- --collection lego-minecraft-1]
+ *   --collection  the collection (default lego-minecraft-3): its set, its sammel-ente and
+ *                 collect-it categories, eBay for series 3 only
  *
  * Scans are downloaded at most one per 1500 ms (laststicker's pacing); a scan that cannot be
  * loaded (404: no scan) is listed, and sammel-ente's picture of that card stands in
@@ -34,12 +36,21 @@ const { createSammelEnteFetcher } = await import('../src/bot/shops/sammelEnte');
 const { createCollectItFetcher } = await import('../src/bot/shops/collectIt');
 const { createEbayFetcher } = await import('../src/bot/shops/ebay');
 const { sleep } = await import('../src/bot/utils/async');
-const { legoMinecraft3 } = await import('../src/bot/collections/legoMinecraft3');
 type Listing = import('../src/bot/shops/types').Listing;
 type ReferenceVector = import('../src/bot/matcher/identify').ReferenceVector;
 type CardId = import('../src/bot/cards/cardId').CardId;
 
-const SET = 'blue_ocean_lego_minecraft_on_fire';
+const { collectionById } = await import('../src/bot/collections/index');
+type CollectionId = import('../src/bot/collections/ids').CollectionId;
+const argAt = process.argv.indexOf('--collection');
+const definition = collectionById(
+  (argAt === -1 ? 'lego-minecraft-3' : process.argv[argAt + 1]) as CollectionId
+);
+if (!definition?.laststicker) {
+  console.error(`no collection with a laststicker set: ${process.argv[argAt + 1]}`);
+  process.exit(1);
+}
+const { set: SET, ...setOptions } = definition.laststicker;
 const SCAN_DELAY_MS = 1500;
 const threshold = DEFAULT_IMAGE_MATCH_THRESHOLD;
 const cacheDir = process.env.MODEL_CACHE_DIR || path.join(process.cwd(), 'models');
@@ -82,35 +93,40 @@ function picturesById(listings: readonly Listing[]): Map<CardId, string> {
   return map;
 }
 
-const { rows } = await fetchLaststickerSet(SET);
+const { rows } = await fetchLaststickerSet(SET, setOptions);
 const names = new Map<CardId, string>(rows.map((r) => [r.cardId, r.name]));
 const puzzle = new Set(
-  rows.filter((r) => r.puzzle || r.kind === 'Puzzlekarten').map((r) => r.cardId)
+  rows.filter((r) => r.puzzle || /^Puzzlekarte/.test(r.kind)).map((r) => r.cardId)
 );
-console.log(`laststicker ${SET}: ${rows.length} cards, ${puzzle.size} puzzle cards`);
+console.log(
+  `${definition.id} laststicker ${SET}: ${rows.length} cards, ${puzzle.size} puzzle cards, known twins ${JSON.stringify(definition.knownTwins ?? [])}`
+);
 
 /** Each shop is read once, also when its pictures are fallback references too. */
 const once = <T>(load: () => Promise<T>): (() => Promise<T>) => {
   let p: Promise<T> | undefined;
   return () => (p ??= load());
 };
-const shops: { name: string; load: () => Promise<readonly Listing[]> }[] = [
-  {
-    name: 'sammel-ente',
-    load: once(
-      async () =>
-        (await createSammelEnteFetcher(legoMinecraft3.shops['sammel-ente']!).fetchListings())
-          .listings
-    ),
-  },
-  {
+const shops: { name: string; load: () => Promise<readonly Listing[]> }[] = [];
+const enteSettings = definition.shops['sammel-ente'];
+const collectSettings = definition.shops['collect-it'];
+const empty = async (): Promise<readonly Listing[]> => [];
+shops.push({
+  name: 'sammel-ente',
+  load: enteSettings
+    ? once(async () => (await createSammelEnteFetcher(enteSettings).fetchListings()).listings)
+    : empty,
+});
+if (collectSettings) {
+  shops.push({
     name: 'collect-it',
-    load: async () =>
-      (await createCollectItFetcher(legoMinecraft3.shops['collect-it']!).fetchListings()).listings,
-  },
-];
+    load: async () => (await createCollectItFetcher(collectSettings).fetchListings()).listings,
+  });
+}
 const { EBAY_CLIENT_ID, EBAY_CLIENT_SECRET } = process.env;
-if (EBAY_CLIENT_ID && EBAY_CLIENT_SECRET) {
+if (!definition.shops.ebay) {
+  console.log(`eBay skipped: not read for ${definition.id} yet`);
+} else if (EBAY_CLIENT_ID && EBAY_CLIENT_SECRET) {
   shops.push({
     name: 'ebay',
     load: async () =>

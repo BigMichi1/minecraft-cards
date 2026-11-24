@@ -13,6 +13,23 @@ changes or a new one is suggested.
 | [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                |
 | eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. Four searches, every page by `offset`. Card ids from series 3 titles only (details below). |
 
+## Per collection (2026-11-24)
+
+| Collection         | sammel-ente                                                                        | collect-it                                                                                                                                | blue-ocean      | eBay         |
+| ------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------- | ------------ |
+| `lego-minecraft-1` | [`/Minecraft/Serie-1/`](https://shop-sammel-ente.de/Minecraft/Serie-1/) (13 pages) | [`/sammelwelt/…/serie1/Einzelkarten`](https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten) (256 singles) | not yet (PR 3c) | not yet (3b) |
+| `lego-minecraft-2` | [`/Minecraft/Serie-2/`](https://shop-sammel-ente.de/Minecraft/Serie-2/) (13 pages) | none (no single-card category)                                                                                                            | not yet (PR 3c) | not yet (3b) |
+| `lego-minecraft-3` | as below                                                                           | as below                                                                                                                                  | as below        | as below     |
+
+- sammel-ente's titles name the series (`LEGO Minecraft Serie 1 | #001 Steve`, `#LE008`,
+  `#XXL001`); one parser reads all three categories. Series 2 also sells LE21 and LE22, which
+  laststicker lacks (manual cards).
+- collect-it's series 1 titles end with `- Serie 1` (`1 - Steve - Skin Karte - Serie 1`); an item
+  ending with another series label is skipped and counted. `XXL 1 - …` (with a space) reads as
+  XXL1.
+- blue-ocean sells series 1 and 2 singles in its TCC categories (`Nummer 250 I Schildkröte I LEGO
+Minecraft TCC 1`, the product number in the URL), which need their own parser (PR 3c).
+
 ## eBay details
 
 Checked against a live probe of 2026-11-18 (234 unique items over six queries; 38 of them, without

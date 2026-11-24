@@ -826,7 +826,8 @@ describe('runCheck', () => {
       const matchWarnings = () =>
         warn.mock.calls.filter((c: unknown[]) => String(c[0]).includes('image match'));
       expect(matchWarnings()).toHaveLength(1);
-      expect(String(matchWarnings()[0]![0])).toContain('(model_unavailable) for 3 listings');
+      // The three sammel-ente listings are compared too.
+      expect(String(matchWarnings()[0]![0])).toContain('(model_unavailable) for 6 listings');
       expect(listingManager.getByUrl(candidate(13).url)!.matchStatus).toBe('model_unavailable');
     });
 

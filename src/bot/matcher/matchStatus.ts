@@ -2,9 +2,9 @@ import type { CardId } from '../cards/cardId';
 
 /**
  * How far a listing's card numbers are backed by its picture.
- * - `reference`: sammel-ente, whose pictures are the references.
- * - `pending`: not compared yet: a new single-card listing of a shop other than sammel-ente, or
- *   one whose picture, cards or id conflict changed (several cards make it a `bundle`).
+ * - `pending`: not compared yet: a new single-card listing (of any shop, sammel-ente included),
+ *   one whose picture, cards or id conflict changed (several cards make it a `bundle`), or one
+ *   the reference switch reset (migration 0008).
  * - `confirmed`: picture matches the reference, or the admin mapped it (`similarity` null); for
  *   an eBay listing whose title names no card, the picture decided its card (`idSource`
  *   `picture`).
@@ -19,7 +19,6 @@ import type { CardId } from '../cards/cardId';
  * - `bundle`: several cards in one listing, not compared.
  */
 export const MATCH_STATUSES = [
-  'reference',
   'pending',
   'confirmed',
   'unconfirmed',

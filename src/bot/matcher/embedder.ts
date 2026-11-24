@@ -487,7 +487,7 @@ function retryStatus(set: ReferenceSet): Unavailable | null {
  *    conditions as rule 2), `confirmed`, or `unconfirmed` without a card.
  * A result other than `confirmed` while references failed to load is `image_unavailable` or
  * `model_unavailable` instead, so the listing is compared again with the full set.
- * sammel-ente is the reference shop; listings of several cards are bundles and not compared.
+ * Listings of several cards are bundles and not compared.
  * No model loaded, or a ModelError, yields `model_unavailable`; a picture that cannot be
  * loaded (ImageUnavailableError: network, host, redirect, HTTP, size, decoding) yields
  * `image_unavailable`. Both are reported through `onUnavailable`. Any other error (the
@@ -505,12 +505,11 @@ export async function matchListing(
     else logger.warn(`image match unavailable (${status}) for ${listing.url}: ${reason}`);
     return { status, similarity: null, picture: null };
   };
-  const plain = (status: 'reference' | 'bundle' | 'no_reference' | 'unconfirmed'): MatchResult => ({
+  const plain = (status: 'bundle' | 'no_reference' | 'unconfirmed'): MatchResult => ({
     status,
     similarity: null,
     picture: null,
   });
-  if (listing.shop === 'sammel-ente') return plain('reference');
   if (listing.cardIds.length > 1) return plain('bundle');
   const [titleCard] = listing.cardIds;
   // A title naming no card leaves the picture alone to decide (rule 4).

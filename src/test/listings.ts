@@ -32,7 +32,8 @@ export function storedListing(
     available: true,
     availableSince: T,
     cardIds: cards,
-    matchStatus: 'reference',
+    // Backed by its picture, as a sammel-ente listing was before step 2.
+    matchStatus: 'confirmed',
     similarity: null,
     matchCheckedAt: null,
     idConflict: false,

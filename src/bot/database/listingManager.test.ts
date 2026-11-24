@@ -358,7 +358,8 @@ describe('listingManager', () => {
     listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, bundle], 1000);
     listingManager.upsertFromRun('sammel-ente', 'lego-minecraft-3', [ente], 1000);
     expect(listingManager.getByUrl(bundle.url)!.matchStatus).toBe('bundle');
-    expect(listingManager.getByUrl(ente.url)!.matchStatus).toBe('reference');
+    // sammel-ente is compared like every shop (its pictures are no references any more).
+    expect(listingManager.getByUrl(ente.url)!.matchStatus).toBe('pending');
     const l = listingManager.getByUrl(blue12.url)!;
     expect(l.matchStatus).toBe('pending');
     listingManager.setMatch(l.id, { status: 'confirmed', similarity: 0.93, picture: null }, 1500);

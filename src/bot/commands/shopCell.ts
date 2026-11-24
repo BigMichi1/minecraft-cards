@@ -81,7 +81,7 @@ export function listingState(l: StoredListing, now: number): ListingState {
  * compared, so they never count as picture-backed.
  */
 export function pictureBacked(l: StoredListing): boolean {
-  return l.matchStatus === 'reference' || l.matchStatus === 'confirmed';
+  return l.matchStatus === 'confirmed';
 }
 
 /** A listing of a shop whose latest check succeeded, but which that check did not return. */

@@ -186,12 +186,19 @@ describe('matchListing', () => {
     await expect(matchListing(blue12, 'ref12', broken, 0.85)).rejects.toThrow(/SQLITE_BUSY/);
   });
 
-  test('bundles, sammel-ente and missing references skip the comparison', async () => {
+  test('a sammel-ente listing is compared with the reference', async () => {
+    const result = await matchListing(
+      { ...blue12, shop: 'sammel-ente' },
+      'ref12',
+      fakeEmbedder({ ref12: [1, 0], [blue12.imageUrl!]: [1, 0] }),
+      0.85
+    );
+    expect(result).toMatchObject({ status: 'confirmed', similarity: 1 });
+  });
+
+  test('bundles and missing references skip the comparison', async () => {
     const counting = fakeEmbedder({});
     expect((await matchListing(bundle, 'ref12', counting, 0.85)).status).toBe('bundle');
-    expect(
-      (await matchListing({ ...blue12, shop: 'sammel-ente' }, null, counting, 0.85)).status
-    ).toBe('reference');
     expect(await matchListing(blue12, null, counting, 0.85)).toEqual({
       status: 'no_reference',
       similarity: null,

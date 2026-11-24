@@ -152,8 +152,7 @@ function load(tx: Tx, rows: ListingRow[]): StoredListing[] {
 }
 
 /** The status of a listing whose picture has not been compared (yet). */
-function defaultMatchStatus(shop: ShopId, cardIds: readonly CardId[]): MatchStatus {
-  if (shop === 'sammel-ente') return 'reference';
+function defaultMatchStatus(cardIds: readonly CardId[]): MatchStatus {
   return cardIds.length > 1 ? 'bundle' : 'pending';
 }
 
@@ -222,7 +221,7 @@ export const listingManager = {
               shop: item.shop,
               url: item.url,
               availableSince: item.available ? now : null,
-              matchStatus: defaultMatchStatus(item.shop, item.cardIds),
+              matchStatus: defaultMatchStatus(item.cardIds),
               firstSeenAt: now,
             })
             .returning({ id: listings.id })
@@ -264,7 +263,7 @@ export const listingManager = {
                 : now,
             ...(rematch
               ? {
-                  matchStatus: defaultMatchStatus(existing.shop, newCards),
+                  matchStatus: defaultMatchStatus(newCards),
                   similarity: null,
                   matchCheckedAt: null,
                   pictureCardId: null,

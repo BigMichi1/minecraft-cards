@@ -126,7 +126,7 @@ function needsMatch(l: StoredListing, now: number): boolean {
       return l.matchCheckedAt === null || now - l.matchCheckedAt >= IMAGE_RETRY_MS;
     default:
       // Exhaustive: a new status must be added to a branch above or to this list.
-      status satisfies 'reference' | 'confirmed' | 'unconfirmed' | 'bundle' | 'mismatch';
+      status satisfies 'confirmed' | 'unconfirmed' | 'bundle' | 'mismatch';
       return false;
   }
 }

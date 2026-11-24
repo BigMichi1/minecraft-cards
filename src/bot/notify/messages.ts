@@ -153,7 +153,8 @@ function buildEmbed(item: NotificationItem, marker: string, references: Referenc
 
 /**
  * Link to the listing (`#12 · sammel-ente`, `Bundle · eBay`), Kleinanzeigen search for the
- * (first) card, report button. The first button carries the item's position marker.
+ * (first) card, report button, and on an unconfirmed single card a Right button. The first
+ * button carries the item's position marker.
  */
 function buildRow(item: NotificationItem, marker: string): ActionRowBuilder<ButtonBuilder> {
   const { listing, cardIds } = item;
@@ -187,6 +188,17 @@ function buildRow(item: NotificationItem, marker: string): ActionRowBuilder<Butt
         .setLabel(label)
         .setCustomId(`report:${listing.id}`),
   });
+  // A user can vouch for an unconfirmed number; the admin then confirms it with one click.
+  if (first && !bundle && listing.matchStatus === 'unconfirmed') {
+    buttons.push({
+      label: `✅ Right #${first}`,
+      build: (label) =>
+        new ButtonBuilder()
+          .setStyle(ButtonStyle.Success)
+          .setLabel(label)
+          .setCustomId(`right:${listing.id}`),
+    });
+  }
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     buttons.map((b, i) =>
       b.build(truncate(i === 0 && marker ? `${marker} ${b.label}` : b.label, MAX_LABEL))

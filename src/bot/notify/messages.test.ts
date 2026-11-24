@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { ButtonStyle } from 'discord.js';
 import type { MessageCreateOptions } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
 import { cards } from '../database/schema/index';
@@ -325,5 +326,49 @@ describe('notification messages', () => {
     );
     const price = e.fields.find((x: { name: string }) => x.name === 'Price').value;
     expect(price).toBe('1,49 € · Buy It Now');
+  });
+
+  describe('Right button', () => {
+    const buttonsOf = (msg: MessageCreateOptions, row = 0) =>
+      (msg.components![row] as any).toJSON().components as {
+        label: string;
+        custom_id?: string;
+        style: number;
+      }[];
+
+    test('an unconfirmed single card gets a Right button after Wrong', () => {
+      const msgs = buildNotificationMessages([item(7, { matchStatus: 'unconfirmed' })]);
+      const buttons = buttonsOf(atMsg(msgs, 0));
+      expect(buttons.slice(-2).map((b) => b.custom_id)).toEqual(['report:7', 'right:7']);
+      expect(buttons.at(-1)!.label).toBe('✅ Right #12');
+      expect(buttons.at(-1)!.style).toBe(ButtonStyle.Success);
+    });
+
+    test('no Right button unless the single card is unconfirmed', () => {
+      const msgs = buildNotificationMessages([
+        item(1, { matchStatus: 'confirmed' }),
+        item(2, { matchStatus: 'pending' }),
+        item(3, { matchStatus: 'no_reference' }),
+        item(4, { matchStatus: 'unconfirmed', cardIds: [cid('12'), cid('13')] }),
+      ]);
+      for (let i = 0; i < 4; i++) {
+        expect(buttonsOf(atMsg(msgs, i)).some((b) => b.custom_id?.startsWith('right:'))).toBe(
+          false
+        );
+      }
+    });
+
+    test('batched rows stay within 5 buttons and keep the position marker', () => {
+      const msgs = buildNotificationMessages(
+        Array.from({ length: 6 }, (_, i) => item(i + 1, { matchStatus: 'unconfirmed' }))
+      );
+      const first = atMsg(msgs, 0);
+      for (let r = 0; r < first.components!.length; r++) {
+        const buttons = buttonsOf(first, r);
+        expect(buttons.length).toBeLessThanOrEqual(5);
+        expect(buttons.at(-1)!.custom_id).toBe(`right:${r + 1}`);
+      }
+      expect(buttonsOf(first, 0)[0]!.label).toStartWith('1️⃣ ');
+    });
   });
 });

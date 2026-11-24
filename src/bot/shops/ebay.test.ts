@@ -560,15 +560,17 @@ describe('extractCardIdsFromTitle', () => {
 });
 
 describe('nameMatchedCardIds', () => {
-  // As sammel-ente names them: Ghast is #15 and #131, never #104.
+  // Series 3 names as laststicker and sammel-ente give them (2026-11-24): Ghast is #15, #102,
+  // #104 and #131; #103 is Zombie. Entries marked otherwise exercise title forms.
   const names = new Map([
     [cid('15'), 'Ghast'],
     [cid('131'), 'Ghast'],
-    [cid('104'), 'Snow Golem'],
+    [cid('104'), 'Ghast'],
+    [cid('103'), 'Zombie'],
     [cid('4'), 'Wither Skeleton'],
     [cid('2'), 'Ender Knight'],
-    [cid('LE8'), 'Golden Steve'],
-    // Names from the sammel-ente fixture whose words are part of other cards' names.
+    [cid('LE8'), 'Charged Creeper'],
+    // Names whose words are part of other cards' names.
     [cid('3'), 'Steve'],
     [cid('5'), 'Creeper'],
     [cid('13'), 'Skeleton'],
@@ -576,13 +578,15 @@ describe('nameMatchedCardIds', () => {
     [cid('LE19'), 'Creeper'],
     [cid('LE21'), 'Gold Ghast'],
     [cid('XXL1'), 'Charged Creeper'],
+    // sammel-ente's puzzle names of 2026-11-18 (laststicker: "The Overworld 1", "... 2").
     [cid('154'), 'Puzzlekarte Oberwelt 1'],
     [cid('155'), 'Puzzlekarte Oberwelt 2'],
     [cid('6'), 'Zombie'],
     [cid('12'), 'Squid'],
     [cid('14'), 'Alex'],
     [cid('1'), 'Alex'],
-    [cid('60'), 'Burning Zombie'],
+    [cid('29'), 'Burning Zombie'],
+    // Made up, for the "vs." and umlaut forms.
     [cid('200'), 'Sunny vs. Blaze'],
     [cid('201'), 'Das Wächterduell'],
   ]);
@@ -590,28 +594,35 @@ describe('nameMatchedCardIds', () => {
   test('a title without a series word gives the number whose catalog name stands beside it', () => {
     expect(nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghast', names)).toEqual(ids('131'));
     expect(nameMatchedCardIds('Lego Minecraft Karte 15 Ghast', names)).toEqual(ids('15'));
-    expect(nameMatchedCardIds('LEGO Minecraft Nr. 104 Snow Golem', names)).toEqual(ids('104'));
+    expect(nameMatchedCardIds('LEGO Minecraft Nr. 104 Ghast', names)).toEqual(ids('104'));
     expect(nameMatchedCardIds('LEGO Minecraft 131 - Ghast', names)).toEqual(ids('131'));
     expect(nameMatchedCardIds('Minecraft 4 - Wither Skeleton - Charakterkarte', names)).toEqual(
       ids('4')
     );
     expect(nameMatchedCardIds('LEGO Minecraft #002: ender-knight', names)).toEqual(ids('2'));
     expect(nameMatchedCardIds('LEGO Minecraft Wither Skeleton Karte 4', names)).toEqual(ids('4'));
-    expect(nameMatchedCardIds('LEGO Minecraft LE8 Golden Steve', names)).toEqual(ids('LE8'));
+    expect(nameMatchedCardIds('LEGO Minecraft LE8 Charged Creeper', names)).toEqual(ids('LE8'));
   });
 
   test('a number whose catalog name is another one gives nothing', () => {
-    // 2026-11-19: "104 - Ghast" is no series 3 card; series 3 #104 is not Ghast.
-    expect(nameMatchedCardIds('LEGO Minecraft Karte 104 - Ghast', names)).toEqual([]);
+    // Series 3 #103 is Zombie, #16 is not in the map.
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 103 - Ghast', names)).toEqual([]);
     expect(nameMatchedCardIds('LEGO Minecraft Karte 16 - Ghast', names)).toEqual([]);
     // The name elsewhere in the title, not beside the number, does not count.
-    expect(nameMatchedCardIds('LEGO Minecraft Ghast Karte 104 Snow', names)).toEqual([]);
+    expect(nameMatchedCardIds('LEGO Minecraft Ghast Karte 103 Snow', names)).toEqual([]);
     expect(nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghasty', names)).toEqual([]);
+  });
+
+  test('a name several series 3 cards share confirms the number it stands beside', () => {
+    // The listing of 2026-11-19 that PR #22 meant to exclude: series 3 #104 is Ghast too, so it
+    // reads as #104, and only the picture comparison checks it. Whether such a title is series 3
+    // at all is decided against the series 1 and 2 names once those catalogs exist.
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 104 - Ghast', names)).toEqual(ids('104'));
   });
 
   test('every number read must carry its own name, or none counts', () => {
     expect(
-      nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghast & Karte 104 - Ghast', names)
+      nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghast & Karte 103 - Ghast', names)
     ).toEqual([]);
     expect(nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghast, Karte 15 - Ghast', names)).toEqual(
       ids('15', '131')
@@ -626,7 +637,7 @@ describe('nameMatchedCardIds', () => {
       'LEGO Minecraft Karten 1 - 228 131 - Ghast',
       'LEGO Minecraft 131 Karten - Ghast',
       'LEGO Minecraft Karte 131 - Ghast 3 Stück',
-      'LEGO Minecraft Nr. 104 Snow Golem Holo', // any COUNT_WORDS word, as for picture candidates
+      'LEGO Minecraft Nr. 104 Ghast Holo', // any COUNT_WORDS word, as for picture candidates
     ]) {
       expect({ title, ids: nameMatchedCardIds(title, names) }).toEqual({ title, ids: [] });
     }
@@ -754,7 +765,7 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft Wither-Skeleton Karte 13', []],
       ['LEGO Minecraft Glow-Squid Karte 12', []],
       // A word of a longer catalog name left over, even across a separator: LE21 "Gold Ghast",
-      // #60 "Burning Zombie".
+      // #29 "Burning Zombie".
       ['LEGO Minecraft Karte 131 - Ghast (Gold)', []],
       ['LEGO Minecraft Karte 131 - Ghast - Gold', []],
       ['LEGO Minecraft Karte 6 - Zombie - Burning', []],
@@ -1036,10 +1047,10 @@ describe('createEbayFetcher', () => {
               title: 'LEGO Minecraft Karte 131 - Ghast',
             }),
             item({
-              itemId: 'v1|168608734848|0',
-              legacyItemId: '168608734848',
-              itemWebUrl: 'https://www.ebay.de/itm/168608734848',
-              title: 'LEGO Minecraft Karte 104 - Ghast',
+              itemId: 'v1|220000000103|0',
+              legacyItemId: '220000000103',
+              itemWebUrl: 'https://www.ebay.de/itm/220000000103',
+              title: 'LEGO Minecraft Karte 103 - Ghast',
             }),
             item({
               itemId: 'v1|220000000132|0',
@@ -1060,7 +1071,7 @@ describe('createEbayFetcher', () => {
           reads++;
           return new Map([
             [cid('131'), 'Ghast'],
-            [cid('104'), 'Snow Golem'],
+            [cid('103'), 'Zombie'],
           ]);
         },
       });
@@ -1068,7 +1079,7 @@ describe('createEbayFetcher', () => {
       expect(result.listings.map((l) => [l.url, l.cardIds, l.idSource])).toEqual([
         ['https://www.ebay.de/itm/220000000131', ids('131'), undefined],
       ]);
-      // The 104 title and the variation listing stay excluded.
+      // The 103 title (#103 is Zombie) and the variation listing stay excluded.
       expect(result.skippedExcluded).toBe(2);
       // The names are read once per fetch, not once per item or query.
       expect(reads).toBe(1);

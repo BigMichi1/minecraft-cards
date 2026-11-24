@@ -8,7 +8,7 @@ import { COLLECTIONS } from '../collections/index';
 import type { Config } from '../config';
 import logger from '../utils/logger';
 import { createPacedFetch } from '../utils/pacedFetch';
-import { createBlueOceanFetcher } from './blueOcean';
+import { BLUE_OCEAN_COLLECTIONS, createBlueOceanFetcher } from './blueOcean';
 import { createCollectItFetcher } from './collectIt';
 import { createEbayFetcher, ebayCollectionsOf } from './ebay';
 import { createSammelEnteFetcher } from './sammelEnte';
@@ -106,7 +106,11 @@ function fetcherFor(
     case 'blue-ocean':
       // The parser reads series 3 only until the shared walk reads every collection's settings.
       return definition.shops['blue-ocean'] && definition.id === LEGACY_COLLECTION
-        ? createBlueOceanFetcher(fetchFn)
+        ? createBlueOceanFetcher(
+            fetchFn,
+            {},
+            BLUE_OCEAN_COLLECTIONS.filter((c) => c.id === LEGACY_COLLECTION)
+          )
         : null;
   }
 }

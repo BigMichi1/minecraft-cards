@@ -1,4 +1,4 @@
-import { and, count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, isNotNull } from 'drizzle-orm';
 import {
   cardType,
   compareCardIds,
@@ -313,6 +313,25 @@ export const catalogManager = {
   /** Record that the card's laststicker scan answered 404: the shop picture is used meanwhile. */
   markScanMissing(collection: CollectionId, cardId: CardId, now: number): void {
     db.update(cards).set({ laststickerScanMissingAt: now }).where(ofCard(collection, cardId)).run();
+  },
+
+  /**
+   * Clear the missing-scan mark of the given cards (their scan loaded again after
+   * SCAN_RETRY_MS); returns the ones that had a mark, sorted: their reference changed back.
+   */
+  clearScanMissing(collection: CollectionId, cardIds: readonly CardId[]): CardId[] {
+    if (cardIds.length === 0) return [];
+    return db.transaction((tx) => {
+      const where = and(
+        eq(cards.collection, collection),
+        inArray(cards.cardId, [...cardIds]),
+        isNotNull(cards.laststickerScanMissingAt)
+      );
+      const marked = tx.select({ cardId: cards.cardId }).from(cards).where(where).all();
+      if (marked.length > 0)
+        tx.update(cards).set({ laststickerScanMissingAt: null }).where(where).run();
+      return marked.map((r) => r.cardId).sort(compareCardIds);
+    });
   },
 
   /** The card's laststicker scan URL as last synced, or null. */

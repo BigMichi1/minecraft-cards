@@ -387,6 +387,15 @@ describe('catalogManager', () => {
       expect(of('60')?.knownTwin).toBeUndefined();
     });
 
+    test('clearScanMissing clears the marks of the given cards and names the ones it cleared', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.markScanMissing('lego-minecraft-3', cid('1'), 5);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('3'), 5);
+      expect(catalogManager.clearScanMissing('lego-minecraft-3', ids('1', '2'))).toEqual(ids('1'));
+      expect(catalogManager.clearScanMissing('lego-minecraft-3', ids('1', '3'))).toEqual(ids('3'));
+      expect(catalogManager.clearScanMissing('lego-minecraft-3', [])).toEqual([]);
+    });
+
     test('a missing scan without a shop picture is no_picture', () => {
       catalogManager.seedIfEmpty();
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('1'), scanUrl: scan('1') }]);

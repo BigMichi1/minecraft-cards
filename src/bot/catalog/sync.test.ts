@@ -81,6 +81,9 @@ describe('syncCatalogs', () => {
     try {
       expect((await run(10))[0]).toMatchObject({ ok: true });
       expect(catalogManager.syncSucceededAt('lego-minecraft-3')).toBe(10);
+      // The re-pictured cards are known only now: the admin is told which to re-check.
+      const alert = alerts.find((a) => a.key === 'catalog-rematch:lego-minecraft-3');
+      expect(alert?.text).toContain('could not compare the mismatches of 251 card(s) again');
     } finally {
       spy.mockRestore();
     }

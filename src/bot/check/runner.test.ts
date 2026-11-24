@@ -12,7 +12,7 @@ import {
   users,
   wantedCards,
 } from '../database/schema/index';
-import { catalogManager } from '../database/catalogManager';
+import { catalogManager, SCAN_RETRY_MS } from '../database/catalogManager';
 import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { userManager } from '../database/userManager';
@@ -285,6 +285,115 @@ describe('runCheck', () => {
     });
   });
 
+  describe('missing and returning scans', () => {
+    const scan = 'https://www.laststicker.com/i/cards/12125/12.jpg';
+    const gone = () =>
+      new ImageUnavailableError(`HTTP 404 for ${scan}`, { cause: new HttpError(404, scan) });
+    const noScan: ImageEmbedder = {
+      model: 'fake',
+      embed: async (url) => {
+        embedded.push(url);
+        if (url === scan) throw gone();
+        return new Float32Array([1, 0]);
+      },
+    };
+
+    test("a missing scan alerts the admin once and compares the card's mismatches again", async () => {
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+      ]);
+      const rematch = spyOn(listingManager, 'rematchMismatches');
+      try {
+        await runCheck(depsWith([ok('blue-ocean', [blue12])], { embedder: noScan }));
+        expect(rematch).toHaveBeenCalledWith('lego-minecraft-3', ids('12'));
+      } finally {
+        rematch.mockRestore();
+      }
+      const scanAlerts = alerts.filter((a) => a.includes('no laststicker scan'));
+      expect(scanAlerts).toHaveLength(1);
+      expect(scanAlerts[0]).toContain('#12');
+    });
+
+    test('a missing scan without a shop picture leaves the title card without a reference', async () => {
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('12'), scanUrl: scan }]);
+      await runCheck(depsWith([ok('blue-ocean', [blue12])], { embedder: noScan }));
+      expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('no_reference');
+      expect(embedded.filter((u) => u === scan)).toHaveLength(1);
+      expect(alerts.filter((a) => a.includes('no laststicker scan'))[0]).toContain(
+        'now without any reference: #12'
+      );
+    });
+
+    test('a failing record of a missing scan is logged; the run still uses the fallback', async () => {
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+      ]);
+      const mark = spyOn(catalogManager, 'markScanMissing').mockImplementation(() => {
+        throw new Error('db locked');
+      });
+      const log = spyOn(logger, 'log');
+      try {
+        await runCheck(depsWith([ok('blue-ocean', [blue12])], { embedder: noScan }));
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({ matchStatus: 'confirmed' });
+        expect(
+          log.mock.calls.some((c: unknown[]) =>
+            String(c[1]).includes('recording the missing scan of #12 failed')
+          )
+        ).toBe(true);
+      } finally {
+        mark.mockRestore();
+        log.mockRestore();
+      }
+      expect(catalogManager.referenceCatalog('lego-minecraft-3', clock).usable).toContainEqual(
+        expect.objectContaining({ cardId: cid('12'), source: 'laststicker' })
+      );
+    });
+
+    test('failing scan-mark and re-match writes are logged; the run goes on', async () => {
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+      ]);
+      const clear = spyOn(catalogManager, 'clearScanMissing').mockImplementation(() => {
+        throw new Error('db locked');
+      });
+      const rematch = spyOn(listingManager, 'rematchMismatches').mockImplementation(() => {
+        throw new Error('db locked');
+      });
+      const log = spyOn(logger, 'log');
+      try {
+        await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+        expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
+        const logged = (text: string) =>
+          log.mock.calls.some((c: unknown[]) => String(c[1]).includes(text));
+        expect(logged('clearing the missing-scan marks of lego-minecraft-3 failed')).toBe(true);
+        expect(logged('re-matching the cards of lego-minecraft-3 with changed scans failed')).toBe(
+          true
+        );
+      } finally {
+        clear.mockRestore();
+        rematch.mockRestore();
+        log.mockRestore();
+      }
+    });
+
+    test('a scan that loads again after its retry clears the mark and re-matches the card', async () => {
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+      ]);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('12'), clock - SCAN_RETRY_MS - 5000);
+      const rematch = spyOn(listingManager, 'rematchMismatches');
+      try {
+        await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+        expect(rematch).toHaveBeenCalledWith('lego-minecraft-3', ids('12'));
+      } finally {
+        rematch.mockRestore();
+      }
+      expect(embedded).toContain(scan);
+      // Cleared: a later 404 starts a new 7-day window.
+      expect(catalogManager.clearScanMissing('lego-minecraft-3', ids('12'))).toEqual([]);
+    });
+  });
+
   test('a missing scan is recorded and the title card is compared with the fallback in the same run', async () => {
     const scan = 'https://www.laststicker.com/i/cards/12125/12.jpg';
     setCatalogCards('lego-minecraft-3', [
@@ -313,6 +422,27 @@ describe('runCheck', () => {
     expect(catalogManager.referenceCatalog('lego-minecraft-3', clock).usable).toContainEqual(
       expect.objectContaining({ cardId: cid('12'), source: 'shop' })
     );
+  });
+
+  test('a failing re-match after new shop pictures alerts the admin with the cards', async () => {
+    const ente: Listing = {
+      ...blue12,
+      shop: 'sammel-ente',
+      url: 'https://shop-sammel-ente.de/12',
+      imageUrl: 'https://ente/12.jpg',
+    };
+    const rematch = spyOn(listingManager, 'rematchMismatches').mockImplementation(() => {
+      throw new Error('db locked');
+    });
+    try {
+      const s = await runCheck(depsWith([ok('sammel-ente', [ente])]));
+      expect(s.shops['sammel-ente']).toEqual({ listings: 1 });
+      expect(
+        alerts.some((a) => a.includes('could not compare the mismatches of 1 card(s) again: #12'))
+      ).toBe(true);
+    } finally {
+      rematch.mockRestore();
+    }
   });
 
   test("only the collection's fallback shop writes shop pictures", async () => {

@@ -180,6 +180,14 @@ async function report(collection: CollectionId, result: SyncResult, deps: SyncDe
       `catalog sync of ${collection} applied, but re-matching its new pictures failed`,
       error
     );
+    // The changed cards are known only to this sync: name them, so the admin can act.
+    await deps.alert(
+      `catalog-rematch:${collection}`,
+      clipText(
+        `${name}: the sync could not compare the mismatches of ${result.repictured.length} card(s) again (new pictures): ${named(result.repictured)} — ${errorMessage(error)}`,
+        DISCORD_MESSAGE_LIMIT
+      )
+    );
   }
   if (result.vanished.length > 0) {
     await deps.alert(

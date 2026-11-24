@@ -7,7 +7,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ChatInputCommandInteraction, SlashCommandStringOption } from 'discord.js';
-import { formatCardList, normalizeCardId } from '../cards/cardId';
+import { formatCardList, normalizeCardId, type CardId } from '../cards/cardId';
 import { formatSyncOutcome, type SyncOutcome } from '../catalog/sync';
 import { manualRefusal, removeRow, removeStore } from '../interactions/catalogRemove';
 import { MAX_URL, validUrl } from '../notify/messages';
@@ -149,6 +149,18 @@ function readPicture(
 }
 
 /** `/admin catalog sync|add|edit|remove|release` for one collection. */
+/**
+ * The card's reference picture changed (a manual card's new picture, a release): compare its
+ * mismatches again. A failure is logged only; the change itself is made.
+ */
+function rematchCard(collection: CollectionId, cardId: CardId): void {
+  try {
+    listingManager.rematchMismatches(collection, [cardId]);
+  } catch (error) {
+    logError(`re-matching the mismatches of #${cardId} failed`, error);
+  }
+}
+
 async function catalogCardCommand(
   interaction: ChatInputCommandInteraction,
   sub: string,
@@ -216,6 +228,7 @@ async function catalogCardCommand(
         await refused(result.reason);
         return;
       }
+      if (picture.url) rematchCard(collection, cardId);
       const card = catalogManager.getCard(collection, cardId);
       await interaction.reply(ephemeral(`#${cardId} now: ${card?.name ?? '(no name)'}.`));
       return;
@@ -241,6 +254,7 @@ async function catalogCardCommand(
         await refused(result.reason);
         return;
       }
+      rematchCard(collection, cardId);
       await interaction.reply(ephemeral(`#${cardId} now follows laststicker from the next sync.`));
       return;
     }

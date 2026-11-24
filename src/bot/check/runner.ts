@@ -1,7 +1,7 @@
 import type { CardId } from '../cards/cardId';
 import type { CollectionDefinition, CollectionId } from '../collections/ids';
 import { collectionById, collectionName } from '../collections/index';
-import { catalogManager, type ReferenceCatalog } from '../database/catalogManager';
+import { catalogManager, SCAN_RETRY_MS, type ReferenceCatalog } from '../database/catalogManager';
 import {
   listingManager,
   type PendingNotifications,
@@ -184,9 +184,12 @@ function referencesOnce(
     loading ??= (async () => {
       const now = deps.now();
       const catalog = catalogOf();
+      const missingScans: CardId[] = [];
       const set = await loadReferenceSet(catalog, embedder, {
-        // laststicker has no scan of the card: the shop picture is used now and from now on.
+        // laststicker has no scan of the card: record it, so the shop picture (if any) is its
+        // reference for SCAN_RETRY_MS.
         onScanMissing: (cardId) => {
+          missingScans.push(cardId);
           try {
             catalogManager.markScanMissing(collection, cardId, now);
           } catch (error) {
@@ -200,6 +203,7 @@ function referencesOnce(
             : null;
         },
       });
+      await reportScanChanges(deps, alert, collection, catalog, set, missingScans);
       const urlOf = new Map(catalog.usable.map((c) => [c.cardId, c.referenceImageUrl]));
       const failed = set.missing.filter(isTransient);
       if (failures) {
@@ -239,6 +243,52 @@ function referencesOnce(
     })();
     return loading;
   };
+}
+
+/**
+ * After a reference set loaded: a scan that answered 404 (now the shop picture, or no reference)
+ * and a scan that loaded again after its SCAN_RETRY_MS mark both change the card's reference, so
+ * its mismatches are compared again; missing scans are named in one throttled alert. Failures
+ * here are logged: the set is loaded and the run goes on.
+ */
+async function reportScanChanges(
+  deps: RunDeps,
+  alert: AlertFn,
+  collection: CollectionId,
+  catalog: ReferenceCatalog,
+  set: LoadedReferenceSet,
+  missingScans: readonly CardId[]
+): Promise<void> {
+  const back = catalog.usable
+    .filter((c) => c.source === 'laststicker' && set.urls.get(c.cardId) === c.referenceImageUrl)
+    .map((c) => c.cardId);
+  let changed: CardId[] = [...missingScans];
+  try {
+    changed = [...changed, ...catalogManager.clearScanMissing(collection, back)];
+  } catch (error) {
+    logError(`clearing the missing-scan marks of ${collection} failed`, error);
+  }
+  try {
+    listingManager.rematchMismatches(collection, changed);
+  } catch (error) {
+    logError(`re-matching the cards of ${collection} with changed scans failed`, error);
+  }
+  if (missingScans.length === 0) return;
+  const without = set.missing
+    .filter((m) => m.reason === 'no_picture' && missingScans.includes(m.cardId))
+    .map((m) => `#${m.cardId}`);
+  const named = missingScans
+    .slice(0, MAX_NAMED)
+    .map((id) => `#${id}`)
+    .join(', ');
+  const more =
+    missingScans.length > MAX_NAMED ? ` … and ${missingScans.length - MAX_NAMED} more` : '';
+  const text = clipText(
+    `${missingScans.length} card(s) of ${collectionName(collection)} have no laststicker scan (404), the shop picture stands in for ${formatWindow(SCAN_RETRY_MS)}: ${named}${more}${without.length > 0 ? `; now without any reference: ${without.slice(0, MAX_NAMED).join(', ')}` : ''}`,
+    DISCORD_MESSAGE_LIMIT
+  );
+  logger.warn(text);
+  await alert(`scan-missing:${collection}`, text);
 }
 
 /** The admin note for a listing whose picture shows another card than its title names. */
@@ -391,7 +441,12 @@ function collectionReferences(
       usable ??= new Map(catalogOf().usable.map((c) => [c.cardId, c.referenceImageUrl]));
       const catalogUrl = usable.get(id) ?? null;
       if (!references || !compared || catalogUrl === null) return catalogUrl;
-      return (await references()).urls.get(id) ?? catalogUrl;
+      const set = await references();
+      const loaded = set.urls.get(id);
+      if (loaded !== undefined) return loaded;
+      // The set found no reference for it (a missing scan without fallback): none, not the
+      // dead scan; a transient failure keeps the catalog's, to be retried.
+      return set.missing.some((m) => m.cardId === id && !isTransient(m)) ? null : catalogUrl;
     },
     references,
   };
@@ -558,7 +613,22 @@ async function checkShop(
         })
       );
       // A new reference picture may settle a mismatch either way: compare those again.
-      listingManager.rematchMismatches(adapter.collection, changed);
+      try {
+        listingManager.rematchMismatches(adapter.collection, changed);
+      } catch (error) {
+        // The listings are stored; only the re-check is lost, and these cards are known only now.
+        logError(`shop ${adapter.id}: re-matching the cards with new pictures failed`, error);
+        await alert(
+          `shop-rematch:${adapter.collection}`,
+          clipText(
+            `Shop ${adapter.id}: could not compare the mismatches of ${changed.length} card(s) again: ${changed
+              .slice(0, MAX_NAMED)
+              .map((id) => `#${id}`)
+              .join(', ')} — ${errorMessage(error)}`,
+            DISCORD_MESSAGE_LIMIT
+          )
+        );
+      }
     }
     summary.shops[adapter.id] = {
       listings: found.length,

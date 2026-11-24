@@ -18,6 +18,10 @@ export type CollectionId = (typeof COLLECTION_IDS)[number];
  */
 export const LEGACY_COLLECTION: CollectionId = 'lego-minecraft-3';
 
+/** Where a card comes from: the laststicker sync, or the admin (`/admin catalog add`). */
+export const CARD_SOURCES = ['laststicker', 'manual'] as const;
+export type CardSource = (typeof CARD_SOURCES)[number];
+
 export function isCollectionId(value: string): value is CollectionId {
   return (COLLECTION_IDS as readonly string[]).includes(value);
 }

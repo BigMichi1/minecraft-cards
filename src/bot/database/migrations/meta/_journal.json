@@ -43,6 +43,13 @@
       "when": 1795511846117,
       "tag": "0005_ancient_blue_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795516395297,
+      "tag": "0006_overconfident_oracle",
+      "breakpoints": true
     }
   ]
 }

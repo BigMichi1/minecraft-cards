@@ -2125,6 +2125,26 @@ describe('series markers (2026-11-24 probe)', () => {
     expect(classifyTitle('LEGO Minecraft Serie 1 2/150 Alex')).toEqual({
       collection: 'lego-minecraft-1',
     });
+    // Every dash, a double one too, joins only going upward; a fraction is no series number.
+    for (const title of [
+      'LEGO Minecraft Serie 3 ‑ 1 ‑ Steve ‑ Charakterkarte',
+      'LEGO Minecraft Serie 3 − 1 − Steve − Charakterkarte',
+      'LEGO Minecraft Serie 3 -- 1 Karte 5',
+    ]) {
+      expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
+    }
+    expect(classifyTitle('LEGO Minecraft Serie 1 2/50 Alex')).toEqual({
+      collection: 'lego-minecraft-1',
+    });
+    // A title sign between the series and the card number is no list: only going upward.
+    for (const [title, id] of [
+      ['LEGO Minecraft Serie 3 | 2 - Alex - Charakterkarte', '2'],
+      ['LEGO Minecraft TCC 3 | 1 - Steve - Charakterkarte', '1'],
+      ['LEGO Minecraft Serie 3 · 2 - Alex - Charakterkarte', '2'],
+      ['LEGO Minecraft Serie 3 ; 2 - Alex - Charakterkarte', '2'],
+    ] as const) {
+      expect(extractCardIdsFromTitle(title)).toEqual(ids(id));
+    }
     // The series number after TCC is no card number.
     expect(extractCardIdsFromTitle('LEGO Minecraft TCC 3 - Steve - Charakterkarte')).toEqual([]);
     // A series list stays one, also before "Karte" and before a dash and a word; "Serie 1 - 2 -
@@ -2157,6 +2177,23 @@ describe('series markers (2026-11-24 probe)', () => {
       'LEGO Minecraft Serie 1. & 2. Karte 45',
       'LEGO Minecraft Serie 3 - 1 & 2 Karte 45',
       'LEGO Minecraft Serie 1/2/3 Karte 5',
+      // Signs and list words mixed, brackets, every kind of dash.
+      'LEGO Minecraft Serie 1, und 2 Karte 45',
+      'LEGO Minecraft Serie 1 (und 2) Karte 45',
+      'LEGO Minecraft Serie 1 (2) Karte 45',
+      'LEGO Minecraft Serie 1 & auch 2 Karte 45',
+      'LEGO Minecraft Serie 1 ‐ 2 Karte 45',
+      'LEGO Minecraft Serie 1 ‒ 2 Karte 45',
+      'LEGO Minecraft Serie 1 － 2 Karte 45',
+      'LEGO Minecraft Serie 1 and 2 Karte 45',
+      'LEGO Minecraft Serie 1 bzw 2 Karte 9',
+      'LEGO Minecraft Serie 1–2 Karte 45',
+      'LEGO Minecraft Serie 1‑2 Karte 45',
+      'LEGO Minecraft Serie 1−2 Karte 45',
+      'LEGO Minecraft Serie 1 · 2 Karte 45',
+      'LEGO Minecraft Serie 1 ~ 2 Karte 45',
+      'LEGO Minecraft Serie 3 - 1 - 2 - Steve - Charakterkarte',
+      'LEGO Minecraft Serie 1 UND 2 Karte 45',
       // A card number after the list does not hide it.
       'LEGO Minecraft Serie 1 und 2 1 Karte 5',
       'LEGO Minecraft Serie 1 & 2 - 1 - Steve - Charakterkarte',
@@ -2508,5 +2545,14 @@ describe('one eBay run for every collection', () => {
         sleep: noSleep,
       }).fetchListings()
     ).rejects.toThrow('returned no usable item (1 without link or title)');
+  });
+
+  test('a long run of signs after a series is read in linear time', () => {
+    for (const sign of ['-', '.', '~', '|', ' -', '–']) {
+      const title = `LEGO Minecraft Serie 3 ${sign.repeat(60)} Steve Karte 5`;
+      const started = performance.now();
+      classifyTitle(title);
+      expect(performance.now() - started).toBeLessThan(50);
+    }
   });
 });

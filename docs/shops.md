@@ -144,14 +144,15 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   that collection's. A title naming several series gives no ids, as does a series list with one
   series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 1 bis 3`, `Serie 2/3`, and the
   unclear `Serie 1 - 2 - Steve`): a mixed lot is ambiguous. The series numbers 1 to 3
-  after the series word are read pair by pair: joined by a list word (`und`, `oder`, `bis`,
-  `bzw.`, `sowie`, `plus`, …) or a sign other than a dash (`Serie 3 und 1`, `Serie 1 | 2`)
-  they are a list in any order, joined by a dash or a space only going upward, and any list
-  pair makes the title a list (`Serie 3 - 1 & 2`). A number followed by `/NN` is a card
-  fraction, no series. A number that is no
-  series number (`Serie 3 - 12 - Steve - Charakterkarte`, `Serie 3 - 5 - …`), or one lower
-  than the series after a dash or a space (`Serie 3 - 1 - Steve - Charakterkarte`), is a card number. An
-  admin mapping into a collection eBay does not search is left alone and alerted
+  after the series word are read pair by pair: joined by a separator holding a list word
+  (`und`, `oder`, `bis`, `bzw.`, `sowie`, `plus`, …) or one of `/ & + , ( )` (`Serie 3 und 1`,
+  `Serie 1 (2)`) they are a list in any order; joined only by spaces, dashes and title signs
+  (`| · ; ~ .`, as in `Serie 3 | 2 - Alex - Charakterkarte`, card #2) only going upward. Any
+  list pair makes the title a list (`Serie 3 - 1 & 2`). A number followed by `/NN` is a card
+  fraction, no series. A number that is no series number
+  (`Serie 3 - 12 - Steve - Charakterkarte`, `Serie 3 - 5 - …`), or one not higher than the
+  series after a dash or a space (`Serie 3 - 1 - Steve - Charakterkarte`), is a card number.
+  An admin mapping into a collection eBay does not search is left alone and alerted
   (`shop-outside:ebay`). A title with no series word gives no ids either, even in the clear
   `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms
   (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3

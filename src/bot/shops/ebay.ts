@@ -275,24 +275,27 @@ export type TitleExclusion =
   'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
 
 // A series word followed by a list of series numbers ("Serie 1-2", "Serie 1 & 2 - Karte 45",
-// "Serie 1 bis 3", "Serie 3 und 1", "Serie 1 bzw. 2", "Serie 1 2 3"). The series numbers
-// (SERIES_NUMBER) right after the series word are read pair by pair; a number followed by
-// another digit is a card number or a year ("Serie 3 - 12 - Steve - Charakterkarte" is #12,
-// "Serie 3 - 2026" a year), and one followed by "/NN" a card fraction ("Serie 1 2/150"). Two
-// joined by a word or a sign other than a dash are a list in any order; joined by a dash or a
-// space only going upward, as a smaller or equal number there is a card number ("Serie 3 - 1 -
-// Steve - Charakterkarte" is #1). Any pair that is a list makes the title one: "Serie 1 - 2 -
-// Steve" may be series 1 #2 or a list, unclear, so no ids.
-const LIST_WORD =
-  '(?:und\\/oder|und|and|oder|or|bis|to|sowie|plus|bzw\\.?|u\\.?|o\\.?)(?![A-Za-zÄÖÜäöüß])';
-const LIST_SIGN = '[-–—‑−/&+,|·;~.]';
+// "Serie 1 bis 3", "Serie 3 und 1", "Serie 1 bzw. 2", "Serie 1 (2)", "Serie 1 2 3"). The series
+// numbers (SERIES_NUMBER) right after the series word are read pair by pair; a number followed
+// by another digit is a card number or a year ("Serie 3 - 12 - Steve - Charakterkarte" is #12,
+// "Serie 3 - 2026" a year), and one followed by "/NN" a card fraction ("Serie 1 2/150"). A
+// separator is one run of spaces, signs, brackets and list words. Holding a list word or one of
+// `/ & + , ( )`, it makes the pair a list in any order; made only of spaces, dashes and title
+// signs (`| · ; ~ .`), which sellers also put between a series and a card number, only going
+// upward ("Serie 3 - 1 - Steve - Charakterkarte" and "Serie 3 | 2 - Alex - Charakterkarte" are
+// cards #1 and #2). Any pair that is a list makes the title one: "Serie 1 - 2 - Steve" may be
+// series 1 #2 or a list, unclear, so no ids.
+const LIST_WORD = '(?:und\\/oder|und|and|oder|or|bis|to|sowie|plus|auch|bzw\\.?|u\\.?|o\\.?)';
+/** Dashes (hyphen, en, em, figure, bar, minus, fullwidth) and title signs. */
+const TITLE_SIGNS = '\\-‐‑‒–—―−－|·;~.';
+const LIST_SIGNS = '/&+,()';
 const SERIES_START = new RegExp(`\\b(?:Series?|Staffel|TCC)\\s*(${SERIES_NUMBER})(?!\\d)`, 'gi');
+// One flat run (no nested quantifier: a long run of signs must not backtrack exponentially).
 const NEXT_SERIES = new RegExp(
-  `((?:\\s*${LIST_SIGN}+)+\\s*|\\s*${LIST_WORD}\\s*|\\s+)(${SERIES_NUMBER})(?!\\d|\\/\\d{2})`,
+  `((?:[\\s${TITLE_SIGNS}${LIST_SIGNS}]|${LIST_WORD})+)(${SERIES_NUMBER})(?!\\d|\\/\\d{2})`,
   'iy'
 );
-/** A dash or a space alone: "3 - 1" may be a series and a card number. */
-const AMBIGUOUS_JOIN = /^[-–—‑−]?$/;
+const DEFINITE_JOIN = new RegExp(`[${LIST_SIGNS}]|${LIST_WORD}`, 'i');
 
 /** Whether a title names a list of series with one series word (see SERIES_START). */
 function namesSeriesList(title: string): boolean {
@@ -301,7 +304,7 @@ function namesSeriesList(title: string): boolean {
     NEXT_SERIES.lastIndex = m.index + m[0].length;
     for (let next = NEXT_SERIES.exec(title); next; next = NEXT_SERIES.exec(title)) {
       const number = Number(next[2]);
-      if (!AMBIGUOUS_JOIN.test(next[1]!.trim()) || number > previous) return true;
+      if (DEFINITE_JOIN.test(next[1]!) || number > previous) return true;
       previous = number;
     }
   }
@@ -1020,7 +1023,8 @@ export function createEbayFetcher(
         );
       }
       // A collection whose own searches all came back empty is a query or API problem there:
-      // the runner leaves its stored listings alone (shop error of that collection). A
+      // the runner leaves its stored listings alone (shop error of that collection); a search
+      // whose items all lack a link or a title found nothing usable either. A
       // collection without searches never counts as empty.
       const emptySearches = collections
         .filter((c) => c.queries.length > 0 && c.queries.every((q) => (perQuery.get(q) ?? 0) === 0))

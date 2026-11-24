@@ -441,8 +441,9 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   admin put them and are kept fresh there. A listing the run saw is never marked gone in another collection (`seenUrls`).
 - A series list with one series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 1 bis 3`,
   `Serie 3 und 1`) names several collections; the series numbers 1 to 3 after the series word are read pair by
-  pair (joined by a list word or a sign other than a dash in any order, by a dash or space only
-  going upward; any list pair makes a list; `N/NN` is a card fraction), so
+  pair (a separator holding a list word or `/ & + , ( )` joins them in any order; spaces,
+  dashes and title signs `| · ; ~ .` only going upward; any list pair makes a list; `N/NN` is a
+  card fraction), so
   `Serie 3 - 12 - Steve - Charakterkarte` is card #12 and `Serie 3 - 1 - …` card #1. Series 3's
   marker also takes `Staffel 3` (as series 1 and 2 take theirs) and `TCC 3` (as series 1
   takes `TCC 1`).

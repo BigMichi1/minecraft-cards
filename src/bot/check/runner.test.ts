@@ -468,6 +468,37 @@ describe('runCheck', () => {
       expect(alerts.filter((a) => a.includes('no laststicker scan'))).toHaveLength(1);
     });
 
+    test('a scan missing later the same day is alerted too', async () => {
+      const scan13 = 'https://www.laststicker.com/i/cards/12125/13.jpg';
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+        { cardId: cid('13'), scanUrl: scan13, imageUrl: 'https://ente/13.jpg' },
+      ]);
+      let gone13 = false;
+      const later: ImageEmbedder = {
+        model: 'fake',
+        embed: async (url) => {
+          if (url === scan || (gone13 && url === scan13)) {
+            throw new ImageUnavailableError(`HTTP 404 for ${url}`, {
+              cause: new HttpError(404, url),
+            });
+          }
+          return new Float32Array([1, 0]);
+        },
+      };
+      await runCheck(depsWith([ok('blue-ocean', [blue12])], { embedder: later }));
+      gone13 = true;
+      clock += 3 * 60 * 60 * 1000;
+      await runCheck(
+        depsWith([ok('blue-ocean', [{ ...blue12, imageUrl: 'https://img/12-later.jpg' }])], {
+          embedder: later,
+        })
+      );
+      const scanAlerts = alerts.filter((a) => a.includes('no laststicker scan'));
+      expect(scanAlerts).toHaveLength(2);
+      expect(scanAlerts[1]).toContain('#13');
+    });
+
     test('more than ten missing scans are named with how many more', async () => {
       const lost = Array.from({ length: 12 }, (_, i) => String(i + 1));
       setCatalogCards(
@@ -1413,6 +1444,23 @@ describe('runCheck', () => {
           .run();
         const r = await run([ok('sammel-ente', references), ok('ebay', [listing])]);
         expect(r.rematch?.changes).toEqual([`no card ebay confirmed→unconfirmed ${listing.url}`]);
+      });
+
+      test('a re-match that finds no reference is not counted and stays held back', async () => {
+        await run(shopsAt(60));
+        resetAsMigration('mismatch');
+        // The title card loses its reference.
+        db.update(cards)
+          .set({ shopImageUrl: null })
+          .where(eq(cards.cardId, cid('12')))
+          .run();
+        const r = await run([ok('blue-ocean', [blueAt(60)])]);
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+          matchStatus: 'no_reference',
+          rematchFrom: 'mismatch',
+        });
+        expect(r.rematch).toBeUndefined();
+        expect(r.notified).toBe(0);
       });
 
       test('an unchanged re-match sends no summary; reference counts as confirmed', async () => {

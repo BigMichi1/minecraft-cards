@@ -307,7 +307,8 @@ async function reportScanChanges(
   ];
   const text = clipText(parts.join('; '), DISCORD_MESSAGE_LIMIT);
   logger.warn(text);
-  await alert(`scan-missing:${collection}`, text);
+  // Per card list: a scan missing later the same day names other cards and must be told too.
+  await alert(`scan-missing:${collection}:${[...missing, ...failed].join(',')}`, text);
 }
 
 /** `#1, #2, … and 3 more`: at most MAX_NAMED card ids. */
@@ -371,7 +372,8 @@ function asCurrent(status: LegacyMatchStatus): MatchStatus {
 
 /**
  * A listing waiting for its re-match (`from`, its old status) was compared: count it, unless the
- * result is retried anyway (image or model unavailable: setMatch keeps rematchFrom then).
+ * result is retried anyway (image or model unavailable, no reference: setMatch keeps rematchFrom
+ * then).
  */
 function countRematch(
   tally: RematchTally,
@@ -379,7 +381,14 @@ function countRematch(
   from: LegacyMatchStatus,
   result: MatchResult
 ): void {
-  if (result.status === 'image_unavailable' || result.status === 'model_unavailable') return;
+  // Compared again next check (needsMatch): not the end of the re-match yet.
+  if (
+    result.status === 'image_unavailable' ||
+    result.status === 'model_unavailable' ||
+    result.status === 'no_reference'
+  ) {
+    return;
+  }
   const before = asCurrent(from);
   tally.compared++;
   const card = l.cardIds.map((id) => `#${id}`).join(', ') || 'no card';

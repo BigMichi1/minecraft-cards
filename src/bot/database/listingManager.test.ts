@@ -1052,10 +1052,17 @@ describe('listingManager', () => {
           1002
         );
         expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBe('mismatch');
+        // No reference left for the card: compared again every check, still held back.
+        listingManager.setMatch(
+          l.id,
+          { status: 'no_reference', similarity: null, picture: null },
+          1003
+        );
+        expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBe('mismatch');
         listingManager.setMatch(
           l.id,
           { status: 'unconfirmed', similarity: 0.5, picture: null },
-          1003
+          1004
         );
         expect(listingManager.getByUrl(blue12.url)!.rematchFrom).toBeNull();
       });

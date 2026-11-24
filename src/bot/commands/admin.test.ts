@@ -505,7 +505,7 @@ describe('/admin', () => {
             ctx
           );
           expect(lastReply().content).toBe(
-            '#229 now: Mine.\n⚠️ Its mismatches could not be compared again (db locked); run the command again to retry.'
+            '#229 now: Mine.\n⚠️ Its mismatches could not be compared again (db locked); run the edit with the picture again to retry.'
           );
           expect(
             log.mock.calls.some((c: unknown[]) =>
@@ -518,6 +518,22 @@ describe('/admin', () => {
       } finally {
         rematch.mockRestore();
       }
+    });
+
+    test('a failed re-match on release says the next sync retries it', async () => {
+      catalogManager.addManual('lego-minecraft-3', cid('229'), 'Mine', null, 1);
+      catalogManager.markListedNoted('lego-minecraft-3', ids('229'), 2);
+      const rematch = spyOn(listingManager, 'rematchMismatches').mockImplementation(() => {
+        throw new Error('db locked');
+      });
+      try {
+        await adminExecute(fakeAdmin('catalog', 'release', { card: '229' }), ctx);
+      } finally {
+        rematch.mockRestore();
+      }
+      expect(lastReply().content).toBe(
+        '#229 now follows laststicker from the next sync.\n⚠️ Its mismatches could not be compared again (db locked); the next catalog sync does it with its scan.'
+      );
     });
 
     test('edit and release change manual cards only', async () => {

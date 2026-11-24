@@ -164,7 +164,12 @@ function load(tx: Tx, rows: ListingRow[]): StoredListing[] {
 
 /** A status the next run compares again (`needsMatch`): not the end of a re-match. */
 function isRetryStatus(status: MatchStatus): boolean {
-  return status === 'image_unavailable' || status === 'model_unavailable' || status === 'pending';
+  return (
+    status === 'image_unavailable' ||
+    status === 'model_unavailable' ||
+    status === 'pending' ||
+    status === 'no_reference'
+  );
 }
 
 /** The status of a listing whose picture has not been compared (yet). */

@@ -23,27 +23,33 @@ collection step 2, measured in "Measurement on laststicker scans" below):
 - No picture at all: `no_picture`, the card's listings are `no_reference`.
 
 A card whose chosen reference changes has its mismatches compared again: a new or changed scan
-(sync), a shop picture in use that changed (sammel-ente's run), a scan that answers 404 or 410, a scan
-that loads again after its 7 days, a manual card's new picture and a release. Missing scans are
-named in one throttled admin alert (`scan-missing:<collection>`), with the cards left without
-any reference. Every picture download from laststicker (scans for matching, thumbnails in DMs
-and `/card`) goes through one pacer: at most one request per 1500 ms (`pacedImageFetch`); the
-set pages keep the sync's own 1500 ms. The embeddings are cached by URL, so each scan is
-downloaded once; the first run after the switch requests all 251 scans (234 load), about 6
-minutes before its DMs.
+(sync), a shop picture in use that changed (sammel-ente's run), a scan that answers 404 or 410
+for the first time, a scan that loads again after its 7 days, a manual card's new picture and a
+release. A first missing scan is recorded only after its card's mismatches were put back, and a
+returning scan's record is cleared only after that, so a failure is tried again next run; a scan
+that answers 404 again after its 7 days changes nothing. Missing scans are named in a throttled
+admin alert per list of cards (`scan-missing:<collection>:<cards>`), with the cards left without
+any reference and the ones that could not be recorded. Every picture download from laststicker
+(scans for matching, thumbnails in DMs and `/card`) goes through one pacer: at most one request
+per 1500 ms (`pacedImageFetch`); the set pages keep the sync's own 1500 ms. The embeddings are
+cached by URL, so each scan is downloaded once; the first run after the switch requests all 251
+scans (234 load), about 6 minutes before its DMs.
 
 sammel-ente's listings are compared like every other shop's.
 
-**The switch re-matched once.** Migration 0008 set every listing the admin had not mapped and
-that is no bundle back to `pending`, keeping its old status when it was a judgement
-(`rematch_from`). Each run counts the ones it compared again: when any changed status or is a
-mismatch, the admin gets one summary (`Re-match against new reference pictures: compared N listing(s) again, M
-changed.`, every mismatch named first with its picture card, then up to 10 other changes)
-instead of a note per mismatch, and `/admin run` shows `Re-match: N compared, M changed`. A
-mismatch the summary has no room for, or a summary that cannot be delivered, keeps its own
-note. A listing that was a mismatch before the switch stays held back from users until it is
-compared again; a final status, an admin map or a bundle ends its re-match. Notifications stay
-recorded per listing and availability period, so nobody is notified twice.
+**Re-matching.** Migration 0008 set every listing the admin had not mapped and that is no bundle
+back to `pending`, keeping its old status when it was a judgement (`rematch_from`). Every later
+reset of a mismatch (a changed reference, above) marks it the same way (`rematch_from`
+`mismatch`). Such a listing is held back from users until it is compared again with a final
+status (`no_reference` and the unavailable statuses are retried, not final); `/stock`,
+`/missing status` and `/card` show it as held back. A final status, an admin map or a bundle ends
+its re-match. Each run counts the ones it compared again: when any changed status or is a
+mismatch, the admin gets one summary (`Re-match against new reference pictures: compared N
+listing(s) again, M changed.`, every mismatch named first with its picture card, then up to 10
+other changes) instead of a note per mismatch, and `/admin run` shows `Re-match: N compared, M
+changed`. A mismatch the summary has no room for, or a summary that cannot be delivered, keeps
+its own note. Notifications stay recorded per listing and availability period, so nobody is
+notified twice.
 
 ## Defaults
 

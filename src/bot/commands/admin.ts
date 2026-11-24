@@ -153,13 +153,13 @@ function readPicture(
  * mismatches again. The change itself is made either way; a failure is logged and returned as
  * the line the admin's reply adds.
  */
-function rematchCard(collection: CollectionId, cardId: CardId): string {
+function rematchCard(collection: CollectionId, cardId: CardId, retry: string): string {
   try {
     listingManager.rematchMismatches(collection, [cardId]);
     return '';
   } catch (error) {
     logError(`re-matching the mismatches of #${cardId} failed`, error);
-    return `\n⚠️ Its mismatches could not be compared again (${errorMessage(error)}); run the command again to retry.`;
+    return `\n⚠️ Its mismatches could not be compared again (${errorMessage(error)}); ${retry}.`;
   }
 }
 
@@ -231,7 +231,9 @@ async function catalogCardCommand(
         await refused(result.reason);
         return;
       }
-      const warning = picture.url ? rematchCard(collection, cardId) : '';
+      const warning = picture.url
+        ? rematchCard(collection, cardId, 'run the edit with the picture again to retry')
+        : '';
       const card = catalogManager.getCard(collection, cardId);
       await interaction.reply(ephemeral(`#${cardId} now: ${card?.name ?? '(no name)'}.${warning}`));
       return;
@@ -257,7 +259,12 @@ async function catalogCardCommand(
         await refused(result.reason);
         return;
       }
-      const warning = rematchCard(collection, cardId);
+      // The next sync sets its scan, a changed reference, and re-matches it then (repictured).
+      const warning = rematchCard(
+        collection,
+        cardId,
+        'the next catalog sync does it with its scan'
+      );
       await interaction.reply(
         ephemeral(`#${cardId} now follows laststicker from the next sync.${warning}`)
       );

@@ -4,6 +4,7 @@ import type { MessageCreateOptions } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
 import { cards } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
+import type { CollectionId } from '../collections/ids';
 import type { StoredListing } from '../database/listingManager';
 import {
   buildNotificationMessages,
@@ -18,6 +19,7 @@ const referenceUrl = 'https://ref/12.jpg';
 function listing(i: number, over: Partial<StoredListing> = {}): StoredListing {
   return {
     id: i,
+    collection: 'lego-minecraft-3',
     shop: 'blue-ocean',
     url: `https://shop/${i}`,
     title: `Title ${i}`,
@@ -79,7 +81,7 @@ describe('notification messages', () => {
   beforeEach(() => {
     db.delete(cards).run();
     catalogManager.seedIfEmpty();
-    catalogManager.updateNamesAndReferences([
+    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
       { cardId: cid('12'), name: 'Squid', imageUrl: referenceUrl },
     ]);
   });
@@ -273,8 +275,34 @@ describe('notification messages', () => {
     expect(e.thumbnail.url).toBe(referenceUrl);
   });
 
+  test("a listing of another collection gets neither this collection's name nor reference", () => {
+    const e = embedJson(
+      atMsg(
+        buildNotificationMessages([
+          item(1, {
+            collection: 'other-set' as CollectionId,
+            matchStatus: 'unconfirmed',
+            similarity: 0.5,
+          }),
+          item(2, { matchStatus: 'unconfirmed', similarity: 0.5 }),
+        ]),
+        0
+      )
+    );
+    expect(e.title).toBe('🟢 Card #12 is available');
+    expect(e.thumbnail).toBeUndefined();
+    const same = embedJson(
+      atMsg(
+        buildNotificationMessages([item(2, { matchStatus: 'unconfirmed', similarity: 0.5 })]),
+        0
+      )
+    );
+    expect(same.title).toBe('🟢 Card #12 Squid is available');
+    expect(same.thumbnail.url).toBe(referenceUrl);
+  });
+
   test('a placeholder reference is never shown as the thumbnail', () => {
-    catalogManager.updateNamesAndReferences([
+    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
       { cardId: cid('LE10'), name: 'Exploding Creeper', imageUrl: 'https://ref/mnc3_leer.jpg' },
     ]);
     const e = embedJson(

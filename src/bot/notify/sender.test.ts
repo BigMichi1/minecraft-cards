@@ -20,6 +20,7 @@ import { cid, ids } from '../../test/cardIds';
 function seedListing(n: number): StoredListing {
   const [stored] = listingManager.upsertFromRun(
     'blue-ocean',
+    'lego-minecraft-3',
     [
       {
         shop: 'blue-ocean',
@@ -132,8 +133,8 @@ describe('createDiscordSender', () => {
     db.delete(users).run();
     db.delete(cards).run();
     catalogManager.seedIfEmpty();
-    userManager.setList('u1', '12');
-    userManager.setList('u2', '12');
+    userManager.setList('u1', 'lego-minecraft-3', '12');
+    userManager.setList('u2', 'lego-minecraft-3', '12');
   });
 
   test('a failing user is marked and skipped; others are notified and recorded', async () => {
@@ -467,7 +468,7 @@ describe('createDiscordSender', () => {
     const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
     test('the reference thumbnail is fetched once across single messages', async () => {
-      catalogManager.updateNamesAndReferences([
+      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
         { cardId: cid('12'), name: 'Squid', imageUrl: reference },
       ]);
       const items = Array.from({ length: 3 }, (_, i) =>
@@ -489,7 +490,7 @@ describe('createDiscordSender', () => {
     });
 
     test('a number from the picture attaches the reference beside the listing picture', async () => {
-      catalogManager.updateNamesAndReferences([
+      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
         { cardId: cid('12'), name: 'Squid', imageUrl: reference },
       ]);
       const l: StoredListing = {

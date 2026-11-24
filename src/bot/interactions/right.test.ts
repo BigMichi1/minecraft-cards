@@ -56,6 +56,7 @@ function adminSpy(fail = false) {
 function makeListing(cardIds = [cid('LE22')]): StoredListing {
   const l = listingManager.upsertFromRun(
     'ebay',
+    'lego-minecraft-3',
     [
       {
         shop: 'ebay',
@@ -105,7 +106,9 @@ describe('Right button', () => {
     expect(lastText()).toBe('Thanks — the admin has been notified.');
     expect(spy.calls).toHaveLength(1);
     const msg = spy.calls[0]!;
-    expect(msg.content).toBe(`Confirm below, or fix with \`/admin map url:${l.url} cards:LE22\`.`);
+    expect(msg.content).toBe(
+      `Confirm below, or fix with \`/admin map url:${l.url} collection:lego-minecraft-3 cards:LE22\`.`
+    );
     const embed = (msg.embeds![0] as any).toJSON();
     expect(embed.title).toBe(`👍 Card confirmed by a user (listing ${l.id})`);
     expect(embed.fields[0]).toMatchObject({ name: 'By', value: 'bob#1 (u1)' });

@@ -161,7 +161,7 @@ export function buildAdminReportMessage(
     // The commands stay beside the buttons: mapping to other cards has no button, `/admin map`
     // stands in for a Confirm left out for a long id, and both work from an old DM without buttons.
     content: truncate(
-      `Fix with \`/admin map url:${listing.url} cards:${ids}\` or dismiss with \`/admin clear url:${listing.url}\`.`,
+      `Fix with \`/admin map url:${listing.url} collection:${listing.collection} cards:${ids}\` or dismiss with \`/admin clear url:${listing.url}\`.`,
       2000
     ),
     embeds: [embed],

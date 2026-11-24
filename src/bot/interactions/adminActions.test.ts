@@ -49,6 +49,7 @@ function fakeButton(customId: string, userId = ADMIN, content = 'orig') {
 function makeListing(cardIds = [cid('12')]): StoredListing {
   const l = listingManager.upsertFromRun(
     'ebay',
+    'lego-minecraft-3',
     [
       {
         shop: 'ebay',
@@ -143,7 +144,7 @@ describe('admin actions', () => {
     });
 
     test('a usable reference is the thumbnail', () => {
-      catalogManager.updateNamesAndReferences([
+      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
         { cardId: cid('12'), name: 'Squid', imageUrl: REFERENCE },
       ]);
       expect(adminListingEmbed(makeListing(), 't').toJSON().thumbnail!.url).toBe(REFERENCE);
@@ -151,7 +152,7 @@ describe('admin actions', () => {
 
     test('a placeholder or missing reference is never the thumbnail', () => {
       expect(adminListingEmbed(makeListing(), 't').toJSON().thumbnail).toBeUndefined();
-      catalogManager.updateNamesAndReferences([
+      catalogManager.updateNamesAndReferences('lego-minecraft-3', [
         {
           cardId: cid('12'),
           name: 'Squid',

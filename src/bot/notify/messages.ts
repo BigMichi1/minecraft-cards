@@ -7,6 +7,7 @@ import {
 } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import { encodeRightId } from '../interactions/buttonIds';
+import type { CollectionId } from '../collections/ids';
 import { catalogManager } from '../database/catalogManager';
 import type { StoredListing } from '../database/listingManager';
 import type { Money, ShopId } from '../shops/types';
@@ -73,7 +74,7 @@ function title(item: NotificationItem, marker: string): string {
     return truncate(`${prefix}🟢 Bundle with ${ids} on ${SHOP_NAMES[listing.shop]}`, MAX_TITLE);
   }
   const [id] = cardIds;
-  const name = id === undefined ? undefined : catalogManager.getCard(id)?.name;
+  const name = id === undefined ? undefined : catalogManager.getCard(listing.collection, id)?.name;
   return truncate(
     `${prefix}🟢 Card #${id ?? '?'}${name ? ` ${name}` : ''} is available`,
     MAX_TITLE
@@ -222,9 +223,20 @@ export function buildNotificationMessages<T extends NotificationItem>(
   items: T[]
 ): NotificationMessage<T>[] {
   const messages: NotificationMessage<T>[] = [];
-  const references: References = new Map(
-    catalogManager.referenceCatalog().usable.map((c) => [c.cardId, c.referenceImageUrl])
-  );
+  // Each collection's references are read once per call, for its own listings only.
+  const byCollection = new Map<CollectionId, References>();
+  const referencesOf = (collection: CollectionId): References => {
+    let references = byCollection.get(collection);
+    if (!references) {
+      references = new Map(
+        catalogManager
+          .referenceCatalog(collection)
+          .usable.map((c) => [c.cardId, c.referenceImageUrl])
+      );
+      byCollection.set(collection, references);
+    }
+    return references;
+  };
   const single = items.length <= SINGLE_MESSAGE_LIMIT;
   const perMessage = single ? 1 : ITEMS_PER_MESSAGE;
   const marker = (n: number) => (single ? '' : (POSITION_MARKERS[n] ?? `${n + 1}.`));
@@ -232,7 +244,9 @@ export function buildNotificationMessages<T extends NotificationItem>(
     const chunk = items.slice(i, i + perMessage);
     messages.push({
       message: {
-        embeds: chunk.map((item, n) => buildEmbed(item, marker(n), references)),
+        embeds: chunk.map((item, n) =>
+          buildEmbed(item, marker(n), referencesOf(item.listing.collection))
+        ),
         components: chunk.map((item, n) => buildRow(item, marker(n))),
       },
       items: chunk,

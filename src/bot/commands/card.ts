@@ -94,7 +94,7 @@ export async function execute(
       now: Date.now(),
     });
     const download: DownloadFn =
-      ctx.download ?? ((url, maxBytes) => downloadImage(url, fetch, maxBytes));
+      ctx.download ?? ((url, maxBytes) => downloadImage(url, undefined, maxBytes));
     // attachPictures never rejects: a picture it cannot attach keeps its URL, as in the alerts.
     const message = await attachPictures(reply, new PictureRun(download));
     await interaction.editReply({

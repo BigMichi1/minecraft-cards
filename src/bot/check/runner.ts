@@ -9,7 +9,12 @@ import {
 } from '../database/listingManager';
 import { runManager, SHOP_PEAK_WINDOW_MS } from '../database/runManager';
 import { userManager } from '../database/userManager';
-import { loadReferenceSet, matchListing, type ImageEmbedder } from '../matcher/embedder';
+import {
+  loadReferenceSet,
+  matchListing,
+  type ImageEmbedder,
+  type LoadedReferenceSet,
+} from '../matcher/embedder';
 import { isTransient, type ReferenceSet } from '../matcher/identify';
 import type { MatchResult, PictureRejection } from '../matcher/matchStatus';
 import type { FetchResult, Listing, ShopAdapter, ShopId } from '../shops/types';
@@ -151,14 +156,22 @@ function referencesOnce(
   alert: AlertFn,
   collection: CollectionId,
   catalogOf: () => ReferenceCatalog
-): () => Promise<ReferenceSet> {
-  let loading: Promise<ReferenceSet> | null = null;
+): () => Promise<LoadedReferenceSet> {
+  let loading: Promise<LoadedReferenceSet> | null = null;
   const failures = deps.referenceFailures;
   return () => {
     loading ??= (async () => {
       const now = deps.now();
       const catalog = catalogOf();
       const set = await loadReferenceSet(catalog, embedder, {
+        // laststicker has no scan of the card: the shop picture is used now and from now on.
+        onScanMissing: (cardId) => {
+          try {
+            catalogManager.markScanMissing(collection, cardId, now);
+          } catch (error) {
+            logError(`recording the missing scan of #${cardId} failed`, error);
+          }
+        },
         skip: (url) => {
           const at = failures?.get(url);
           return at !== undefined && now - at < IMAGE_RETRY_MS
@@ -241,7 +254,12 @@ function countPicture(counts: PictureCounts, result: MatchResult): void {
 
 /** One collection's reference lookups for a run: the title card's picture, and the whole set. */
 interface CollectionReferences {
-  referenceOf: (id: CardId) => string | null;
+  /**
+   * The title card's reference picture: with an embedder the one its loaded vector came from (a
+   * missing scan's fallback), so the title card is compared with the same picture as the set.
+   * `compared` false (a listing without a picture): the catalog's, without loading the set.
+   */
+  referenceOf: (id: CardId, compared: boolean) => Promise<string | null>;
   references: (() => Promise<ReferenceSet>) | undefined;
 }
 
@@ -251,16 +269,19 @@ function collectionReferences(
   collection: CollectionId
 ): CollectionReferences {
   let catalog: ReferenceCatalog | null = null;
-  const catalogOf = () => (catalog ??= catalogManager.referenceCatalog(collection));
+  const catalogOf = () => (catalog ??= catalogManager.referenceCatalog(collection, deps.now()));
   let usable: Map<CardId, string> | null = null;
+  const references = deps.embedder
+    ? referencesOnce(deps, deps.embedder, alert, collection, catalogOf)
+    : undefined;
   return {
-    referenceOf: (id) => {
+    referenceOf: async (id, compared) => {
       usable ??= new Map(catalogOf().usable.map((c) => [c.cardId, c.referenceImageUrl]));
-      return usable.get(id) ?? null;
+      const catalogUrl = usable.get(id) ?? null;
+      if (!references || !compared || catalogUrl === null) return catalogUrl;
+      return (await references()).urls.get(id) ?? catalogUrl;
     },
-    references: deps.embedder
-      ? referencesOnce(deps, deps.embedder, alert, collection, catalogOf)
-      : undefined,
+    references,
   };
 }
 
@@ -302,7 +323,10 @@ async function matchPending(
     const [only] = l.cardIds;
     const { referenceOf, references } = contextOf(l.collection);
     try {
-      const reference = l.cardIds.length === 1 && only !== undefined ? referenceOf(only) : null;
+      const reference =
+        l.cardIds.length === 1 && only !== undefined
+          ? await referenceOf(only, l.imageUrl !== null)
+          : null;
       const result = await matchListing(
         toShopListing(source, l),
         reference,

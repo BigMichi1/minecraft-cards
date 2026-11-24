@@ -4,6 +4,7 @@ import { imageEmbeddings } from '../database/schema/index';
 import type { FetchFn, Listing } from '../shops/types';
 import { errorMessage } from '../utils/async';
 import { HttpError, REQUEST_TIMEOUT_MS, USER_AGENT } from '../utils/http';
+import { createPacedFetch } from '../utils/pacedFetch';
 import logger from '../utils/logger';
 import { prepareImage, type ResizeSpec } from './imageInput';
 import type { CardId } from '../cards/cardId';
@@ -158,6 +159,11 @@ async function readCapped(response: Response, url: string, maxBytes: number): Pr
 }
 
 /** The shops' and eBay's picture hosts; listing pictures come from scraped pages and the API. */
+/** laststicker's host: its pages and scans are paced (CLAUDE.md, shop requests). */
+export const LASTSTICKER_HOST = 'www.laststicker.com';
+/** Between two requests to laststicker. */
+export const LASTSTICKER_DELAY_MS = 1500;
+
 export const IMAGE_HOSTS: ReadonlySet<string> = new Set([
   'shop-sammel-ente.de',
   'cdn.blue-ocean.de',
@@ -165,8 +171,18 @@ export const IMAGE_HOSTS: ReadonlySet<string> = new Set([
   'www.collect-it.de',
   'i.ebayimg.com',
   // laststicker's scans, the card references (catalog/laststicker.ts).
-  'www.laststicker.com',
+  LASTSTICKER_HOST,
 ]);
+
+/**
+ * The fetch every picture download uses by default: laststicker's scans at most one per
+ * LASTSTICKER_DELAY_MS across the whole process (matching, DMs, `/card`), other hosts at once.
+ */
+export const pacedImageFetch: FetchFn = createPacedFetch(
+  (url, init) => fetch(url, init),
+  new Set([LASTSTICKER_HOST]),
+  LASTSTICKER_DELAY_MS
+);
 const MAX_REDIRECTS = 3;
 
 /** True for an https URL on one of IMAGE_HOSTS, default port, no credentials. */
@@ -221,12 +237,12 @@ async function fetchImage(fetchFn: FetchFn, imageUrl: string): Promise<Response>
 /**
  * Download a picture on an allowed host (IMAGE_HOSTS, redirects checked), with the bot
  * User-Agent, the request timeout and a size cap (MAX_IMAGE_BYTES unless a smaller `maxBytes`
- * is given). Used for image matching and for attaching pictures to notifications. Every
- * failure is an ImageUnavailableError.
+ * is given), laststicker's scans paced by default (pacedImageFetch). Used for image matching and
+ * for attaching pictures to notifications. Every failure is an ImageUnavailableError.
  */
 export async function downloadImage(
   imageUrl: string,
-  fetchFn: FetchFn = fetch,
+  fetchFn: FetchFn = pacedImageFetch,
   maxBytes: number = MAX_IMAGE_BYTES
 ): Promise<Uint8Array> {
   const response = await fetchImage(fetchFn, imageUrl);
@@ -255,7 +271,7 @@ export async function createTransformersEmbedder(
   opts: { model: string; cacheDir: string },
   deps: TransformersDeps = {}
 ): Promise<ImageEmbedder> {
-  const fetchFn = deps.fetchFn ?? fetch;
+  const fetchFn = deps.fetchFn ?? pacedImageFetch;
   const extractor = await (deps.loadPipeline ?? loadTransformersPipeline)(
     opts.model,
     opts.cacheDir
@@ -342,21 +358,56 @@ export interface LoadReferenceOptions {
   concurrency?: number;
   /** A reason not to load this picture now (it failed recently), or null to load it. */
   skip?: (url: string) => string | null;
+  /**
+   * Called with a card whose reference answered 404 or 410 (laststicker has no scan of it) when
+   * its `fallbackUrl` was loaded instead; the catalog records it (markScanMissing).
+   */
+  onScanMissing?: (cardId: CardId) => void;
+}
+
+/** A loaded reference set, with the picture each vector was embedded from. */
+export type LoadedReferenceSet = ReferenceSet & {
+  /** Card id -> the URL its vector came from: the reference, or its fallback after a 404. */
+  urls: ReadonlyMap<CardId, string>;
+};
+
+/** A picture the server says does not exist (404, 410), not one that failed to load this time. */
+function isGone(error: unknown): boolean {
+  return (
+    error instanceof ImageUnavailableError &&
+    error.cause instanceof HttpError &&
+    (error.cause.status === 404 || error.cause.status === 410)
+  );
 }
 
 /**
  * Embed every usable reference of `catalog`, at most `concurrency` at once. The catalog's gaps
  * stay `missing`; a reference that cannot be loaded joins them as `image_unavailable`, also when
  * the model fails on that one picture while it embeds others; only a model failing on every
- * reference is `model_unavailable`. Any other error (the cache's database, a bug) is rethrown.
+ * reference is `model_unavailable`. A reference with a `fallbackUrl` (a laststicker scan) that
+ * answers 404 or 410 is reported through `onScanMissing` and its fallback loaded instead; any
+ * other failure of it never falls back (a scan that exists but did not load this time must not
+ * be replaced). Any other error (the cache's database, a bug) is rethrown.
  */
 export async function loadReferenceSet(
   catalog: ReferenceCatalog,
   embedder: ImageEmbedder,
   options: LoadReferenceOptions = {}
-): Promise<ReferenceSet> {
-  const results: (ReferenceVector | { failed: Unavailable; detail: string } | null)[] =
-    catalog.usable.map(() => null);
+): Promise<LoadedReferenceSet> {
+  const results: (
+    (ReferenceVector & { url: string }) | { failed: Unavailable; detail: string } | null
+  )[] = catalog.usable.map(() => null);
+  const embedWithFallback = async (
+    card: ReferenceCatalog['usable'][number]
+  ): Promise<{ vector: Float32Array; url: string }> => {
+    try {
+      return { vector: await embedder.embed(card.referenceImageUrl), url: card.referenceImageUrl };
+    } catch (error) {
+      if (card.fallbackUrl === null || !isGone(error)) throw error;
+      options.onScanMissing?.(card.cardId);
+      return { vector: await embedder.embed(card.fallbackUrl), url: card.fallbackUrl };
+    }
+  };
   let next = 0;
   const worker = async () => {
     for (let i = next++; i < catalog.usable.length; i = next++) {
@@ -367,8 +418,8 @@ export async function loadReferenceSet(
         continue;
       }
       try {
-        const vector = await embedder.embed(card.referenceImageUrl);
-        results[i] = { cardId: card.cardId, vector, puzzle: card.puzzle };
+        const { vector, url } = await embedWithFallback(card);
+        results[i] = { cardId: card.cardId, vector, puzzle: card.puzzle, url };
       } catch (error) {
         results[i] = { failed: unavailableStatus(error), detail: errorMessage(error) };
       }
@@ -380,18 +431,21 @@ export async function loadReferenceSet(
   );
   await Promise.all(Array.from({ length: workers }, worker));
   const vectors: ReferenceVector[] = [];
+  const urls = new Map<CardId, string>();
   const failed: MissingReference[] = [];
   const modelWorked = results.some((r) => r !== null && 'vector' in r);
   results.forEach((r, i) => {
     if (r === null) return;
     if ('vector' in r) {
-      vectors.push(r);
+      const { url, ...vector } = r;
+      vectors.push(vector);
+      urls.set(r.cardId, url);
       return;
     }
     const reason = r.failed === 'model_unavailable' && modelWorked ? 'image_unavailable' : r.failed;
     failed.push({ cardId: catalog.usable[i]!.cardId, reason, detail: r.detail });
   });
-  return { vectors, missing: [...catalog.missing, ...failed] };
+  return { vectors, missing: [...catalog.missing, ...failed], urls };
 }
 
 /**

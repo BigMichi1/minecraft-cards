@@ -18,6 +18,7 @@ import { runManager } from '../database/runManager';
 import { userManager } from '../database/userManager';
 import { ImageUnavailableError, ModelError, type ImageEmbedder } from '../matcher/embedder';
 import logger from '../utils/logger';
+import { HttpError } from '../utils/http';
 import {
   ShopLayoutError,
   type FetchResult,
@@ -280,6 +281,36 @@ describe('runCheck', () => {
       fallbackUrl: null,
       puzzle: false,
     });
+  });
+
+  test('a missing scan is recorded and the title card is compared with the fallback in the same run', async () => {
+    const scan = 'https://www.laststicker.com/i/cards/12125/12.jpg';
+    setCatalogCards('lego-minecraft-3', [
+      { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+    ]);
+    const noScan: ImageEmbedder = {
+      model: 'fake',
+      embed: async (url) => {
+        embedded.push(url);
+        if (url === scan) {
+          throw new ImageUnavailableError(`HTTP 404 for ${url}`, {
+            cause: new HttpError(404, url),
+          });
+        }
+        return new Float32Array([1, 0]);
+      },
+    };
+    await runCheck(depsWith([ok('blue-ocean', [blue12])], { embedder: noScan }));
+    expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+      matchStatus: 'confirmed',
+      similarity: 1,
+    });
+    expect(embedded).toContain('https://ente/12.jpg');
+    expect(alerts.filter((a) => a.includes('could not be loaded'))).toEqual([]);
+    // Recorded: later runs (and the DM thumbnails) take the shop picture directly.
+    expect(catalogManager.referenceCatalog('lego-minecraft-3', clock).usable).toContainEqual(
+      expect.objectContaining({ cardId: cid('12'), source: 'shop' })
+    );
   });
 
   test("only the collection's fallback shop writes shop pictures", async () => {

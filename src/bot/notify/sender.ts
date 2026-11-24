@@ -81,7 +81,7 @@ export function createDiscordSender(client: DmClient, options: SenderOptions): N
   const isShuttingDown = options.isShuttingDown ?? (() => false);
   const { alert } = options;
   const download: DownloadFn =
-    options.downloadImage ?? ((url, maxBytes) => downloadImage(url, fetch, maxBytes));
+    options.downloadImage ?? ((url, maxBytes) => downloadImage(url, undefined, maxBytes));
 
   return {
     async send(pending: PendingNotifications) {

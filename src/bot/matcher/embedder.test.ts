@@ -18,6 +18,7 @@ import {
 } from './embedder';
 import type { ReferenceSet, ReferenceVector } from './identify';
 import { cid } from '../../test/cardIds';
+import { HttpError } from '../utils/http';
 
 /** Fake inner embedder: returns `vectors[url]` (or `fallback`) and counts calls. */
 function fakeEmbedder(
@@ -540,6 +541,100 @@ describe('loadReferenceSet', () => {
       { cardId: cid('13'), reason: 'image_unavailable', detail: 'HTTP 404 for bad' },
       { cardId: cid('14'), reason: 'image_unavailable', detail: 'onnx failed on corrupt' },
     ]);
+  });
+
+  describe('a laststicker scan with a shop picture as fallback', () => {
+    const scan = 'https://www.laststicker.com/i/cards/12125/xxl1.jpg';
+    const shop = 'https://shop-sammel-ente.de/xxl1.jpg';
+    const failing = (error: Error): ImageEmbedder => ({
+      model: 'm',
+      embed: async (url) => {
+        if (url === scan) throw error;
+        return new Float32Array(url === shop ? [0, 1] : [1, 0]);
+      },
+    });
+    const httpFailure = (status: number) =>
+      new ImageUnavailableError(`HTTP ${status} for ${scan}`, {
+        cause: new HttpError(status, scan),
+      });
+
+    test('a 404 scan falls back to the shop picture and reports the card', async () => {
+      const missingScans: string[] = [];
+      const set = await loadReferenceSet(
+        { usable: [card('XXL1', scan, false, shop), card('12', 'ok')], missing: [] },
+        failing(httpFailure(404)),
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.vectors.map((v) => [v.cardId, [...v.vector]])).toEqual([
+        [cid('XXL1'), [0, 1]],
+        [cid('12'), [1, 0]],
+      ]);
+      expect(set.urls.get(cid('XXL1'))).toBe(shop);
+      expect(set.urls.get(cid('12'))).toBe('ok');
+      expect(missingScans).toEqual(['XXL1']);
+      expect(set.missing).toEqual([]);
+    });
+
+    test('a 410 counts as missing too', async () => {
+      const missingScans: string[] = [];
+      const set = await loadReferenceSet(
+        { usable: [card('XXL1', scan, false, shop)], missing: [] },
+        failing(httpFailure(410)),
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.urls.get(cid('XXL1'))).toBe(shop);
+      expect(missingScans).toEqual(['XXL1']);
+    });
+
+    test('a 500 or a timeout on a scan never falls back', async () => {
+      for (const error of [
+        httpFailure(500),
+        new ImageUnavailableError(`image ${scan}: The operation timed out.`),
+      ]) {
+        const missingScans: string[] = [];
+        const set = await loadReferenceSet(
+          { usable: [card('XXL1', scan, false, shop)], missing: [] },
+          failing(error),
+          { onScanMissing: (id) => missingScans.push(id) }
+        );
+        expect(set.vectors).toEqual([]);
+        expect(set.missing).toEqual([
+          { cardId: cid('XXL1'), reason: 'image_unavailable', detail: error.message },
+        ]);
+        expect(missingScans).toEqual([]);
+      }
+    });
+
+    test('a 404 without fallbackUrl stays image_unavailable', async () => {
+      const missingScans: string[] = [];
+      const set = await loadReferenceSet(
+        { usable: [card('XXL1', scan)], missing: [] },
+        failing(httpFailure(404)),
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.missing).toMatchObject([{ cardId: cid('XXL1'), reason: 'image_unavailable' }]);
+      expect(missingScans).toEqual([]);
+    });
+
+    test('a failing fallback is image_unavailable, the scan still reported missing', async () => {
+      const missingScans: string[] = [];
+      const embedder: ImageEmbedder = {
+        model: 'm',
+        embed: async (url) => {
+          if (url === scan) throw httpFailure(404);
+          throw new ImageUnavailableError(`HTTP 503 for ${url}`);
+        },
+      };
+      const set = await loadReferenceSet(
+        { usable: [card('XXL1', scan, false, shop)], missing: [] },
+        embedder,
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.missing).toEqual([
+        { cardId: cid('XXL1'), reason: 'image_unavailable', detail: `HTTP 503 for ${shop}` },
+      ]);
+      expect(missingScans).toEqual(['XXL1']);
+    });
   });
 
   test('a model failing on every reference is model_unavailable (R11)', async () => {

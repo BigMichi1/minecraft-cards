@@ -133,10 +133,10 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     read by name.
   - A name several series 3 cards share counts beside each of their numbers: Ghast is #15, #102,
     #104 and #131 (laststicker and sammel-ente, 2026-11-24), so `LEGO Minecraft Karte 104 - Ghast`
-    (2026-11-19) is read as #104. A series 1 or 2 card with the same number and name, and nothing else in its title,
-    passes too; it starts `pending` and its picture is compared as for any title, so a clearly
-    other series 3 card becomes a `mismatch`, and an unclear picture an alert marked "number
-    unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with the series 1 and 2
+    (2026-11-19) is read as #104. A series 1 or 2 card with the same number and name, and
+    nothing else in its title, passes too; it starts `pending` and its picture is compared as for
+    any title, so a clearly other series 3 card becomes a `mismatch`, and an unclear picture an
+    alert marked "number unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with the series 1 and 2
     catalogs loaded, is to place such a title by name only when no other series has that name at
     that number (`docs/superpowers/specs/2026-11-19-multi-collection-design.md`).
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,

@@ -75,8 +75,11 @@ export interface SyncOptions {
   maxVanished?: number;
 }
 
-/** laststicker's section of the puzzle cards (live page, 2026-11-24). */
-const PUZZLE_KIND = 'Puzzlekarten';
+/**
+ * laststicker's section of the puzzle cards (live pages, 2026-11-24): `Puzzlekarten` (series 2
+ * and 3), `Puzzlekarte` (series 1).
+ */
+const PUZZLE_KIND = /^Puzzlekarte/;
 
 /** The usable reference pictures of one collection, and every card of it without one (and why). */
 export interface ReferenceCatalog {
@@ -476,7 +479,7 @@ export const catalogManager = {
   /**
    * Apply a laststicker checklist to the collection, in one transaction: insert missing cards,
    * set name, kind, variant and scan URL of every laststicker card (and the puzzle flag for a
-   * piece marker or the section `Puzzlekarten`, never cleared). Never deletes a card and never
+   * piece marker or a section starting `Puzzlekarte`, never cleared). Never deletes a card and never
    * changes a manual card's name, picture or kind; a manual card the rows list is reported
    * (`nowListed`) until markListedNoted. More stored cards missing than `maxVanished` is a
    * CatalogLayoutError and changes nothing.
@@ -520,7 +523,7 @@ export const catalogManager = {
           kind: row.kind,
           variant: row.variant,
           laststickerImageUrl: row.pictureUrl,
-          ...(row.puzzle || row.kind === PUZZLE_KIND ? { puzzleSeen: true } : {}),
+          ...(row.puzzle || PUZZLE_KIND.test(row.kind) ? { puzzleSeen: true } : {}),
           updatedAt: now,
         };
         if (!before) {

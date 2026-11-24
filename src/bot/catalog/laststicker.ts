@@ -29,8 +29,19 @@ export interface LaststickerRow {
   readonly variant: string;
   /** A puzzle card: the row carries a piece (`<div class="pz">`). */
   readonly puzzle: boolean;
-  /** The card's scan; laststicker answers 404 for a card it has not scanned. */
-  readonly pictureUrl: string;
+  /**
+   * The card's scan; laststicker answers 404 for a card it has not scanned. Null for a set
+   * laststicker has no scans of (`scans: false`).
+   */
+  readonly pictureUrl: string | null;
+}
+
+/** How a collection's set page is read (CollectionDefinition.laststicker). */
+export interface LaststickerOptions {
+  /** `false`: laststicker has no scans of this set; rows carry no picture URL. */
+  readonly scans?: false;
+  /** A raw checklist number taken as this card id (series 2's bare `XXL` is `XXL1`). */
+  readonly numberAliases?: Readonly<Record<string, string>>;
 }
 
 /** A parsed set page. */
@@ -62,7 +73,8 @@ const clip = (value: string) => JSON.stringify(clipText(value, MAX_VALUE));
  */
 export function parseLaststickerPage(
   html: string,
-  normalize: (raw: string) => CardId | null = normalizeCardId
+  normalize: (raw: string) => CardId | null = normalizeCardId,
+  options: LaststickerOptions = {}
 ): LaststickerSet {
   const $ = cheerio.load(html);
   const table = $('#checklist');
@@ -79,7 +91,7 @@ export function parseLaststickerPage(
       throw new CatalogLayoutError(`laststicker: row ${row} has ${tds.length} cells`);
     }
     const number = tds.eq(0).text().trim();
-    const cardId = normalize(number);
+    const cardId = normalize(options.numberAliases?.[number] ?? number);
     if (!cardId)
       throw new CatalogLayoutError(`laststicker: row ${row}: no card number ${clip(number)}`);
     if (seen.has(cardId)) throw new CatalogLayoutError(`laststicker: card ${cardId} twice`);
@@ -104,7 +116,7 @@ export function parseLaststickerPage(
       kind,
       variant,
       puzzle: pieceBox.find('.pz').length > 0,
-      pictureUrl: pictureUrl(setId, cardId),
+      pictureUrl: options.scans === false ? null : pictureUrl(setId, cardId),
     });
   });
   if (rows.length === 0) throw new CatalogLayoutError('laststicker: no rows in the checklist');
@@ -114,7 +126,12 @@ export function parseLaststickerPage(
 /** Fetch and parse one set page (`fetchText`: bot User-Agent, 20 s timeout). */
 export async function fetchLaststickerSet(
   set: string,
+  options: LaststickerOptions = {},
   fetchFn: FetchFn = fetch
 ): Promise<LaststickerSet> {
-  return parseLaststickerPage(await fetchText(laststickerSetUrl(set), fetchFn));
+  return parseLaststickerPage(
+    await fetchText(laststickerSetUrl(set), fetchFn),
+    normalizeCardId,
+    options
+  );
 }

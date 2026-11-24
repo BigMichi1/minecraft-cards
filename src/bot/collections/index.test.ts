@@ -9,6 +9,14 @@ describe('COLLECTIONS', () => {
     expect(COLLECTIONS.map((c) => c.id)).toEqual([...COLLECTION_IDS]);
   });
 
+  test('the registry lists series 1, 2 and 3 in order', () => {
+    expect([...COLLECTION_IDS]).toEqual([
+      'lego-minecraft-1',
+      'lego-minecraft-2',
+      'lego-minecraft-3',
+    ]);
+  });
+
   test('only lego-minecraft-3 seeds a starter checklist', () => {
     expect(COLLECTIONS.filter((c) => c.starterChecklist).map((c) => c.id)).toEqual([
       'lego-minecraft-3',
@@ -32,6 +40,8 @@ describe('collectionName', () => {
 describe('collectionChoices', () => {
   test('lists every collection as a slash command choice', () => {
     expect(collectionChoices()).toEqual([
+      { name: 'LEGO Minecraft Serie 1', value: 'lego-minecraft-1' },
+      { name: 'LEGO Minecraft Serie 2 "TNT Boom-Bastic"', value: 'lego-minecraft-2' },
       { name: 'LEGO Minecraft Serie 3 "On Fire"', value: 'lego-minecraft-3' },
     ]);
   });

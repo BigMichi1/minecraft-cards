@@ -1,4 +1,6 @@
 import { COLLECTION_IDS, type CollectionDefinition, type CollectionId } from './ids';
+import { legoMinecraft1 } from './legoMinecraft1';
+import { legoMinecraft2 } from './legoMinecraft2';
 import { legoMinecraft3 } from './legoMinecraft3';
 
 /**
@@ -6,6 +8,8 @@ import { legoMinecraft3 } from './legoMinecraft3';
  * under another id, is a compile error.
  */
 const DEFINITIONS: { readonly [K in CollectionId]: CollectionDefinition<K> } = {
+  'lego-minecraft-1': legoMinecraft1,
+  'lego-minecraft-2': legoMinecraft2,
   'lego-minecraft-3': legoMinecraft3,
 };
 

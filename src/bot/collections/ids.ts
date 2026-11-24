@@ -8,7 +8,7 @@ import type { ShopId } from '../shops/types';
  * starting with a letter; button custom ids split on `:` and embed them unescaped
  * (`ids.test.ts`).
  */
-export const COLLECTION_IDS = ['lego-minecraft-3'] as const;
+export const COLLECTION_IDS = ['lego-minecraft-1', 'lego-minecraft-2', 'lego-minecraft-3'] as const;
 
 export type CollectionId = (typeof COLLECTION_IDS)[number];
 
@@ -35,7 +35,13 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   /** A checklist (`parseChecklist` form) seeded into an empty catalog at start, if any. */
   readonly starterChecklist?: string;
   /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */
-  readonly laststicker?: { readonly set: string };
+  readonly laststicker?: {
+    readonly set: string;
+    /** `false`: laststicker has no scans of the set (the fallback shop's pictures serve). */
+    readonly scans?: false;
+    /** A raw checklist number taken as this card id (series 2's bare `XXL` is `XXL1`). */
+    readonly numberAliases?: Readonly<Record<string, string>>;
+  };
   /**
    * The shop whose listing picture is a card's reference when laststicker has no scan of it
    * (404 or 410, or none synced yet), or a manual card has no picture of the admin's; none: such

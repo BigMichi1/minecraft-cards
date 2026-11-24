@@ -78,7 +78,11 @@ describe('/missing', () => {
       expect(sub.options[0]).toMatchObject({
         name: 'collection',
         required: true,
-        choices: [{ name: 'LEGO Minecraft Serie 3 "On Fire"', value: 'lego-minecraft-3' }],
+        choices: [
+          { name: 'LEGO Minecraft Serie 1', value: 'lego-minecraft-1' },
+          { name: 'LEGO Minecraft Serie 2 "TNT Boom-Bastic"', value: 'lego-minecraft-2' },
+          { name: 'LEGO Minecraft Serie 3 "On Fire"', value: 'lego-minecraft-3' },
+        ],
       });
     }
   });

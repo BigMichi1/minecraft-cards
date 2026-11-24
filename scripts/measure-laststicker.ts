@@ -130,6 +130,7 @@ const scans: ReferenceVector[] = [];
 const scanOf = new Map<CardId, Float32Array>();
 const noScan: string[] = [];
 for (const [i, row] of rows.entries()) {
+  if (row.pictureUrl === null) continue;
   if (i > 0) await sleep(SCAN_DELAY_MS);
   try {
     const vector = await embedder.embed(row.pictureUrl);

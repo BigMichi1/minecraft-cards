@@ -130,11 +130,44 @@ describe('parseLaststickerPage', () => {
   });
 });
 
+describe('the series 1 and 2 pages (2026-11-24)', () => {
+  test('the series 1 page parses: 283 cards, German names, Puzzlekarte puzzle cards', () => {
+    const { setId, rows } = parseLaststickerPage(readFixture('laststicker-lego-minecraft-1.html'));
+    expect(setId).toBe(10289);
+    expect(rows).toHaveLength(283);
+    expect(rows.filter((r) => r.kind === 'Puzzlekarte')).toHaveLength(27);
+    expect(rows.map((r) => r.cardId)).toContain(cid('LE27'));
+    expect(rows.at(-1)).toMatchObject({
+      cardId: cid('XXL2'),
+      name: 'Brennender Zombie',
+      pictureUrl: 'https://www.laststicker.com/i/cards/10289/xxl2.jpg',
+    });
+  });
+
+  test('the series 2 page parses with its XXL alias and without scans', () => {
+    const { rows } = parseLaststickerPage(
+      readFixture('laststicker-lego-minecraft-2.html'),
+      undefined,
+      { scans: false, numberAliases: { XXL: 'XXL1' } }
+    );
+    expect(rows).toHaveLength(297);
+    expect(rows.at(-1)).toMatchObject({ cardId: cid('XXL1'), name: 'Ghast', pictureUrl: null });
+    expect(rows.every((r) => r.pictureUrl === null)).toBe(true);
+  });
+
+  test('a bare number no alias covers is still a CatalogLayoutError', () => {
+    expect(() => parseLaststickerPage(readFixture('laststicker-lego-minecraft-2.html'))).toThrow(
+      'no card number "XXL"'
+    );
+  });
+});
+
 describe('fetchLaststickerSet', () => {
   test('requests the set page with the bot User-Agent', async () => {
     const seen: { url: string; agent: string | null }[] = [];
     const result = await fetchLaststickerSet(
       'blue_ocean_lego_minecraft_on_fire',
+      {},
       async (url, init) => {
         seen.push({ url, agent: new Headers(init?.headers).get('User-Agent') });
         return new Response(fixture);
@@ -154,7 +187,7 @@ describe('fetchLaststickerSet', () => {
 
   test('an HTTP error rejects', async () => {
     await expect(
-      fetchLaststickerSet('x', async () => new Response('busy', { status: 503 }))
+      fetchLaststickerSet('x', {}, async () => new Response('busy', { status: 503 }))
     ).rejects.toBeInstanceOf(HttpError);
   });
 });

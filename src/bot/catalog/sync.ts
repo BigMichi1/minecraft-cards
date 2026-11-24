@@ -154,7 +154,8 @@ async function fetchAndApply(
   await (deps.gate ?? defaultGate).beforeRequest(deps.now, sleep);
   let rows;
   try {
-    ({ rows } = await (deps.fetchSet ?? fetchLaststickerSet)(definition.laststicker.set));
+    const { set, ...options } = definition.laststicker;
+    ({ rows } = await (deps.fetchSet ?? fetchLaststickerSet)(set, options));
   } catch (error) {
     // An unreadable page stays a layout error; anything else from the fetch is the network's.
     throw error instanceof CatalogLayoutError ? error : new FetchFailed(error);

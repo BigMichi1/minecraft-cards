@@ -1,6 +1,6 @@
 # One-click confirm for the admin
 
-Date: 2026-11-24. Status: approved.
+Date: 2026-11-24. Status: approved; amended after review (see the end).
 
 ## Intent
 
@@ -68,3 +68,27 @@ the alert, and the admin confirms (or dismisses) with a button instead of a comm
 Module split and naming, the exact embed layout (reuse `buildAdminReportMessage` parts), and
 whether the Wrong-report DM keeps its command hint text alongside the buttons (default: keep it,
 it is the path for other cards).
+
+## Amended after review (2026-11-24)
+
+The design above is as approved; review changed these points, and the code follows them:
+
+- **Picture and status checks.** The Confirm customId is
+  `admin-confirm:<listing>:<cards>:<picture URL fingerprint>` (built and read only in
+  `interactions/buttonIds.ts`). `listingManager.confirmCards(listingId, { cardIds, image }, now)`
+  returns `{ kind: 'confirmed' | 'gone' | 'stale' }`; `stale` names the reason: `cards`,
+  `picture` (the picture URL changed since the DM) or `status` (the listing is a `mismatch` or
+  `pending`, `isConfirmable` in `matcher/matchStatus.ts`). The admin's reply names the reason.
+- **Pictures attached.** The Right and wrong-report admin DMs go through `withPictures`
+  (`interactions/adminActions.ts`): pictures attached as in user alerts, resent once without
+  them only when Discord refuses the payload (400/413), only logged (no `notify-pictures` alert).
+  The thumbnail is the usable reference only, never a placeholder.
+- **Right replies.** A listing no longer `unconfirmed` sends nothing ("This listing changed
+  since the alert; there is nothing to confirm now."); a malformed button id answers "This button
+  is not valid." and is logged. The Right DM carries a content line with the `/admin map`
+  command, and the throttle is taken only after the DM is built.
+- **Handled DMs.** When the DM cannot be updated after Confirm or Dismiss took effect, the admin
+  is told "Confirmed; this message could not be updated." (or "Dismissed; …"), not a failure.
+  Both actions are logged.
+- **Interfaces.** `handleRightButton(i, { notifyAdmin, now? })`, `handleAdminConfirm(i,
+{ adminId, now? })`; one exported `AdminDm` type; `adminListingEmbed(listing, title, lead?)`.

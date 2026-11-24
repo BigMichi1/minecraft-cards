@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-24-one-click-confirm-design.md`
 
+> Amended after review: where this plan and the "Amended after review" section at its end disagree, the section and the code win.
+
 ## Global Constraints
 
 - All tasks run through `./bin/mise run <task>` (`test`, `typecheck`, `lint`, `format`); never `bun run`/`npx` directly.
@@ -142,3 +144,27 @@
 - [ ] **Step 4: Docs.** CLAUDE.md decision line: Right button only on single-card `unconfirmed` alerts, one admin DM per listing per day, no hold; admin Confirm = `/admin map` with the current cards but keeps `availableSince` (never re-notifies), refused when cards changed; Dismiss = `/admin clear`; admin only. Same rules in `docs/image-matching.md` where admin mapping is described.
 - [ ] **Step 5: Verify all:** `./bin/mise run typecheck`, `./bin/mise run lint`, `./bin/mise run format:check`, `./bin/mise run test` → all pass.
 - [ ] **Step 6: Commit** `feat(bot): route Right, Confirm and Dismiss buttons`.
+
+## Amended after review (2026-11-24)
+
+The design above is as approved; review changed these points, and the code follows them:
+
+- **Picture and status checks.** The Confirm customId is
+  `admin-confirm:<listing>:<cards>:<picture URL fingerprint>` (built and read only in
+  `interactions/buttonIds.ts`). `listingManager.confirmCards(listingId, { cardIds, image }, now)`
+  returns `{ kind: 'confirmed' | 'gone' | 'stale' }`; `stale` names the reason: `cards`,
+  `picture` (the picture URL changed since the DM) or `status` (the listing is a `mismatch` or
+  `pending`, `isConfirmable` in `matcher/matchStatus.ts`). The admin's reply names the reason.
+- **Pictures attached.** The Right and wrong-report admin DMs go through `withPictures`
+  (`interactions/adminActions.ts`): pictures attached as in user alerts, resent once without
+  them only when Discord refuses the payload (400/413), only logged (no `notify-pictures` alert).
+  The thumbnail is the usable reference only, never a placeholder.
+- **Right replies.** A listing no longer `unconfirmed` sends nothing ("This listing changed
+  since the alert; there is nothing to confirm now."); a malformed button id answers "This button
+  is not valid." and is logged. The Right DM carries a content line with the `/admin map`
+  command, and the throttle is taken only after the DM is built.
+- **Handled DMs.** When the DM cannot be updated after Confirm or Dismiss took effect, the admin
+  is told "Confirmed; this message could not be updated." (or "Dismissed; …"), not a failure.
+  Both actions are logged.
+- **Interfaces.** `handleRightButton(i, { notifyAdmin, now? })`, `handleAdminConfirm(i,
+{ adminId, now? })`; one exported `AdminDm` type; `adminListingEmbed(listing, title, lead?)`.

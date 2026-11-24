@@ -35,10 +35,12 @@
 ### Task 1: `listingManager.confirmCards`
 
 **Files:**
+
 - Modify: `src/bot/database/listingManager.ts` (next to `overrideCards`, ~line 443)
 - Test: `src/bot/database/listingManager.test.ts`
 
 **Interfaces:**
+
 - Produces: `confirmCards(listingId: number, expected: CardId[], now: number): StoredListing | 'changed' | undefined` on `listingManager`. `undefined` = no listing; `'changed'` = the listing's cards (as a set) differ from `expected`, nothing written.
 
 - [ ] **Step 1: Write failing tests** in a `describe('confirmCards')`:
@@ -55,10 +57,12 @@
 ### Task 2: Right button on unconfirmed alerts
 
 **Files:**
+
 - Modify: `src/bot/notify/messages.ts` (`buildRow`, ~line 158)
 - Test: `src/bot/notify/messages.test.ts`
 
 **Interfaces:**
+
 - Produces: alert rows carry a button with customId `right:<listing.id>`, label `✅ Right #<card>`, style `Success`, placed right after the Wrong button, only when `listing.matchStatus === 'unconfirmed'` and `cardIds.length === 1`.
 
 - [ ] **Step 1: Write failing tests:**
@@ -73,10 +77,12 @@
 ### Task 3: Admin Confirm/Dismiss buttons and handlers
 
 **Files:**
+
 - Create: `src/bot/interactions/adminActions.ts`, `src/bot/interactions/adminActions.test.ts`
 - Modify: `src/bot/interactions/report.ts` (`buildAdminReportMessage` uses the shared embed and adds the row), `src/bot/interactions/report.test.ts`
 
 **Interfaces:**
+
 - Consumes: `listingManager.confirmCards` (Task 1), `listingManager.clearHold(url)`, `listingManager.getById(id)`.
 - Produces:
   - `adminListingEmbed(listing: StoredListing, title: string): EmbedBuilder` (title, Cards, Shop, URL fields, listing URL, picture, reference thumbnail; moved out of `buildAdminReportMessage`).
@@ -101,9 +107,11 @@
 ### Task 4: User Right handler
 
 **Files:**
+
 - Create: `src/bot/interactions/right.ts`, `src/bot/interactions/right.test.ts`
 
 **Interfaces:**
+
 - Consumes: `adminListingEmbed`, `adminActionRow` (Task 3), `runManager.shouldAlert/lastAlertAt/releaseAlert`.
 - Produces: `handleRightButton(i: ButtonInteraction, notifyAdmin: (msg: MessageCreateOptions) => Promise<void>, now?: () => number): Promise<void>`; admin message = `adminListingEmbed(listing, '👍 Card confirmed by a user (listing <id>)')` with a `By` field `<tag> (<id>)` and `adminActionRow(listing, { dismiss: false })`.
 
@@ -121,9 +129,11 @@
 ### Task 5: Routing, wiring, docs
 
 **Files:**
+
 - Modify: `src/bot/interactions/router.ts`, `src/bot/interactions/router.test.ts`, `src/bot/bot.ts` (button dispatch), `CLAUDE.md` (Decisions to keep), `docs/image-matching.md` (admin confirmation)
 
 **Interfaces:**
+
 - Produces: `ButtonRoute` gains `'right' | 'admin-confirm' | 'admin-dismiss'` with prefixes `right:`, `admin-confirm:`, `admin-dismiss:`.
 
 - [ ] **Step 1: Write failing router tests:** `buttonRoute('right:5') === 'right'`, `buttonRoute('admin-confirm:5:12') === 'admin-confirm'`, `buttonRoute('admin-dismiss:5') === 'admin-dismiss'`; `report:`/`report-reason:` still route as before.

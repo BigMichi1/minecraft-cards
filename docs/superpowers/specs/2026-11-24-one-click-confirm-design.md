@@ -20,7 +20,7 @@ the alert, and the admin confirms (or dismisses) with a button instead of a comm
 ## Non-goals
 
 - Editing alert DMs already sent to users.
-- Mapping to *other* cards by button: a wrong number still needs `/admin map … cards:…`.
+- Mapping to _other_ cards by button: a wrong number still needs `/admin map … cards:…`.
 - Retrying a failed "right" DM to the admin, or storing who clicked Right.
 
 ## Anti-goals

@@ -387,6 +387,84 @@ describe('listingManager', () => {
       similarity: null,
     });
   });
+  describe('confirmCards', () => {
+    function unconfirmed12() {
+      listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
+      const l = listingManager.getByUrl(blue12.url)!;
+      listingManager.setMatch(
+        l.id,
+        { status: 'unconfirmed', similarity: 0.7, picture: null },
+        1500
+      );
+      return l;
+    }
+
+    test('confirms with the current cards and keeps availableSince', () => {
+      const l = unconfirmed12();
+      listingManager.setOnHold(l.id);
+      db.insert(reports)
+        .values({ listingId: l.id, reporterId: 'r', reason: 'other', createdAt: 1 })
+        .run();
+      expect(listingManager.confirmCards(l.id, [cid('12')], 3000)).toMatchObject({
+        cardIds: ['12'],
+        matchStatus: 'confirmed',
+        manualOverride: true,
+        similarity: null,
+        pictureCardId: null,
+        onHold: false,
+        availableSince: 1000,
+      });
+      expect(db.select().from(reports).get()!.resolvedAt).toBe(3000);
+    });
+
+    test('confirming never re-notifies a user who already had the alert', () => {
+      userManager.setList('u1', '12');
+      const l = unconfirmed12();
+      listingManager.recordNotified('u1', l.id, l.availableSince!);
+      listingManager.confirmCards(l.id, [cid('12')], 3000);
+      expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
+    });
+
+    test('refuses when the cards changed, writing nothing', () => {
+      const l = unconfirmed12();
+      expect(listingManager.confirmCards(l.id, [cid('13')], 3000)).toBe('changed');
+      expect(listingManager.getById(l.id)).toMatchObject({
+        matchStatus: 'unconfirmed',
+        manualOverride: false,
+        similarity: 0.7,
+      });
+    });
+
+    test('returns undefined for a missing listing', () => {
+      expect(listingManager.confirmCards(424242, [cid('12')], 3000)).toBeUndefined();
+    });
+
+    test('is idempotent', () => {
+      const l = unconfirmed12();
+      listingManager.confirmCards(l.id, [cid('12')], 3000);
+      expect(listingManager.confirmCards(l.id, [cid('12')], 4000)).toMatchObject({
+        matchStatus: 'confirmed',
+        manualOverride: true,
+        availableSince: 1000,
+      });
+    });
+
+    test('survives a rescrape', () => {
+      const l = unconfirmed12();
+      listingManager.confirmCards(l.id, [cid('12')], 3000);
+      listingManager.upsertFromRun(
+        'blue-ocean',
+        [{ ...blue12, imageUrl: 'https://img/new.jpg' }],
+        5000
+      );
+      expect(listingManager.getById(l.id)).toMatchObject({
+        matchStatus: 'confirmed',
+        manualOverride: true,
+        cardIds: ['12'],
+      });
+    });
+  });
+
   describe('picture identification', () => {
     const HOUR = 60 * 60 * 1000;
     /** An eBay title naming no card, passed on for the picture to identify (rule 4). */

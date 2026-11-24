@@ -461,6 +461,40 @@ export const listingManager = {
     });
   },
 
+  /**
+   * The admin's one-click confirmation: what `overrideCards` does with the listing's current
+   * cards, except that `availableSince` is kept, so users who already had the alert for this
+   * availability period are not notified again. `'changed'` (nothing written) when the listing's
+   * cards no longer equal `expected`, e.g. a rescrape changed them after the button was sent.
+   */
+  confirmCards(
+    listingId: number,
+    expected: CardId[],
+    now: number
+  ): StoredListing | 'changed' | undefined {
+    return db.transaction((tx) => {
+      const row = tx.select().from(listings).where(eq(listings.id, listingId)).get();
+      if (!row) return undefined;
+      const current = new Set(cardIdsOf(tx, [row.id]).get(row.id) ?? []);
+      const wanted = new Set(expected);
+      if (current.size !== wanted.size || [...wanted].some((id) => !current.has(id))) {
+        return 'changed';
+      }
+      tx.update(listings)
+        .set({
+          manualOverride: true,
+          matchStatus: 'confirmed',
+          similarity: null,
+          pictureCardId: null,
+          onHold: false,
+        })
+        .where(eq(listings.id, row.id))
+        .run();
+      resolveReports(tx, row.id, now);
+      return byUrl(tx, row.url);
+    });
+  },
+
   clearHold(url: string): StoredListing | undefined {
     return db.transaction((tx) => {
       const row = tx.select().from(listings).where(eq(listings.url, url)).get();

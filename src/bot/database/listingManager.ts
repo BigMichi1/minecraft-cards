@@ -203,8 +203,8 @@ export const listingManager = {
    * A URL already stored under another collection (stored there first) is left as it is, not
    * returned, not marked unavailable by this run, and logged; with `moveFromOtherCollections`
    * (eBay, whose titles name their collection) an unmapped listing of the same shop moves to
-   * `collection` instead, is compared again there and starts a new availability period, and the
-   * moves are logged. Call only after a successful fetch.
+   * `collection` instead, with a fresh match status (`pending`, compared again there, or
+   * `bundle`) and a new availability period, and the moves are logged. Call only after a successful fetch.
    */
   upsertFromRun(
     shop: ShopId,

@@ -269,7 +269,9 @@ One adapter run covers all collections, so items found by several queries are fe
 - Picture candidates (rule 4, a title naming no card) stay series 3 only.
 - Errors: as today, any failing or malformed query fails the whole eBay run, so no collection's
   eBay listings are touched (an item found by one collection's query may belong to another, so a
-  narrower scope could mark real listings unavailable). One alert key `shop-error:ebay`. A cut search
+  narrower scope could mark real listings unavailable). One alert key `shop-error:ebay`; only a
+  collection whose own searches all come back empty, and storing, fail per collection
+  (`shop-error:ebay:<collection>`, 3b). A cut search
   still alerts (`shop-truncated:ebay`) and the run goes on, as today.
 
 ### Matcher
@@ -429,22 +431,25 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   each listing with its collection (`Listing.collection`). An adapter covering several
   collections (`ShopAdapter.collections`) is stored per collection by the runner, and its
   fetch error, cut searches and unloaded card lists alert once under the shop
-  (`shop-error:ebay`, `shop-truncated:ebay`, `shop-names:ebay:<collections>`); storing stays per collection.
+  (`shop-error:ebay`, `shop-truncated:ebay`, `shop-names:ebay:<collections>`); storing stays
+  per collection.
   `checkAdapters` refuses a shared adapter that overlaps another or does not cover its own
   `collection`, under which the run's skipped counts are filed.
 - An unmapped eBay listing whose title names another collection moves there
-  (`upsertFromRun(…, { moveFromOtherCollections: true })`), as `pending` with a new
-  availability period; admin-mapped ones stay where the admin put them and are kept fresh
+  (`upsertFromRun(…, { moveFromOtherCollections: true })`), with a fresh match status
+  (`pending`, or `bundle`) and a new availability period; admin-mapped ones stay where the admin put them and are kept fresh
   there. A listing the run saw is never marked gone in another collection (`seenUrls`).
-- A series list with one series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`) names several
-  collections; only series numbers 1 to 3 form a list, so `Serie 3 - 12 - Steve` is card #12.
-  Series 3's marker also takes `Staffel 3` and `TCC 3`, as series 1's and 2's do.
+- A series list with one series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 1 bis 3`)
+  names several collections; a list holds only series numbers 1 to 3, going upward, so
+  `Serie 3 - 12 - Steve - Charakterkarte` is card #12 and `Serie 3 - 1 - …` card #1. Series 3's
+  marker also takes `Staffel 3` (as series 1 and 2 take theirs) and `TCC 3` (as series 1
+  takes `TCC 1`).
 - A collection whose own searches all return nothing is a shop error of that collection
   (`emptySearches`); the others are stored.
 - Series 3's name check refuses a name series 1 or 2 has at that number, and reads no title by
   name while their card list is not loaded; picture candidates and the name check stay series
-  3 only. Step 4 (Turbo Attax) adds its marker (`Turbo Attax` and
-  `2026`) and its id rule's title forms.
+  3 only. Step 4 (Turbo Attax) adds its marker (`Turbo Attax` and `2026`) and its id rule's
+  title forms.
 
 ## Left to the builder
 

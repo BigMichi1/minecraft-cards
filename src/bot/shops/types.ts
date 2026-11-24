@@ -87,7 +87,8 @@ export interface FetchResult {
    */
   namesUnknown?: readonly CollectionId[];
   /**
-   * eBay: the collections whose own searches all returned no items. The runner stores nothing
+   * eBay: the collections whose own searches all returned no usable item, among the collections
+   * the run reads (a subset of the adapter's `collections`). The runner stores nothing
    * for them this run (a shop error of that collection), so their listings are not marked gone.
    */
   emptySearches?: readonly CollectionId[];

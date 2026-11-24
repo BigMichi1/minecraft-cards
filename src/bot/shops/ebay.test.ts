@@ -2085,6 +2085,18 @@ describe('series markers (2026-11-24 probe)', () => {
     ]) {
       expect(classifyTitle(title)).toEqual({ collection: 'lego-minecraft-3' });
     }
+    // A smaller number after the series is a card number: a list goes upward.
+    expect(extractCardIdsFromTitle('LEGO Minecraft Serie 3 - 1 - Steve - Charakterkarte')).toEqual(
+      ids('1')
+    );
+    expect(extractCardIdsFromTitle('LEGO Minecraft TCC 3 - 2 - Zombie - Charakterkarte')).toEqual(
+      ids('2')
+    );
+    expect(classifyTitle('LEGO Minecraft Serie 2 - 1 - Steve - Karte')).toEqual({
+      collection: 'lego-minecraft-2',
+    });
+    // The series number after TCC is no card number.
+    expect(extractCardIdsFromTitle('LEGO Minecraft TCC 3 - Steve - Charakterkarte')).toEqual([]);
     // A series list stays one, also before "Karte" and before a dash and a word; "Serie 1 - 2 -
     // Steve" may be series 1 #2 or a list: unclear, so no ids.
     for (const title of [
@@ -2096,6 +2108,10 @@ describe('series markers (2026-11-24 probe)', () => {
       'LEGO Minecraft TCC 1 & 2 - Karte 45',
       'LEGO Minecraft Serie 2 & 3 - Karte 12',
       'LEGO Minecraft Serie 1 - 2 - Steve - Skin Karte',
+      'LEGO Minecraft Serie 1 bis 3 Karte 5',
+      'LEGO Minecraft Serie 1 oder 2 Karte 5',
+      'LEGO Minecraft Serie 1 2 3 Karte 5',
+      'LEGO Minecraft Serie 2 to 3 Karte 5',
     ]) {
       expect(classifyTitle(title)).toEqual({ exclusion: 'several collections' });
     }
@@ -2345,5 +2361,74 @@ describe('one eBay run for every collection', () => {
     expect(listings.map((l) => [l.collection, l.cardIds])).toEqual([
       ['lego-minecraft-1', ids('12')],
     ]);
+  });
+
+  test('a TCC number other than a series number keeps a title from being a picture candidate', () => {
+    expect(isPictureCandidate('LEGO Minecraft TCC 3 Ghast Karte')).toBe(true);
+    expect(isPictureCandidate('LEGO Minecraft TCC 12 Karte Serie 3')).toBe(false);
+  });
+
+  test('searches answering only unusable items are empty; a collection without searches is not', async () => {
+    const broken = JSON.stringify({ total: 1, itemSummaries: [{ itemId: 'v1|1|0' }] });
+    const s1Queries = ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'];
+    const fake = makeFetch({
+      searchBody: (_n, url) =>
+        s1Queries.includes(new URL(url).searchParams.get('q') ?? '')
+          ? broken
+          : oneItem('LEGO Minecraft On Fire Karte 12'),
+    });
+    const s2 = EBAY_COLLECTIONS.find((c) => c.id === 'lego-minecraft-2')!;
+    const result = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      collections: [
+        ...EBAY_COLLECTIONS.filter((c) => c.id !== 'lego-minecraft-2'),
+        { ...s2, queries: [] },
+      ],
+    }).fetchListings();
+    expect(result.emptySearches).toEqual(['lego-minecraft-1']);
+  });
+
+  test('a name a series this run does not read has at that number gives no id', async () => {
+    const fake = makeFetch({ searchBody: () => oneItem('LEGO Minecraft Karte 104 - Ghast') });
+    const run = (s1: ReadonlyMap<CardId, string>) =>
+      createEbayFetcher({
+        collections: SERIES_3_ONLY,
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        cardNames: (c) =>
+          c === 'lego-minecraft-3'
+            ? new Map([[cid('104'), 'Ghast']])
+            : c === 'lego-minecraft-1'
+              ? s1
+              : OTHER_SERIES_NAMES,
+      }).fetchListings();
+    expect((await run(new Map([[cid('104'), 'Ghast']]))).listings).toEqual([]);
+    const unloaded = await run(new Map());
+    expect(unloaded.listings).toEqual([]);
+    expect(unloaded.namesUnknown).toEqual(['lego-minecraft-1']);
+    expect((await run(OTHER_SERIES_NAMES)).listings.map((l) => l.cardIds)).toEqual([ids('104')]);
+  });
+
+  test('a picture candidate is told by the markers the fetcher is given', async () => {
+    const fake = makeFetch({ searchBody: () => oneItem('LEGO Minecraft FOO Ender Dragon') });
+    const s3 = EBAY_COLLECTIONS.find((c) => c.id === 'lego-minecraft-3')!;
+    const foo = [{ ...s3, series: /\bFOO\b/i }];
+    const { listings } = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      collections: foo,
+    }).fetchListings();
+    expect(listings.map((l) => [l.collection, l.idSource, l.cardIds])).toEqual([
+      ['lego-minecraft-3', 'picture', []],
+    ]);
+    expect(isPictureCandidate('LEGO Minecraft FOO Ender Dragon', foo)).toBe(true);
+    expect(isPictureCandidate('LEGO Minecraft FOO Ender Dragon')).toBe(false);
   });
 });

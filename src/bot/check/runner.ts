@@ -627,11 +627,13 @@ function runCounts(result: FetchResult): Partial<ShopSummary> {
  * Fetch one shop and store what it returned; a failure is recorded on the shop, not thrown. An
  * adapter covering several collections (eBay, a shared run) is fetched once and stored per
  * collection: each listing in the collection its title names (an admin-mapped one where the
- * admin put it), and every covered collection is stored, so its gone listings are marked
- * unavailable as for a shop of one collection. A failed fetch, or a failure placing its
- * listings, is alerted once under the shop alone (`shop-error:ebay`) and touches none of its
- * collections; cut searches and unloaded card lists are alerted once too
- * (`shop-truncated:ebay`, `shop-names:ebay:<collections>`) and the run goes on. A collection
+ * admin put it), and every covered collection is stored (but one whose own searches all came
+ * back empty), so its gone listings are marked unavailable as for a shop of one collection. A
+ * failed fetch, or a failure placing its listings, is alerted once under the shop alone
+ * (`shop-error:ebay`) and touches none of its collections; cut searches, unloaded card lists
+ * and admin mappings outside the covered collections are alerted once too
+ * (`shop-truncated:ebay`, `shop-names:ebay:<collections>`, `shop-outside:ebay`) and the run
+ * goes on. A collection
  * whose own searches all came back empty, and storing, fail per collection
  * (`shop-error:ebay:<collection>`, as do the drop and foreign alerts).
  */
@@ -645,7 +647,7 @@ async function checkShop(
 ): Promise<void> {
   const covered = adapter.collections ?? [adapter.collection];
   const shared = adapter.collections !== undefined;
-  // Keys and texts name the collection, except a shared run's, which name the shop alone.
+  // Keys and texts name the collection; the run-wide keys of a shared run name the shop alone.
   const runKey = shared ? adapter.id : `${adapter.id}:${adapter.collection}`;
   const runShop = shared ? adapter.id : `${adapter.id} (${collectionName(adapter.collection)})`;
   let result: FetchResult;
@@ -671,33 +673,47 @@ async function checkShop(
       `Shop ${runShop}: titles without a series word are not read by card name while the card list of ${result.namesUnknown.map(collectionName).join(', ')} is not loaded (laststicker sync, /admin catalog sync).`
     );
   }
-  let homes: Map<string, CollectionId> | undefined;
+  // A shared run's placement: where each listing is stored, and every URL it saw (none of
+  // them is marked gone in another collection). Undefined for a shop of one collection.
+  let placement: SharedPlacement | undefined;
   try {
-    homes = shared ? homesOf(adapter, covered, result.listings) : undefined;
+    placement = shared ? placeShared(adapter, covered, result.listings) : undefined;
   } catch (error) {
-    const message = `storing listings failed: ${errorMessage(error)}`;
-    logError(`shop ${runShop}: storing listings failed`, error);
+    const message = `placing listings failed: ${errorMessage(error)}`;
+    logError(`shop ${runShop}: placing listings failed`, error);
     for (const c of covered) setShopEntry(summary, c, adapter.id, { listings: 0, error: message });
     await alert(`shop-error:${runKey}`, `Shop ${runShop} check failed: ${message}`);
     return;
   }
-  // A shared run's listings are seen, wherever stored: none is marked gone in another collection.
-  const seenUrls = shared ? new Set(result.listings.map((l) => l.url)) : undefined;
+  if (placement && placement.outside.length > 0) {
+    await alert(
+      `shop-outside:${runKey}`,
+      clipText(
+        `Shop ${runShop}: ${placement.outside.length} admin-mapped listing(s) in a collection this run does not cover are left as they are (not refreshed, not marked gone): ${placement.outside.slice(0, MAX_NAMED).join(' ')}`,
+        DISCORD_MESSAGE_LIMIT
+      )
+    );
+  }
   const empty = new Set(result.emptySearches ?? []);
   for (const collection of covered) {
     if (empty.has(collection)) {
       // Its own searches found nothing: a query or API problem there, not every card sold.
       const message = `all searches of ${collectionName(collection)} returned no items`;
       logger.warn(`shop ${adapter.id}: ${message}`);
-      setShopEntry(summary, collection, adapter.id, { listings: 0, error: message });
+      setShopEntry(summary, collection, adapter.id, {
+        listings: 0,
+        error: message,
+        // The run's counts are filed under the adapter's collection, even when it is this one.
+        ...(collection === adapter.collection ? runCounts(result) : {}),
+      });
       await alert(
         `shop-error:${adapter.id}:${collection}`,
         `Shop ${adapter.id} (${collectionName(collection)}) check failed: ${message}`
       );
       continue;
     }
-    const found = homes
-      ? result.listings.filter((l) => homes.get(l.url) === collection)
+    const found = placement
+      ? result.listings.filter((l) => placement.homes.get(l.url) === collection)
       : result.listings;
     await storeShopResult(
       deps,
@@ -710,9 +726,19 @@ async function checkShop(
       summary,
       stored,
       fetched,
-      seenUrls
+      placement?.seenUrls
     );
   }
+}
+
+/** Where a shared run's listings go (placeShared). */
+interface SharedPlacement {
+  /** Each listing's collection; a listing without one is stored nowhere this run. */
+  readonly homes: Map<string, CollectionId>;
+  /** Every URL the run saw: none of them is marked gone in another collection. */
+  readonly seenUrls: Set<string>;
+  /** Admin-mapped listings in a collection the run does not cover (alerted, `shop-outside`). */
+  readonly outside: string[];
 }
 
 /**
@@ -720,13 +746,13 @@ async function checkShop(
  * listing the admin mapped, the collection they put it in (kept fresh there, whatever its title
  * names now). A listing whose collection the run does not cover (an admin mapping into a
  * collection without eBay settings) is left where it is, neither refreshed nor marked gone, and
- * logged; so is a listing that names no collection, which falls back to the adapter's.
+ * named in `outside`; a listing that names no collection falls back to the adapter's, logged.
  */
-function homesOf(
+function placeShared(
   adapter: ShopAdapter,
   covered: readonly CollectionId[],
   listings: readonly Listing[]
-): Map<string, CollectionId> {
+): SharedPlacement {
   const homes = new Map<string, CollectionId>();
   const outside: string[] = [];
   let unnamed = 0;
@@ -748,7 +774,7 @@ function homesOf(
       `shop ${adapter.id}: ${outside.length} listing(s) in a collection this run does not cover, left unchanged (not refreshed, not marked gone): ${outside.slice(0, MAX_NAMED).join(', ')}`
     );
   }
-  return homes;
+  return { homes, seenUrls: new Set(listings.map((l) => l.url)), outside };
 }
 
 /** Store one collection's part of a shop's fetch, and raise its alerts. */

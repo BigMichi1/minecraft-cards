@@ -140,13 +140,14 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
 - **One collection per title**: ids come only from a title that names exactly one collection's
   series (series 3: `Serie 3`, `Series 3`, `Serie3`, `Staffel 3`, `TCC 3`, `On Fire`), and are
   that collection's. A title naming several series gives no ids, as does a series list with one
-  series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 2/3`, and the unclear `Serie 1 - 2
-  - Steve`): a mixed lot is ambiguous. Only series numbers 1 to 3 form a list, so a number of
-two digits after a series (`Serie 3 - 12 - Steve`) is a card number. A title with no series
-word gives no ids either, even in the clear `Karten N - Name - Charakterkarte` form: series 1
-and 2 used the same forms
-(`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
-    single in the probe named its series.
+  series word (`Serie 1-2`, `Serie 1 & 2 - Karte 45`, `Serie 1 bis 3`, `Serie 2/3`, and the
+  unclear `Serie 1 - 2 - Steve`): a mixed lot is ambiguous. A list holds only series numbers 1
+  to 3, going upward: a larger number after a series (`Serie 3 - 12 - Steve - Charakterkarte`,
+  `Serie 3 - 5 - …`) or a smaller one (`Serie 3 - 1 - Steve - Charakterkarte`) is a card
+  number. A title with no series word gives no ids either, even in the clear
+  `Karten N - Name - Charakterkarte` form: series 1 and 2 used the same forms
+  (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
+  single in the probe named its series.
 - **No series word, but the catalog name** (`nameMatchedCardIds`): a title without any series
   word still gives a card when the name of that number in the eBay adapter's collection (the
   catalog name: laststicker's, or the admin's for a manual card, read at the start of each eBay

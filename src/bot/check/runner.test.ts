@@ -404,6 +404,38 @@ describe('runCheck', () => {
         lastSeenAt: before,
       });
       expect(alerts.filter((a) => a.includes('stored under another collection'))).toEqual([]);
+      const outside = alerts.filter((a) => a.includes('does not cover are left as they are'));
+      expect(outside).toHaveLength(1);
+      expect(outside[0]).toContain(s2.url);
+      expect(runManager.lastAlertAt('shop-outside:ebay')).toBeDefined();
+    });
+
+    test('the unloaded card list key names its collections in a fixed order', async () => {
+      await runCheck(
+        depsWith([
+          shared([item('1', 'lego-minecraft-3')], {
+            namesUnknown: ['lego-minecraft-2', 'lego-minecraft-1'],
+          }),
+        ])
+      );
+      expect(
+        runManager.lastAlertAt('shop-names:ebay:lego-minecraft-1,lego-minecraft-2')
+      ).toBeDefined();
+    });
+
+    test("series 3's searches all empty: the run's counts are still filed under it", async () => {
+      const s = await runCheck(
+        depsWith([
+          shared([item('1', 'lego-minecraft-1')], {
+            emptySearches: ['lego-minecraft-3'],
+            skippedNoId: 4,
+            truncated: ['q (cut)'],
+          }),
+        ])
+      );
+      expect(s.shops.ebay).toMatchObject({ listings: 0, skippedNoId: 4, truncated: 1 });
+      expect(s.shops.ebay?.error).toContain('returned no items');
+      expect(s.collections?.['lego-minecraft-1']?.ebay).toEqual({ listings: 1 });
     });
 
     test("in a shared run, another shop's listing under that URL still raises the foreign alert", async () => {

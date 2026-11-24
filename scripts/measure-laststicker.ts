@@ -5,8 +5,8 @@
  * `scans: false` has no scans, so only its fallbacks are measured) and the single-card listings
  * of its sammel-ente and collect-it categories,
  * and, when EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are set, eBay (the collection's own searches;
- * titles naming its series and one card, and for series 3 titles read by catalog name, with no
- * other series' names loaded to refuse one). Per
+ * titles naming its series and one card; no title is read by catalog name, as the other
+ * series' card lists are not loaded). Per
  * shop it prints the cosine similarity of each listing picture with the scan of its own card
  * (true pairs) and with the scan of the next card id that shop has (false pairs, usually the
  * neighbouring panorama piece), min / median / max, the errors at IMAGE_MATCH_THRESHOLD and the

@@ -96,6 +96,7 @@ describe('parseSammelEntePage', () => {
       lastPage: 1,
       productCount: 0,
       skippedNoId: 0,
+      skippedExcluded: 0,
       skippedInvalid: 0,
     });
   });
@@ -176,7 +177,10 @@ describe('series 1', () => {
       '?p=12': readFixture('sammel-ente-serie-1-p12.html'),
       '?p=': '<div class="card product-box"></div>',
     });
-    const settings = { category: 'https://shop-sammel-ente.de/Minecraft/Serie-1/' };
+    const settings = {
+      category: 'https://shop-sammel-ente.de/Minecraft/Serie-1/',
+      series: 'Serie 1',
+    };
     const { listings } = await createSammelEnteFetcher(settings, fetchFn, {
       delayMs: 0,
     }).fetchListings();
@@ -185,5 +189,18 @@ describe('series 1', () => {
     expect(ids).toContain(cid('1'));
     expect(ids).toContain(cid('LE8'));
     expect(ids).toContain(cid('XXL1'));
+  });
+
+  test('a card of another series, or naming none, is skipped and counted', () => {
+    const box = (title: string, href: string) =>
+      `<div class="card product-box"><a class="product-name" href="${href}">${title}</a></div>`;
+    const html = [
+      box('LEGO Minecraft Serie 1 | #001 Steve', '/a'),
+      box('LEGO Minecraft Serie 3 | #012 Squid', '/b'),
+      box('LEGO Minecraft | #013 Pig', '/c'),
+    ].join('');
+    const page = parseSammelEntePage(html, 'Serie 1');
+    expect(page.listings.map((l) => l.cardIds[0])).toEqual([cid('1')]);
+    expect(page.skippedExcluded).toBe(2);
   });
 });

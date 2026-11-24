@@ -684,6 +684,33 @@ describe('runCheck', () => {
     ).toContain('#10 … and 2 more');
   });
 
+  test('a sammel-ente listing stored under another collection gives this one no picture', async () => {
+    const ente: Listing = {
+      ...blue12,
+      shop: 'sammel-ente',
+      url: 'https://shop-sammel-ente.de/12',
+      imageUrl: 'https://ente/12.jpg',
+    };
+    await runCheck(depsWith([ok('sammel-ente', [ente])]));
+    catalogManager.syncCollection(
+      'lego-minecraft-1',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Skin Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      clock
+    );
+    // The same URL in the series 1 category: a series 3 listing, skipped there.
+    await runCheck(depsWith([ok('sammel-ente', [ente], {}, 'lego-minecraft-1')]));
+    expect(chosenReference('lego-minecraft-1', cid('12'))).toBeNull();
+  });
+
   test("only the collection's fallback shop writes shop pictures", async () => {
     await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     expect(chosenReference('lego-minecraft-3', cid('12'))).toBeNull();

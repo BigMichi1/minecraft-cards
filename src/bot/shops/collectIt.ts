@@ -177,12 +177,8 @@ export function parseCollectItPage(html: string, series: string | null = null): 
       return;
     }
     const titleSeries = SERIES_SUFFIX.exec(title)?.[1];
-    if (
-      series !== null &&
-      titleSeries !== undefined &&
-      titleSeries.toLowerCase() !== series.toLowerCase()
-    ) {
-      // Another series' card in this category: its number is another card here.
+    if (series !== null && titleSeries?.toLowerCase() !== series.toLowerCase()) {
+      // Another series' card in this category, or a title naming none: unsure is no card.
       excluded.push(url);
       return;
     }

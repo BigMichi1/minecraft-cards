@@ -12,7 +12,10 @@ describe('legoMinecraft3', () => {
       referenceFallbackShop: 'sammel-ente',
       knownTwins: [['59', 'XXL1']],
       shops: {
-        'sammel-ente': { category: 'https://shop-sammel-ente.de/Minecraft/Serie-3/' },
+        'sammel-ente': {
+          category: 'https://shop-sammel-ente.de/Minecraft/Serie-3/',
+          series: 'Serie 3',
+        },
         'blue-ocean': {},
         'collect-it': {
           category: 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten',

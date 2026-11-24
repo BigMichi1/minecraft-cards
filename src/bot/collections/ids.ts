@@ -30,8 +30,8 @@ export function isCollectionId(value: string): value is CollectionId {
 /** One card set the bot watches: its own catalog, shops and wanted lists. */
 /** A collection's settings per shop; a collection lists only the shops that sell it. */
 export interface CollectionShops {
-  /** The category page (absolute URL, `?p=N` pages). */
-  readonly 'sammel-ente'?: { readonly category: string };
+  /** The category page (absolute URL, `?p=N` pages) and the series label its titles name. */
+  readonly 'sammel-ente'?: { readonly category: string; readonly series: string };
   /** The single-card category (absolute URL) and the series label its titles end with. */
   readonly 'collect-it'?: { readonly category: string; readonly series: string };
   /** Series 3 only, today's category (PR 3c reads the TCC categories). */

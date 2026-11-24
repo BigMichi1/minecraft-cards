@@ -631,7 +631,8 @@ async function checkShop(
   const found = result.listings;
   try {
     const peak = recentPeak(adapter.id, adapter.collection, deps.now());
-    stored.push(...listingManager.upsertFromRun(adapter.id, adapter.collection, found, deps.now()));
+    const ours = listingManager.upsertFromRun(adapter.id, adapter.collection, found, deps.now());
+    stored.push(...ours);
     if (found.length > 0 && found.every((l) => !l.available)) {
       // Every card sold out at once is more likely a changed stock marker than real.
       await alert(
@@ -659,9 +660,12 @@ async function checkShop(
     // A row's collection may have no definition in this build (collectionName).
     const definition: CollectionDefinition | undefined = collectionById(adapter.collection);
     if (definition?.referenceFallbackShop === adapter.id) {
+      // Only listings stored under this collection: a URL another collection holds is not its.
+      const ownUrls = new Set(ours.map((l) => l.url));
       const changed = catalogManager.updateShopPictures(
         adapter.collection,
         found.flatMap((l) => {
+          if (!ownUrls.has(l.url)) return [];
           const [cardId] = l.cardIds;
           return l.cardIds.length === 1 && cardId !== undefined
             ? [{ cardId, imageUrl: l.imageUrl }]

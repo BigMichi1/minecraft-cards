@@ -12,7 +12,12 @@ describe('legoMinecraft2', () => {
         numberAliases: { XXL: 'XXL1' },
       },
       referenceFallbackShop: 'sammel-ente',
-      shops: { 'sammel-ente': { category: 'https://shop-sammel-ente.de/Minecraft/Serie-2/' } },
+      shops: {
+        'sammel-ente': {
+          category: 'https://shop-sammel-ente.de/Minecraft/Serie-2/',
+          series: 'Serie 2',
+        },
+      },
     });
   });
 });

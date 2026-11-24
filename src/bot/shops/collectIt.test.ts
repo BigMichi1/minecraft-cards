@@ -764,4 +764,12 @@ describe('series 1', () => {
     const page = parseCollectItPage(html, 'Serie 1');
     expect(page.listings.map((l) => l.cardIds[0])).toContain(cid('XXL1'));
   });
+
+  test('a title without the series label is skipped too: unsure is no card', async () => {
+    const html = retitle(alone(S1), '1 - Steve - Skin Karte - Serie 1', '1 - Steve - Skin Karte');
+    const { fetchFn } = fakeFetch({ Einzelkarten: html });
+    const result = await createCollectItFetcher(SERIES_1, fetchFn, { delayMs: 0 }).fetchListings();
+    expect(result.listings).toHaveLength(29);
+    expect(result.skippedExcluded).toBe(1);
+  });
 });

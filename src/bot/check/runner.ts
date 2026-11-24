@@ -625,16 +625,16 @@ function runCounts(result: FetchResult): Partial<ShopSummary> {
 
 /**
  * Fetch one shop and store what it returned; a failure is recorded on the shop, not thrown. An
- * adapter covering several collections (eBay, a shared run) is fetched once and stored per
- * collection: each listing in the collection its title names (an admin-mapped one where the
+ * adapter covering several collections (a shared run: eBay, blue-ocean) is fetched once and
+ * stored per collection: each listing in the collection it names (an admin-mapped one where the
  * admin put it), and every covered collection is stored, so its gone listings are marked
  * unavailable as for a shop of one collection. A failed fetch, or a failure placing its
  * listings, is alerted once under the shop alone (`shop-error:ebay`) and touches none of its
  * collections; cut searches, unloaded card lists and admin mappings outside the covered
  * collections are alerted once too (`shop-truncated:ebay`, `shop-names:ebay:<collections>`,
- * `shop-outside:ebay`) and the run goes on. A collection whose own searches all came back
- * empty is not stored, and it and storing fail per collection (`shop-error:ebay:<collection>`,
- * as do the drop and foreign alerts).
+ * `shop-outside:ebay`) and the run goes on. A collection the run found nothing of
+ * (`emptyCollections`) is not stored, and it and storing fail per collection
+ * (`shop-error:ebay:<collection>`, as do the drop and foreign alerts).
  */
 async function checkShop(
   deps: RunDeps,
@@ -752,10 +752,10 @@ interface SharedPlacement {
 }
 
 /**
- * Where each listing of a shared run is stored: the collection its title names, or, for a
- * listing the admin mapped, the collection they put it in (kept fresh there, whatever its title
- * names now). A listing whose collection the run does not cover (an admin mapping into a
- * collection without eBay settings) is left where it is, neither refreshed nor marked gone, and
+ * Where each listing of a shared run is stored: the collection it names (`Listing.collection`,
+ * from its title or URL), or, for a listing the admin mapped, the collection they put it in (kept
+ * fresh there, whatever it names now). A listing whose collection the run does not cover (an
+ * admin mapping into a collection without that shop's settings) is left where it is, neither refreshed nor marked gone, and
  * named in `outsideLabels`; a listing that names no collection falls back to the adapter's, logged.
  */
 function placeShared(
@@ -815,8 +815,8 @@ async function storeShopResult(
     // neither matched, nor a picture source, of this one.
     const ownUrls = new Set(ours.map((l) => l.url));
     const foreign = found.filter((l) => !ownUrls.has(l.url)).map((l) => l.url);
-    // A shared run (eBay) moves listings between its collections and stores an admin-mapped
-    // one where it is, so a foreign listing there is a listing of another shop, or a mapping
+    // A shared run (eBay, blue-ocean) moves listings between its collections and stores an
+    // admin-mapped one where it is, so a foreign listing there is a listing of another shop, or a mapping
     // made during the run.
     if (foreign.length > 0) {
       const why = shared
@@ -883,7 +883,7 @@ async function storeShopResult(
     record({
       listings: own.length,
       // A shared run's skipped and cut counts are the whole run's: filed once, under the
-      // adapter's `collection` (series 3 for eBay), not under each collection it covers.
+      // adapter's `collection` (series 3 for eBay and blue-ocean), not under each collection it covers.
       ...(collection === adapter.collection ? runCounts(result) : {}),
     });
   } catch (error) {

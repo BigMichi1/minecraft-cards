@@ -10,17 +10,17 @@ changes or a new one is suggested.
 | Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                                                                                                                                                                                        |
 | ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the fallback reference when laststicker has no scan of a card; its listings are compared like every shop's.                                                                                                                                                 |
-| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. Card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`); the title's "Nr." is wrong. Only "On Fire" titles count; series 1 and 2 share the category.                                                                                                                                                          |
+| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. One walk of the sticker-cards category for every collection; each product is placed by its URL (details below). Series 3's card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`; the title's "Nr." is wrong), series 1 and 2's from the title's `Nummer NNN`.                                               |
 | [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                                                                                                   |
 | eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. One run for every collection: each collection's searches (eight in all), every page by `offset`; card ids from titles naming exactly one collection's series (details below). |
 
 ## Per collection (2026-11-24)
 
-| Collection         | sammel-ente                                                                        | collect-it                                                                                                                                | blue-ocean      | eBay     |
-| ------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------- | -------- |
-| `lego-minecraft-1` | [`/Minecraft/Serie-1/`](https://shop-sammel-ente.de/Minecraft/Serie-1/) (13 pages) | [`/sammelwelt/…/serie1/Einzelkarten`](https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten) (256 singles) | not yet (PR 3c) | yes      |
-| `lego-minecraft-2` | [`/Minecraft/Serie-2/`](https://shop-sammel-ente.de/Minecraft/Serie-2/) (13 pages) | none (no single-card category)                                                                                                            | not yet (PR 3c) | yes      |
-| `lego-minecraft-3` | as below                                                                           | as below                                                                                                                                  | as below        | as below |
+| Collection         | sammel-ente                                                                        | collect-it                                                                                                                                | blue-ocean | eBay     |
+| ------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------- |
+| `lego-minecraft-1` | [`/Minecraft/Serie-1/`](https://shop-sammel-ente.de/Minecraft/Serie-1/) (13 pages) | [`/sammelwelt/…/serie1/Einzelkarten`](https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten) (256 singles) | yes        | yes      |
+| `lego-minecraft-2` | [`/Minecraft/Serie-2/`](https://shop-sammel-ente.de/Minecraft/Serie-2/) (13 pages) | none (no single-card category)                                                                                                            | yes        | yes      |
+| `lego-minecraft-3` | as below                                                                           | as below                                                                                                                                  | as below   | as below |
 
 - sammel-ente's titles name the series (`LEGO Minecraft Serie 1 | #001 Steve`, `#LE008`,
   `#XXL001`); one parser reads all three categories. A card title naming another series than the
@@ -30,8 +30,23 @@ changes or a new one is suggested.
   ending with another series label is skipped and counted, and still counts toward the article
   total; one without a series label fails the walk, as does a walk with no card of the series.
   `XXL 1 - …` (with a space) reads as XXL1.
-- blue-ocean sells series 1 and 2 singles in its TCC categories (`Nummer 250 I Schildkröte I LEGO
-Minecraft TCC 1`, the product number in the URL), which need their own parser (PR 3c).
+- blue-ocean (2026-11-24 probe): there is no series 1 category page; the sticker-cards category
+  lists every series' singles, stickers and packs (31 pages, 733 products; series 1 250 singles,
+  series 2 254, series 3 3). One walk reads it for every collection, and each product is placed
+  by its URL: the category path (`…/trading-card-collection-serie-1/18166/nummer-250-i-…`,
+  `…/trading-card-collection-boom-bastic/…`), else the product code before the card number of a
+  root URL (#1 to 9: `/nummer-001-i-steve-i-lego-minecraft-tcc-1-702351-01`,
+  `/nummer-001-i-alex-00702502-01`; series 3 `…-tcc-on-fire-2dd00088-16`). Stickers
+  (`stickerserie-1`, `…-00702506-NN`, pictures `…_sticker2025.jpg`) and packs (no `Nummer`
+  title, or no product code with a number) are no cards and not counted. A title or picture
+  naming another series than the URL's (series 1 titles end `I LEGO Minecraft TCC 1`, series 3
+  ones name "On Fire", series 2 titles name no series; pictures `250_lego_minecraft_tcc-01_de.jpg`
+  and `249_lego_minecraft_tcc-02.jpg`), or a series 1 or 3 title without its own marker, is
+  skipped and counted (`skippedExcluded`). Series 1 and 2 ids are the title's `Nummer NNN`
+  (`Nummer 266 I Never trust this chef`), which must equal the URL's number (else
+  `skippedNoId`); a picture number other than the id is an id conflict. A collection without a
+  card in the whole walk is a shop error of that collection (`emptyCollections`), its listings
+  untouched.
 
 ## eBay details
 

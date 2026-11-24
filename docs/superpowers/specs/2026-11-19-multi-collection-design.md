@@ -449,11 +449,30 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   marker also takes `Staffel 3` (as series 1 and 2 take theirs) and `TCC 3` (as series 1
   takes `TCC 1`).
 - A collection whose own searches all return no usable item is a shop error of that collection
-  (`emptySearches`); the others are stored.
+  (`emptySearches`, renamed `emptyCollections` in PR 3c); the others are stored.
 - Series 3's name check refuses a name series 1 or 2 has at that number, and reads no title by
   name while their card list is not loaded; picture candidates and the name check stay series
   3 only. Step 4 (Turbo Attax) adds its marker (`Turbo Attax` and `2026`) and its id rule's
   title forms.
+
+## Notes from PR 3c for the later steps
+
+- blue-ocean has no series 1 category page: its sticker-cards category lists the singles of all
+  three series, stickers and packs (2026-11-24: 31 pages, 733 products). One walk serves every
+  collection with `shops['blue-ocean']` (`BlueOceanSettings`: category path, product code,
+  picture part, title marker), through the PR 3b shared-run machinery: one adapter
+  (`collections`), alerts `shop-error:blue-ocean` and `shop-outside:blue-ocean` for the run,
+  storing per collection.
+- Each product is placed by its URL: the category path (`trading-card-collection-serie-1`,
+  `trading-card-collection-boom-bastic`) or the product code before the card number of a root
+  URL (`…-702351-09`, `…-00702502-09`, series 3 `…-2dd00088-16`). Stickers (`stickerserie-1`,
+  `00702506`) and packs are no cards and not counted. A title or picture contradicting the
+  placement (another series' title marker or picture part `_tcc-0N`, or a missing own marker)
+  is skipped and counted (`skippedExcluded`). Series 1 and 2 ids are the title's `Nummer NNN`,
+  which must equal the URL's number (else `skippedNoId`); series 3's stay the URL suffix.
+- `FetchResult.emptySearches` is now `emptyCollections`: a shared run's collections it found
+  nothing of (eBay: searches without a usable item; blue-ocean: no card in the whole walk), a
+  shop error of that collection whose listings stay untouched.
 
 ## Left to the builder
 

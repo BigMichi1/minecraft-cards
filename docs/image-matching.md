@@ -360,8 +360,8 @@ The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft 
 URLs ending `-tcc-1`). Card ids come from the URL suffix, so those listings would get a
 card id too (for example `1` from `…-tcc-1`) that is not the series 3 card of that number;
 in the measurement 250 of 456 blue-ocean listings were such cards. The blue-ocean parser
-drops them by title (`isOnFireCardTitle`: the title must contain "LEGO Minecraft TCC" and
-"On Fire"), and the measurement script reads blue-ocean through it.
+now places every product in its own collection by its URL (`docs/shops.md`), and the
+measurement script reads series 3 only.
 
 ## Compiled binary (`bun build --compile`)
 

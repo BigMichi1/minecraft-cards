@@ -1,5 +1,5 @@
 import type { CardId } from '../cards/cardId';
-import type { CollectionDefinition, CollectionId } from '../collections/ids';
+import type { CollectionDefinition, CollectionId, LEGACY_COLLECTION } from '../collections/ids';
 import { collectionById, collectionName } from '../collections/index';
 import { catalogManager, SCAN_RETRY_MS, type ReferenceCatalog } from '../database/catalogManager';
 import {
@@ -61,7 +61,9 @@ export interface RunSummary {
    * The shops of every collection but series 3, whose results stay in `shops` as in every row
    * before collections (read both through runManager.shopEntry).
    */
-  collections?: Partial<Record<CollectionId, Partial<Record<ShopId, ShopSummary>>>>;
+  collections?: Partial<
+    Record<Exclude<CollectionId, typeof LEGACY_COLLECTION>, Partial<Record<ShopId, ShopSummary>>>
+  >;
   /**
    * Listings compared again this run after the reference switch (migration 0008): how many, how
    * many changed status, and up to MAX_REMATCH_NAMED of the changes. Absent when there was none.
@@ -599,7 +601,10 @@ function recentPeak(shop: ShopId, collection: CollectionId, now: number): number
   try {
     return runManager.shopPeakListings(shop, collection, now);
   } catch (error) {
-    logError(`shop ${shop}: reading the recent listing counts failed, drop check skipped`, error);
+    logError(
+      `shop ${shop} (${collection}): reading the recent listing counts failed, drop check skipped`,
+      error
+    );
     return undefined;
   }
 }
@@ -633,6 +638,19 @@ async function checkShop(
     const peak = recentPeak(adapter.id, adapter.collection, deps.now());
     const ours = listingManager.upsertFromRun(adapter.id, adapter.collection, found, deps.now());
     stored.push(...ours);
+    // Only listings stored under this collection count here: a URL another collection holds is
+    // neither matched, nor a picture source, of this one.
+    const ownUrls = new Set(ours.map((l) => l.url));
+    const foreign = found.filter((l) => !ownUrls.has(l.url)).map((l) => l.url);
+    if (foreign.length > 0) {
+      await alert(
+        `shop-foreign:${key}`,
+        clipText(
+          `Shop ${shop}: ${foreign.length} listing(s) are stored under another collection and not read here (moving a listing between collections is not supported yet): ${foreign.slice(0, MAX_NAMED).join(' ')}${foreign.length > MAX_NAMED ? ` … and ${foreign.length - MAX_NAMED} more` : ''}`,
+          DISCORD_MESSAGE_LIMIT
+        )
+      );
+    }
     if (found.length > 0 && found.every((l) => !l.available)) {
       // Every card sold out at once is more likely a changed stock marker than real.
       await alert(
@@ -656,12 +674,10 @@ async function checkShop(
         `Shop ${shop}: ${result.truncated.length} search(es) cut at the page cap, later results are not seen: ${result.truncated.join('; ')}`
       );
     }
-    for (const l of found) fetched.set(l.url, l);
+    for (const l of found) if (ownUrls.has(l.url)) fetched.set(l.url, l);
     // A row's collection may have no definition in this build (collectionName).
     const definition: CollectionDefinition | undefined = collectionById(adapter.collection);
     if (definition?.referenceFallbackShop === adapter.id) {
-      // Only listings stored under this collection: a URL another collection holds is not its.
-      const ownUrls = new Set(ours.map((l) => l.url));
       const changed = catalogManager.updateShopPictures(
         adapter.collection,
         found.flatMap((l) => {

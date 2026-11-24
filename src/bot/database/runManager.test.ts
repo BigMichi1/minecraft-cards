@@ -319,6 +319,62 @@ describe('runManager', () => {
     expect(read.collections).toEqual({ 'lego-minecraft-1': { 'collect-it': { listings: 4 } } });
   });
 
+  test('a stored collections value that is not an object is dropped, warned once', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      for (const bad of [5, null, ['x']]) {
+        db.delete(runs).run();
+        db.insert(runs)
+          .values({
+            startedAt: NOW,
+            finishedAt: NOW,
+            summary: JSON.stringify({ ...summary, collections: bad }),
+          })
+          .run();
+        const read = runManager.last()!;
+        expect(read.collections).toBeUndefined();
+        expect(read.shops).toEqual(summary.shops);
+      }
+      expect(
+        warn.mock.calls.filter((c) => String(c[0]).includes('stored collections are not an object'))
+          .length
+      ).toBeGreaterThan(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('a stored collection with bad results, an unknown id or series 3 is dropped, warned', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      db.insert(runs)
+        .values({
+          startedAt: NOW,
+          finishedAt: NOW,
+          summary: JSON.stringify({
+            ...summary,
+            collections: {
+              'lego-minecraft-1': 'x',
+              'lego-minecraft-9': { 'sammel-ente': { listings: 1 } },
+              'lego-minecraft-3': { 'sammel-ente': { listings: 1 } },
+              'lego-minecraft-2': { 'sammel-ente': { listings: 2 }, 'shop-x': { listings: 3 } },
+            },
+          }),
+        })
+        .run();
+      expect(runManager.last()!.collections).toEqual({
+        'lego-minecraft-2': { 'sammel-ente': { listings: 2 } },
+      });
+      const warned = warn.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(warned).toContain('stored lego-minecraft-1 results are not an object');
+      expect(warned).toContain('stored collection lego-minecraft-9 is unknown');
+      expect(warned).toContain('stored collection lego-minecraft-3 belongs in shops');
+      expect(warned).toContain('stored lego-minecraft-2 shop-x is no shop');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('pruneAlerts drops throttle rows older than the cutoff and keeps the rest (R7)', () => {
     runManager.shouldAlert('old', 1000, 500);
     runManager.shouldAlert('new', 5000, 500);

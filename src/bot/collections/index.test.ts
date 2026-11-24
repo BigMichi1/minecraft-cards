@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { COLLECTION_IDS } from './ids';
 import type { CollectionId } from './ids';
 import { COLLECTIONS, collectionById, collectionChoices, collectionName } from './index';
+import { SHOP_HOSTS } from '../shops/adapters';
 
 describe('COLLECTIONS', () => {
   test('defines every collection id once, in registry order', () => {
@@ -52,6 +53,42 @@ describe('collectionChoices', () => {
         expect(normalizeCardId(a)).toBe(a as CardId);
         expect(normalizeCardId(b)).toBe(b as CardId);
         expect(a).not.toBe(b);
+      }
+    }
+  });
+});
+
+describe('definition rules', () => {
+  test('blue-ocean and eBay are read for series 3 only, until their parsers take settings', () => {
+    for (const d of COLLECTIONS) {
+      if (d.id === 'lego-minecraft-3') continue;
+      expect(d.shops['blue-ocean']).toBeUndefined();
+      expect(d.shops.ebay).toBeUndefined();
+    }
+  });
+
+  test('every category is on its shop host and every series label reads "Serie N"', () => {
+    for (const d of COLLECTIONS) {
+      for (const shop of ['sammel-ente', 'collect-it'] as const) {
+        const settings = d.shops[shop];
+        if (!settings) continue;
+        expect(new URL(settings.category).hostname).toBe(SHOP_HOSTS[shop]);
+        expect(settings.series).toMatch(/^Serie \d+$/);
+      }
+    }
+  });
+
+  test('a fallback shop is one the collection reads, and a set without scans has one', () => {
+    for (const d of COLLECTIONS) {
+      if (d.referenceFallbackShop) expect(d.shops[d.referenceFallbackShop]).toBeDefined();
+      if (d.laststicker?.scans === false) expect(d.referenceFallbackShop).toBeDefined();
+    }
+  });
+
+  test('every laststicker alias names a canonical card id', () => {
+    for (const d of COLLECTIONS) {
+      for (const id of Object.values(d.laststicker?.numberAliases ?? {})) {
+        expect(normalizeCardId(id)).toBe(id as CardId);
       }
     }
   });

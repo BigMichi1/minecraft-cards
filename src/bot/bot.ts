@@ -29,9 +29,7 @@ import {
   type ImageEmbedder,
 } from './matcher/embedder';
 import { createDiscordSender } from './notify/sender';
-import { createShopAdapters } from './shops/adapters';
-import type { EnabledShops } from './commands/shopCell';
-import { COLLECTION_IDS } from './collections/ids';
+import { createShopAdapters, enabledShopsOf } from './shops/adapters';
 import { syncCatalogs } from './catalog/sync';
 import { handleCatalogRemove } from './interactions/catalogRemove';
 import { errorMessage } from './utils/async';
@@ -69,12 +67,7 @@ const adapters = createShopAdapters(config.ebay, (collection) =>
 );
 
 /** The shops this process checks; `/missing status`, `/stock` and `/card` show the others as not enabled. */
-const enabledShops: EnabledShops = new Map(
-  COLLECTION_IDS.map((collection) => [
-    collection,
-    adapters.filter((a) => a.collection === collection).map((a) => a.id),
-  ])
-);
+const enabledShops = enabledShopsOf(adapters);
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.DirectMessages],

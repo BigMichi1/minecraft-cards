@@ -17,7 +17,7 @@ export type CollectionId = (typeof COLLECTION_IDS)[number];
  * `/stock` paging buttons sent before them (`stock:<page>:<filter>`). Not a default for new
  * data: every new row and command names its collection.
  */
-export const LEGACY_COLLECTION: CollectionId = 'lego-minecraft-3';
+export const LEGACY_COLLECTION = 'lego-minecraft-3' satisfies CollectionId;
 
 /** Where a card comes from: the laststicker sync, or the admin (`/admin catalog add`). */
 export const CARD_SOURCES = ['laststicker', 'manual'] as const;

@@ -1,6 +1,11 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
-import { checkOneAdapterPerShopAndCollection, createShopAdapters } from './adapters';
+import {
+  checkOneAdapterPerShopAndCollection,
+  createShopAdapters,
+  enabledShopsOf,
+} from './adapters';
+import { legoMinecraft1 } from '../collections/legoMinecraft1';
 import type { CollectionId } from '../collections/ids';
 
 /** Runs `fn` with `logger.warn` spied, and returns what it returned plus the warned messages. */
@@ -47,6 +52,68 @@ describe('createShopAdapters', () => {
       'two adapters for shop blue-ocean in lego-minecraft-3'
     );
     expect(checkOneAdapterPerShopAndCollection([a, b])).toEqual([a, b]);
+  });
+
+  test('a category on another host than its shop is refused at start', () => {
+    const bad = {
+      ...legoMinecraft1,
+      shops: {
+        'sammel-ente': { category: 'https://sammel-ente.de/Minecraft/Serie-1/', series: 'Serie 1' },
+      },
+    };
+    expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+      'lego-minecraft-1: sammel-ente category is on sammel-ente.de, not shop-sammel-ente.de'
+    );
+  });
+
+  test('blue-ocean or eBay for another collection than series 3 is refused at start', () => {
+    const bad = { ...legoMinecraft1, shops: { 'blue-ocean': {} } };
+    expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+      'lego-minecraft-1: blue-ocean is read for lego-minecraft-3 only'
+    );
+  });
+
+  test('enabledShopsOf lists the shops checked per collection', () => {
+    const enabled = enabledShopsOf(withWarnings(() => createShopAdapters(null)).value);
+    expect(enabled.get('lego-minecraft-1')).toEqual(['sammel-ente', 'collect-it']);
+    expect(enabled.get('lego-minecraft-2')).toEqual(['sammel-ente']);
+    expect(enabled.get('lego-minecraft-3')).toEqual(['sammel-ente', 'blue-ocean', 'collect-it']);
+  });
+
+  test('collect-it is paced across collections, and two shops do not pace each other', async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    const deps = {
+      fetchFn: async () => new Response('x'),
+      now: () => clock,
+      sleep: async (ms: number) => {
+        sleeps.push(ms);
+        clock += ms;
+      },
+    };
+    // The pacers are internal: drive them through the fetch they wrap.
+    const seen: string[] = [];
+    const adapters = createShopAdapters(null, undefined, {
+      ...deps,
+      fetchFn: async (url) => {
+        seen.push(url);
+        throw new Error('stop');
+      },
+    });
+    const of = (shop: string, collection: string) =>
+      adapters.find((a) => a.id === shop && a.collection === collection)!;
+    await of('collect-it', 'lego-minecraft-1')
+      .fetchListings()
+      .catch(() => undefined);
+    await of('sammel-ente', 'lego-minecraft-1')
+      .fetchListings()
+      .catch(() => undefined);
+    await of('collect-it', 'lego-minecraft-3')
+      .fetchListings()
+      .catch(() => undefined);
+    expect(seen).toHaveLength(3);
+    // Only the second collect-it request waited; sammel-ente in between did not.
+    expect(sleeps).toEqual([1500]);
   });
 
   test('fetchers of one shop share one pacer, across collections', async () => {

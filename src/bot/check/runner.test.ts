@@ -203,6 +203,55 @@ describe('runCheck', () => {
     ).toHaveLength(1);
   });
 
+  test('one shop failing in two collections alerts twice and records each apart', async () => {
+    const s = await runCheck(
+      depsWith([
+        failing('sammel-ente', new ShopLayoutError('a')),
+        failing('sammel-ente', new ShopLayoutError('b'), 'lego-minecraft-1'),
+      ])
+    );
+    expect(alerts.filter((a) => a.startsWith('Shop sammel-ente ('))).toHaveLength(2);
+    expect(s.shops['sammel-ente']?.error).toContain('a');
+    expect(s.collections?.['lego-minecraft-1']?.['sammel-ente']?.error).toContain('b');
+    expect(runManager.lastAlertAt('shop-error:sammel-ente:lego-minecraft-3')).toBeDefined();
+    expect(runManager.lastAlertAt('shop-error:sammel-ente:lego-minecraft-1')).toBeDefined();
+  });
+
+  test("the drop check measures each collection's shop against its own peak", async () => {
+    const many = (prefix: string, n: number): Listing[] =>
+      Array.from({ length: n }, (_, i) => ({
+        ...blue12,
+        url: `https://www.blue-ocean.de/${prefix}/${i}`,
+      }));
+    await runCheck(
+      depsWith([
+        ok('blue-ocean', many('s3', 250)),
+        ok('blue-ocean', many('s1', 20), {}, 'lego-minecraft-1'),
+      ])
+    );
+    expect(alerts.filter((a) => a.includes('down from'))).toEqual([]);
+    await runCheck(
+      depsWith([
+        ok('blue-ocean', many('s3', 250)),
+        ok('blue-ocean', many('s1', 5), {}, 'lego-minecraft-1'),
+      ])
+    );
+    const drops = alerts.filter((a) => a.includes('down from'));
+    expect(drops).toHaveLength(1);
+    expect(drops[0]).toStartWith(
+      'Shop blue-ocean (LEGO Minecraft Serie 1): 5 card listings, down from 20'
+    );
+  });
+
+  test('a listing another collection holds is named in one alert, and not read here', async () => {
+    await runCheck(depsWith([ok('blue-ocean', [blue12])]));
+    await runCheck(depsWith([ok('blue-ocean', [blue12], {}, 'lego-minecraft-1')]));
+    const foreign = alerts.filter((a) => a.includes('stored under another collection'));
+    expect(foreign).toHaveLength(1);
+    expect(foreign[0]).toContain(blue12.url);
+    expect(runManager.lastAlertAt('shop-foreign:blue-ocean:lego-minecraft-1')).toBeDefined();
+  });
+
   test('a failing shop keeps its stored state and alerts once per 24 h', async () => {
     await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     const failed = () => failing('blue-ocean', new ShopLayoutError('no cards'));
@@ -1179,7 +1228,9 @@ describe('runCheck', () => {
     expect(alerts[0]).toContain('all 2');
     await runCheck(depsWith([ok('blue-ocean', soldOut)]));
     expect(alerts).toHaveLength(1);
-    expect(runManager.lastAlertAt('shop-all-unavailable:blue-ocean')).not.toBeNull();
+    expect(
+      runManager.lastAlertAt('shop-all-unavailable:blue-ocean:lego-minecraft-3')
+    ).toBeDefined();
   });
 
   test('no alert when some listings are available or the shop returned none', async () => {

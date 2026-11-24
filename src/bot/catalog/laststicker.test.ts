@@ -155,6 +155,25 @@ describe('the series 1 and 2 pages (2026-11-24)', () => {
     expect(rows.every((r) => r.pictureUrl === null)).toBe(true);
   });
 
+  test('an alias is read from the map itself, never from an inherited key', () => {
+    const html = readFixture('laststicker-lego-minecraft-2.html').replace(
+      '<td>1</td>',
+      '<td>constructor</td>'
+    );
+    expect(() => parseLaststickerPage(html, undefined, { numberAliases: { XXL: 'XXL1' } })).toThrow(
+      CatalogLayoutError
+    );
+  });
+
+  test('fetchLaststickerSet passes the options on', async () => {
+    const { rows } = await fetchLaststickerSet(
+      'blue_ocean_lego_minecraft_tnt_boom_bastic',
+      { scans: false, numberAliases: { XXL: 'XXL1' } },
+      async () => new Response(readFixture('laststicker-lego-minecraft-2.html'))
+    );
+    expect(rows.at(-1)).toMatchObject({ cardId: cid('XXL1'), pictureUrl: null });
+  });
+
   test('a bare number no alias covers is still a CatalogLayoutError', () => {
     expect(() => parseLaststickerPage(readFixture('laststicker-lego-minecraft-2.html'))).toThrow(
       'no card number "XXL"'

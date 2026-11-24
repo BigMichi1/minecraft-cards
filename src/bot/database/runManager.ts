@@ -99,23 +99,37 @@ export function shopEntries(
 /** A stored `collections` map with every entry that is no shop summary dropped (warned once). */
 function parseCollections(value: unknown, rowId: number): RunSummary['collections'] | undefined {
   if (value === undefined) return undefined;
-  if (typeof value !== 'object' || value === null) {
+  const isMap = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (!isMap(value)) {
     warnOnce(`${rowId}:collections`, `run ${rowId}: stored collections are not an object`);
     return undefined;
   }
   const out: NonNullable<RunSummary['collections']> = {};
   for (const [collection, shops] of Object.entries(value)) {
-    if (typeof shops !== 'object' || shops === null) continue;
-    const kept: Partial<Record<ShopId, ShopSummary>> = {};
-    for (const [shop, entry] of Object.entries(shops as Record<string, unknown>)) {
-      if (isShopSummary(entry)) kept[shop as ShopId] = entry;
-      else
-        warnOnce(
-          `${rowId}:${collection}:${shop}`,
-          `run ${rowId}: stored ${collection} ${shop} entry is not a shop summary`
-        );
+    const warn = (why: string) => warnOnce(`${rowId}:${collection}`, `run ${rowId}: ${why}`);
+    if (collection === LEGACY_COLLECTION) {
+      warn(`stored collection ${collection} belongs in shops, dropped`);
+      continue;
     }
-    out[collection as CollectionId] = kept;
+    if (!(COLLECTION_IDS as readonly string[]).includes(collection)) {
+      warn(`stored collection ${collection} is unknown, dropped`);
+      continue;
+    }
+    if (!isMap(shops)) {
+      warn(`stored ${collection} results are not an object, dropped`);
+      continue;
+    }
+    const kept: Partial<Record<ShopId, ShopSummary>> = {};
+    for (const [shop, entry] of Object.entries(shops)) {
+      const warnShop = (why: string) =>
+        warnOnce(`${rowId}:${collection}:${shop}`, `run ${rowId}: ${why}`);
+      if (!(SHOP_IDS as readonly string[]).includes(shop))
+        warnShop(`stored ${collection} ${shop} is no shop, dropped`);
+      else if (isShopSummary(entry)) kept[shop as ShopId] = entry;
+      else warnShop(`stored ${collection} ${shop} entry is not a shop summary`);
+    }
+    out[collection as Exclude<CollectionId, typeof LEGACY_COLLECTION>] = kept;
   }
   return out;
 }
@@ -157,7 +171,9 @@ function parseSummary(json: string, rowId: number): RunSummary | undefined {
     else warnOnce(`${rowId}:${shop}`, `run ${rowId}: stored ${shop} entry is not a shop summary`);
   }
   const collections = parseCollections(v.collections, rowId);
-  return { ...(value as RunSummary), shops, ...(collections ? { collections } : {}) };
+  // The stored value is replaced by the checked one, or dropped when it was unreadable.
+  const { collections: _stored, ...rest } = value as RunSummary;
+  return { ...rest, shops, ...(collections ? { collections } : {}) };
 }
 
 export const runManager = {

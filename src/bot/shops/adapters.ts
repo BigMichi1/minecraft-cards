@@ -1,5 +1,9 @@
 import type { CardId } from '../cards/cardId';
-import type { CollectionDefinition, CollectionId } from '../collections/ids';
+import {
+  LEGACY_COLLECTION,
+  type CollectionDefinition,
+  type CollectionId,
+} from '../collections/ids';
 import { COLLECTIONS } from '../collections/index';
 import type { Config } from '../config';
 import logger from '../utils/logger';
@@ -8,23 +12,53 @@ import { createBlueOceanFetcher } from './blueOcean';
 import { createCollectItFetcher } from './collectIt';
 import { createEbayFetcher } from './ebay';
 import { createSammelEnteFetcher } from './sammelEnte';
+import type { EnabledShops } from '../commands/shopCell';
 import { SHOP_IDS, type FetchFn, type ShopAdapter, type ShopFetcher, type ShopId } from './types';
 
 /** Between two page requests to one shop, also across collections (CLAUDE.md, shop requests). */
 const SHOP_DELAY_MS = 1500;
 
 /** Each shop's host: every fetcher of one shop shares one pacer for it. */
-const SHOP_HOSTS: Record<Exclude<ShopId, 'ebay'>, string> = {
+export const SHOP_HOSTS: Readonly<Record<Exclude<ShopId, 'ebay'>, string>> = {
   'sammel-ente': 'shop-sammel-ente.de',
   'blue-ocean': 'www.blue-ocean.de',
   'collect-it': 'www.collect-it.de',
 };
 
-/** Test seams: the fetch the pacers wrap, and their clock. */
+/** Test seams: the definitions, the fetch the pacers wrap, and their clock. */
 export interface AdapterDeps {
-  fetchFn?: FetchFn;
-  now?: () => number;
-  sleep?: (ms: number) => Promise<void>;
+  readonly collections?: readonly CollectionDefinition[];
+  readonly fetchFn?: FetchFn;
+  readonly now?: () => number;
+  readonly sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Throws for settings a run would get wrong: a category on another host than its shop (it would
+ * skip the shop's pacer), or blue-ocean or eBay for a collection their series 3 parsers do not
+ * read (they would store series 3 listings under it).
+ */
+function checkSettings(definition: CollectionDefinition): void {
+  for (const shop of ['sammel-ente', 'collect-it'] as const) {
+    const settings = definition.shops[shop];
+    if (!settings) continue;
+    const host = new URL(settings.category).hostname;
+    if (host !== SHOP_HOSTS[shop]) {
+      throw new Error(`${definition.id}: ${shop} category is on ${host}, not ${SHOP_HOSTS[shop]}`);
+    }
+  }
+  for (const shop of ['blue-ocean', 'ebay'] as const) {
+    if (definition.shops[shop] && definition.id !== LEGACY_COLLECTION) {
+      throw new Error(`${definition.id}: ${shop} is read for ${LEGACY_COLLECTION} only`);
+    }
+  }
+}
+
+/** The shops checked per collection, from the adapters (`/missing status`, `/stock`, `/card`). */
+export function enabledShopsOf(adapters: readonly ShopAdapter[]): EnabledShops {
+  const enabled = new Map<CollectionId, ShopId[]>();
+  for (const a of adapters) enabled.set(a.collection, [...(enabled.get(a.collection) ?? []), a.id]);
+  return enabled;
 }
 
 /**
@@ -94,8 +128,10 @@ export function createShopAdapters(
     }
     return paced;
   };
+  const definitions = deps.collections ?? COLLECTIONS;
+  for (const definition of definitions) checkSettings(definition);
   return checkOneAdapterPerShopAndCollection(
-    COLLECTIONS.flatMap((definition) =>
+    definitions.flatMap((definition) =>
       SHOP_IDS.flatMap((shop): ShopAdapter[] => {
         if (shop === 'ebay') {
           if (!ebay || !definition.shops.ebay) return [];

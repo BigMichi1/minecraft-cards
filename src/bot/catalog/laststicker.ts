@@ -91,7 +91,8 @@ export function parseLaststickerPage(
       throw new CatalogLayoutError(`laststicker: row ${row} has ${tds.length} cells`);
     }
     const number = tds.eq(0).text().trim();
-    const cardId = normalize(options.numberAliases?.[number] ?? number);
+    const aliases = options.numberAliases;
+    const cardId = normalize(aliases && Object.hasOwn(aliases, number) ? aliases[number]! : number);
     if (!cardId)
       throw new CatalogLayoutError(`laststicker: row ${row}: no card number ${clip(number)}`);
     if (seen.has(cardId)) throw new CatalogLayoutError(`laststicker: card ${cardId} twice`);

@@ -6,7 +6,7 @@ import logger, { logError } from '../utils/logger';
 import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher } from './types';
 import { ShopLayoutError } from './types';
 
-const BASE_URL = 'https://shop-sammel-ente.de/Minecraft/Serie-3/';
+const ORIGIN = 'https://shop-sammel-ente.de/';
 const PAGE_DELAY_MS = 1500;
 const MAX_PAGES = 60;
 
@@ -68,7 +68,7 @@ export function parseSammelEntePage(html: string): {
 
     listings.push({
       shop: 'sammel-ente',
-      url: new URL(href, BASE_URL).toString(),
+      url: new URL(href, ORIGIN).toString(),
       title,
       cardIds: [cardId],
       cardName: (match[2] ?? '').trim(),
@@ -83,16 +83,19 @@ export function parseSammelEntePage(html: string): {
   return { listings, lastPage, productCount: boxes.length, skippedNoId, skippedInvalid };
 }
 
+/** One collection's category (CollectionDefinition.shops). */
 export function createSammelEnteFetcher(
+  settings: { readonly category: string },
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
 ): ShopFetcher {
+  const category = settings.category;
   const sleep = options.sleep ?? realSleep;
   const delayMs = options.delayMs ?? PAGE_DELAY_MS;
   return {
     id: 'sammel-ente',
     async fetchListings(): Promise<FetchResult> {
-      const first = parseSammelEntePage(await fetchText(`${BASE_URL}?p=1`, fetchFn));
+      const first = parseSammelEntePage(await fetchText(`${category}?p=1`, fetchFn));
       const byUrl = new Map(first.listings.map((l) => [l.url, l]));
       let { skippedNoId, skippedInvalid } = first;
       if (first.lastPage > MAX_PAGES) {
@@ -102,7 +105,7 @@ export function createSammelEnteFetcher(
       for (let page = 2; page <= lastPage; page++) {
         await sleep(delayMs);
         try {
-          const parsed = parseSammelEntePage(await fetchText(`${BASE_URL}?p=${page}`, fetchFn));
+          const parsed = parseSammelEntePage(await fetchText(`${category}?p=${page}`, fetchFn));
           if (parsed.productCount === 0) {
             // A real category page always has product boxes up to lastPage.
             throw new ShopLayoutError(`sammel-ente: page ${page} of ${lastPage} has no products`);

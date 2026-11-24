@@ -11,4 +11,8 @@ export const legoMinecraft2: CollectionDefinition<'lego-minecraft-2'> = {
     numberAliases: { XXL: 'XXL1' },
   },
   referenceFallbackShop: 'sammel-ente',
+  // collect-it has no series 2 single-card category (2026-11-24); blue-ocean's comes with PR 3c.
+  shops: {
+    'sammel-ente': { category: 'https://shop-sammel-ente.de/Minecraft/Serie-2/' },
+  },
 };

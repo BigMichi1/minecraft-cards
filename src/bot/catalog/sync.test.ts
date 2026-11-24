@@ -334,6 +334,7 @@ describe('syncCatalogs', () => {
     const other: CollectionDefinition = {
       id: 'other-set' as CollectionId,
       name: 'Other',
+      shops: {},
       laststicker: { set: 'other_set' },
     };
     await run(10, { collections: [legoMinecraft3, other], only: 'lego-minecraft-3', force: true });
@@ -369,6 +370,7 @@ describe('syncCatalogs', () => {
     const other: CollectionDefinition = {
       id: 'other-set' as CollectionId,
       name: 'Other',
+      shops: {},
       laststicker: { set: 'other_set' },
     };
     const outcomes = await run(10, { collections: [legoMinecraft3, other] });
@@ -379,7 +381,11 @@ describe('syncCatalogs', () => {
   });
 
   test('a collection without a laststicker set is skipped', async () => {
-    const plain: CollectionDefinition = { id: 'other-set' as CollectionId, name: 'Other' };
+    const plain: CollectionDefinition = {
+      id: 'other-set' as CollectionId,
+      name: 'Other',
+      shops: {},
+    };
     expect(await run(10, { collections: [plain] })).toEqual([]);
     expect(fetched).toEqual([]);
   });

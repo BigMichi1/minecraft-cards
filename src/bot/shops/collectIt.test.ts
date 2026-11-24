@@ -10,6 +10,11 @@ import { ShopLayoutError } from './types';
 import logger from '../utils/logger';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
 import { cid } from '../../test/cardIds';
+import { legoMinecraft1 } from '../collections/legoMinecraft1';
+import { legoMinecraft3 } from '../collections/legoMinecraft3';
+
+const SERIES_3 = legoMinecraft3.shops['collect-it']!;
+const SERIES_1 = legoMinecraft1.shops['collect-it']!;
 
 const BASE = 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten';
 const P1 = readFixture('collect-it-p1.html');
@@ -71,7 +76,7 @@ function withNext(html: string, href: string): string {
 /** The adapter's rejection for these pages (fails the test when it resolves). */
 async function rejection(pages: Record<string, string>): Promise<Error> {
   const { fetchFn } = fakeFetch(pages);
-  const error = await createCollectItFetcher(fetchFn, { delayMs: 0 })
+  const error = await createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 })
     .fetchListings()
     .then(
       () => new Error('resolved'),
@@ -333,6 +338,7 @@ describe('parseCollectItPage', () => {
       productCount: 0,
       canonical: null,
       next: null,
+      excluded: [],
       skippedNoId: 0,
       skippedInvalid: 0,
       firstSkipped: null,
@@ -397,7 +403,7 @@ describe('createCollectItFetcher', () => {
   test('follows the next-page link and stops on the page without one', async () => {
     const { fetchFn, calls } = fakeFetch(twoPages());
     const sleeps: number[] = [];
-    const adapter = createCollectItFetcher(fetchFn, {
+    const adapter = createCollectItFetcher(SERIES_3, fetchFn, {
       sleep: async (ms) => {
         sleeps.push(ms);
       },
@@ -442,7 +448,7 @@ describe('createCollectItFetcher', () => {
 
   test('throws ShopLayoutError when page 1 is a bot wall', async () => {
     const { fetchFn } = fakeFetch({ Einzelkarten: '<html>Just a moment...</html>' });
-    const error = await createCollectItFetcher(fetchFn, { delayMs: 0 })
+    const error = await createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -454,7 +460,7 @@ describe('createCollectItFetcher', () => {
       Einzelkarten: asPage(P1, 1, true),
       _s2: '<html><body>Wartungsarbeiten</body></html>',
     });
-    const error = await createCollectItFetcher(fetchFn, { delayMs: 0 })
+    const error = await createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -512,7 +518,9 @@ describe('createCollectItFetcher', () => {
         Einzelkarten: asPage(P1, 1, true, 55),
         _s2: withCountText(asPage(P8, 2, false), null),
       });
-      const { listings } = await createCollectItFetcher(fetchFn, { delayMs: 0 }).fetchListings();
+      const { listings } = await createCollectItFetcher(SERIES_3, fetchFn, {
+        delayMs: 0,
+      }).fetchListings();
       expect(listings).toHaveLength(55);
     });
 
@@ -564,7 +572,7 @@ describe('createCollectItFetcher', () => {
     const log = spyOn(logger, 'log');
     try {
       const { fetchFn } = fakeFetch({ Einzelkarten: '<html>Just a moment...</html>' });
-      await createCollectItFetcher(fetchFn, { delayMs: 0 })
+      await createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 })
         .fetchListings()
         .catch(() => undefined);
       expect(log.mock.calls.filter((c) => c[0] === 'error')).toEqual([]);
@@ -579,7 +587,7 @@ describe('createCollectItFetcher', () => {
       if (url.endsWith('_s2')) throw timeout;
       return new Response(asPage(P1, 1, true));
     };
-    const error = (await createCollectItFetcher(fetchFn, { delayMs: 0 })
+    const error = (await createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e)) as Error;
     expect(error.message).toBe('collect-it: page 2 failed: The operation timed out.');
@@ -591,16 +599,18 @@ describe('createCollectItFetcher', () => {
       Einzelkarten: asPage(P1, 1, true, 30),
       _s2: asPage(P1, 2, false, 30),
     });
-    const { listings } = await createCollectItFetcher(fetchFn, { delayMs: 0 }).fetchListings();
+    const { listings } = await createCollectItFetcher(SERIES_3, fetchFn, {
+      delayMs: 0,
+    }).fetchListings();
     expect(listings).toHaveLength(30);
     expect(new Set(listings.map((l) => l.url)).size).toBe(30);
   });
 
   test('an HTTP error rejects', async () => {
     const { fetchFn } = fakeFetch({});
-    await expect(createCollectItFetcher(fetchFn, { delayMs: 0 }).fetchListings()).rejects.toThrow(
-      'HTTP 404'
-    );
+    await expect(
+      createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 }).fetchListings()
+    ).rejects.toThrow('HTTP 404');
   });
 
   test('a linked page that answers as another page rejects instead of ending the walk', async () => {
@@ -618,7 +628,7 @@ describe('createCollectItFetcher', () => {
       const n = Number(/_s(\d+)$/.exec(url)?.[1] ?? '1');
       return new Response(asPage(P1, n, true));
     };
-    const error = await createCollectItFetcher(fetchFn, { delayMs: 0 })
+    const error = await createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -678,7 +688,9 @@ describe('createCollectItFetcher', () => {
       ),
       _s2: asPage(P8, 2, false, 55),
     });
-    const { listings } = await createCollectItFetcher(fetchFn, { delayMs: 0 }).fetchListings();
+    const { listings } = await createCollectItFetcher(SERIES_3, fetchFn, {
+      delayMs: 0,
+    }).fetchListings();
     expect(calls).toEqual([BASE, `${BASE}_s2`]);
     expect(listings).toHaveLength(55);
   });
@@ -696,5 +708,60 @@ describe('createCollectItFetcher', () => {
       _s3: asPage(P8, 3, false),
     });
     expect(error.message).toContain('page 1 links page 3 as the next page');
+  });
+});
+
+describe('series 1', () => {
+  const S1 = readFixture('collect-it-serie-1-p1.html');
+  /** The saved series 1 page as the whole category: no next page, its 30 boxes the total. */
+  const alone = (html: string) => {
+    const $ = cheerio.load(html);
+    $('link[rel="next"], link[rel="prev"]').remove();
+    $('.ci-pagination-meta').html('Du hast <strong>alle 30</strong> Artikel gesehen');
+    return $.html();
+  };
+  /** `html` with the first product box titled `to` (it was `from`). */
+  const retitle = (html: string, from: string, to: string) => {
+    const $ = cheerio.load(html);
+    const title = $('.c-product-box-content-title').first();
+    expect(title.text().replace(/\s+/g, ' ').trim()).toBe(from);
+    title.text(to);
+    return $.html();
+  };
+
+  test('the series 1 category walks its own pages', async () => {
+    const { fetchFn, calls } = fakeFetch({ Einzelkarten: alone(S1) });
+    const { listings } = await createCollectItFetcher(SERIES_1, fetchFn, {
+      delayMs: 0,
+    }).fetchListings();
+    expect(calls).toEqual([SERIES_1.category]);
+    expect(listings).toHaveLength(30);
+    expect(listings[0]).toMatchObject({
+      cardIds: [cid('1')],
+      title: '1 - Steve - Skin Karte - Serie 1',
+    });
+  });
+
+  test('an item of another series in the category is skipped and counted', async () => {
+    const html = retitle(
+      alone(S1),
+      '1 - Steve - Skin Karte - Serie 1',
+      '1 - Steve - Skin Karte - Serie 3'
+    );
+    const { fetchFn } = fakeFetch({ Einzelkarten: html });
+    const result = await createCollectItFetcher(SERIES_1, fetchFn, { delayMs: 0 }).fetchListings();
+    expect(result.listings).toHaveLength(29);
+    expect(result.skippedExcluded).toBe(1);
+    expect(result.listings.map((l) => l.cardIds[0])).not.toContain(cid('1'));
+  });
+
+  test('"XXL 1 - …" reads as XXL1', () => {
+    const html = retitle(
+      S1,
+      '1 - Steve - Skin Karte - Serie 1',
+      'XXL 1 - Explodierender Creeper - Oversize Karte - Serie 1'
+    );
+    const page = parseCollectItPage(html, 'Serie 1');
+    expect(page.listings.map((l) => l.cardIds[0])).toContain(cid('XXL1'));
   });
 });

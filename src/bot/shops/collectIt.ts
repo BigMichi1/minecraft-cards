@@ -8,7 +8,7 @@ import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher, ShopId
 import { ShopLayoutError } from './types';
 
 const SHOP = 'collect-it' satisfies ShopId;
-const BASE_URL = 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten';
+const ORIGIN = 'https://www.collect-it.de/';
 const PAGE_DELAY_MS = 1500;
 const MAX_PAGES = 60;
 /** Products on every page but the last (from the saved pages). */
@@ -34,7 +34,10 @@ export function readArticleTotal(text: string): number | null {
 
 // "12 - Squid - Charakterkarte - Serie 3" -> id "12", name "Squid";
 // "LE01 - Ender Dragon - Limitierte Karte - Serie 3" -> id "LE1" (canonical, normalizeCardId).
-const TITLE_PATTERN = /^((?:LE|XXL)?\d+) - (.+?)(?: - |$)/i;
+// "XXL 1 - Explodierender Creeper - …" (series 1) -> id "XXL1".
+const TITLE_PATTERN = /^((?:LE|XXL)?\s?\d+) - (.+?)(?: - |$)/i;
+// The last ` - ` part of a title naming a series ("Serie 1"); compared with the collection's.
+const SERIES_SUFFIX = / - (Serie \d+)$/i;
 // schema.org ItemAvailability values, lowercased, and whether each means "can be ordered now".
 const AVAILABILITY = new Map<string, boolean>([
   ['instock', true],
@@ -59,22 +62,22 @@ function readAvailability(href: string): boolean | null {
   return tail === undefined ? null : (AVAILABILITY.get(tail) ?? null);
 }
 
-const BASE = new URL(BASE_URL);
 const PAGE_SUFFIX = /^_s([1-9]\d*)$/;
 
 /**
- * The page number a category URL names: exactly `BASE_URL` is page 1, `BASE_URL` plus `_sN`
- * page N. Anything else (another host or path, a trailing slash, a query or fragment, a
+ * The page number a URL names in `category`: exactly `category` is page 1, `category` plus
+ * `_sN` page N. Anything else (another host or path, a trailing slash, a query or fragment, a
  * relative href when no base is given, `_s0`) is null: the walk cannot trust it.
  */
-export function categoryPageNumber(href: string, base?: string): number | null {
+export function categoryPageNumber(href: string, category: string, base?: string): number | null {
+  const own = new URL(category);
   const url = URL.parse(href, base);
-  if (!url || url.origin !== BASE.origin || url.search !== '' || url.hash !== '') return null;
+  if (!url || url.origin !== own.origin || url.search !== '' || url.hash !== '') return null;
   // `URL` drops an empty `?` or `#`; the raw href must not carry one either.
   if (/[?#]/.test(href)) return null;
-  if (url.pathname === BASE.pathname) return 1;
-  if (!url.pathname.startsWith(BASE.pathname)) return null;
-  const suffix = PAGE_SUFFIX.exec(url.pathname.slice(BASE.pathname.length));
+  if (url.pathname === own.pathname) return 1;
+  if (!url.pathname.startsWith(own.pathname)) return null;
+  const suffix = PAGE_SUFFIX.exec(url.pathname.slice(own.pathname.length));
   return suffix ? Number.parseInt(suffix[1] ?? '', 10) : null;
 }
 
@@ -101,7 +104,7 @@ function parsePrice(
 
 /** `href` resolved against the shop, or null when it is missing or not a URL. */
 function resolveUrl(href: string | undefined): string | null {
-  return href ? (URL.parse(href, BASE_URL)?.toString() ?? null) : null;
+  return href ? (URL.parse(href, ORIGIN)?.toString() ?? null) : null;
 }
 
 /** One parsed category page; see `parseCollectItPage`. */
@@ -115,6 +118,8 @@ export interface CollectItPage {
   next: string | null;
   /** Boxes whose title does not start with a card number. */
   skippedNoId: number;
+  /** Card boxes of another series than the one asked for (`series`), by URL. */
+  excluded: string[];
   /** Boxes without a link, a title or a known schema.org availability. */
   skippedInvalid: number;
   /** What the first skipped box lacked, naming its title or link; null when none was skipped. */
@@ -128,9 +133,10 @@ export interface CollectItPage {
  * and the adapter rejects a page with any. `canonical` and `next` are returned raw; the adapter
  * checks them with `categoryPageNumber`.
  */
-export function parseCollectItPage(html: string): CollectItPage {
+export function parseCollectItPage(html: string, series: string | null = null): CollectItPage {
   const $ = cheerio.load(html);
   const listings: Listing[] = [];
+  const excluded: string[] = [];
   let skippedNoId = 0;
   let skippedInvalid = 0;
   let firstSkipped: string | null = null;
@@ -164,10 +170,20 @@ export function parseCollectItPage(html: string): CollectItPage {
       return;
     }
     const match = TITLE_PATTERN.exec(title);
-    const cardId = match ? normalizeCardId(match[1] ?? '') : null;
+    const cardId = match ? normalizeCardId((match[1] ?? '').replace(/\s/g, '')) : null;
     if (!match || !cardId) {
       skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no card id`);
       skippedNoId++;
+      return;
+    }
+    const titleSeries = SERIES_SUFFIX.exec(title)?.[1];
+    if (
+      series !== null &&
+      titleSeries !== undefined &&
+      titleSeries.toLowerCase() !== series.toLowerCase()
+    ) {
+      // Another series' card in this category: its number is another card here.
+      excluded.push(url);
       return;
     }
     const availabilityHref = box.find('link[itemprop="availability"]').first().attr('href');
@@ -213,6 +229,7 @@ export function parseCollectItPage(html: string): CollectItPage {
     canonical: $('link[rel="canonical"]').first().attr('href') ?? null,
     next: $('link[rel="next"]').first().attr('href') ?? null,
     skippedNoId,
+    excluded,
     skippedInvalid,
     firstSkipped,
     countText: $('.ci-pagination-meta').length > 0 ? countText : null,
@@ -223,10 +240,10 @@ export function parseCollectItPage(html: string): CollectItPage {
  * Checks that a fetched page's canonical link names page `asked`; throws `ShopLayoutError`
  * when it is missing, unreadable, or names another page.
  */
-function checkCanonical(canonical: string | null, asked: number): void {
+function checkCanonical(canonical: string | null, asked: number, category: string): void {
   if (canonical === null)
     throw new ShopLayoutError(`collect-it: page ${asked} has no canonical link`);
-  const page = categoryPageNumber(canonical);
+  const page = categoryPageNumber(canonical, category);
   if (page === null) {
     throw new ShopLayoutError(
       `collect-it: page ${asked} has an unreadable canonical link ${quote(canonical)}`
@@ -257,9 +274,9 @@ function pageTotal(countText: string | null, page: number): number | undefined {
 }
 
 /** The URL of the next page that `page` links, or null on the last page. */
-function nextPageUrl(next: string | null, page: number): string | null {
+function nextPageUrl(next: string | null, page: number, category: string): string | null {
   if (next === null) return null;
-  const nextPage = categoryPageNumber(next, BASE_URL);
+  const nextPage = categoryPageNumber(next, category, category);
   if (nextPage === null) {
     throw new ShopLayoutError(
       `collect-it: page ${page} has an unreadable next-page link ${quote(next)}`
@@ -268,7 +285,7 @@ function nextPageUrl(next: string | null, page: number): string | null {
   if (nextPage !== page + 1) {
     throw new ShopLayoutError(`collect-it: page ${page} links page ${nextPage} as the next page`);
   }
-  return new URL(next, BASE_URL).toString();
+  return new URL(next, category).toString();
 }
 
 /**
@@ -298,28 +315,32 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
  * then leaves the stored listings untouched, and the run is retried next hour.
  */
 export function createCollectItFetcher(
+  settings: { readonly category: string; readonly series: string },
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
 ): ShopFetcher {
+  const { category, series } = settings;
   const sleep = options.sleep ?? realSleep;
   const delayMs = options.delayMs ?? PAGE_DELAY_MS;
   return {
     id: SHOP,
     async fetchListings(): Promise<FetchResult> {
       const byUrl = new Map<string, Listing>();
-      let url: string | null = BASE_URL;
+      // Another series' cards in the category: not stored, but counted in the article total.
+      const excluded = new Set<string>();
+      let url: string | null = category;
       let total: number | undefined;
       for (let page = 1; url !== null; page++) {
         if (page > MAX_PAGES) {
           throw new ShopLayoutError(`collect-it: still a next page after ${MAX_PAGES} pages`);
         }
         if (page > 1) await sleep(delayMs);
-        const parsed = parseCollectItPage(await fetchPage(url, page, fetchFn));
+        const parsed = parseCollectItPage(await fetchPage(url, page, fetchFn), series);
         if (parsed.productCount === 0) {
           // A bot wall, maintenance page or empty category; a linked page always has products.
           throw new ShopLayoutError(`collect-it: page ${page} has no products`);
         }
-        checkCanonical(parsed.canonical, page);
+        checkCanonical(parsed.canonical, page, category);
         const skipped = parsed.skippedNoId + parsed.skippedInvalid;
         if (skipped > 0) {
           // A sold-out card is hidden, so a box the parser cannot read would read as sold out.
@@ -336,7 +357,8 @@ export function createCollectItFetcher(
           );
         }
         for (const listing of parsed.listings) byUrl.set(listing.url, listing);
-        url = nextPageUrl(parsed.next, page);
+        for (const other of parsed.excluded) excluded.add(other);
+        url = nextPageUrl(parsed.next, page, category);
         if (url !== null && parsed.productCount !== PAGE_SIZE) {
           // Only the last page may be short; a short middle page means the pages shifted.
           throw new ShopLayoutError(
@@ -346,12 +368,15 @@ export function createCollectItFetcher(
       }
       // Catches a dropped rel="next" (page 1 read alone) and cards that moved between pages
       // during the walk (one sold out, so a later card moved onto a page already read).
-      if (byUrl.size !== total) {
+      if (byUrl.size + excluded.size !== total) {
         throw new ShopLayoutError(
-          `collect-it: read ${byUrl.size} listings, but page 1 counts ${total} articles`
+          `collect-it: read ${byUrl.size + excluded.size} listings, but page 1 counts ${total} articles`
         );
       }
-      return { listings: [...byUrl.values()] };
+      return {
+        listings: [...byUrl.values()],
+        ...(excluded.size > 0 ? { skippedExcluded: excluded.size } : {}),
+      };
     },
   };
 }

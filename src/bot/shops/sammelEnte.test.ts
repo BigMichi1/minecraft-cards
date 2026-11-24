@@ -5,6 +5,9 @@ import { ShopLayoutError } from './types';
 import { HttpError } from '../utils/http';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
 import { cid } from '../../test/cardIds';
+import { legoMinecraft3 } from '../collections/legoMinecraft3';
+
+const SERIES_3 = legoMinecraft3.shops['sammel-ente']!;
 
 describe('parseSammelEntePage', () => {
   const p1 = parseSammelEntePage(readFixture('sammel-ente-p1.html'));
@@ -103,9 +106,9 @@ describe('createSammelEnteFetcher', () => {
 
   test('throws ShopLayoutError when page 1 is not a shop page', async () => {
     const { fetchFn } = fakeFetch({ '?p=1': '<html>Just a moment...</html>' });
-    await expect(createSammelEnteFetcher(fetchFn, noDelay).fetchListings()).rejects.toBeInstanceOf(
-      ShopLayoutError
-    );
+    await expect(
+      createSammelEnteFetcher(SERIES_3, fetchFn, noDelay).fetchListings()
+    ).rejects.toBeInstanceOf(ShopLayoutError);
   });
 
   test('fetches every page up to the last one, pausing between requests', async () => {
@@ -115,7 +118,7 @@ describe('createSammelEnteFetcher', () => {
       '?p=': readFixture('sammel-ente-p11.html'),
     });
     const sleeps: number[] = [];
-    const adapter = createSammelEnteFetcher(fetchFn, {
+    const adapter = createSammelEnteFetcher(SERIES_3, fetchFn, {
       sleep: async (ms) => {
         sleeps.push(ms);
       },
@@ -135,7 +138,7 @@ describe('createSammelEnteFetcher', () => {
       '?p=1': readFixture('sammel-ente-p1.html'),
       '?p=2': '<html>Just a moment...</html>',
     });
-    const error = await createSammelEnteFetcher(fetchFn, noDelay)
+    const error = await createSammelEnteFetcher(SERIES_3, fetchFn, noDelay)
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -150,7 +153,7 @@ describe('createSammelEnteFetcher', () => {
         '?p=1': p1,
         '?p=': readFixture('sammel-ente-p11.html'),
       });
-      await createSammelEnteFetcher(fetchFn, noDelay).fetchListings();
+      await createSammelEnteFetcher(SERIES_3, fetchFn, noDelay).fetchListings();
       expect(calls).toHaveLength(60);
       expect(warn.mock.calls.some((c) => String(c[0]).includes('75 pages'))).toBe(true);
     } finally {
@@ -160,8 +163,27 @@ describe('createSammelEnteFetcher', () => {
 
   test('an HTTP failure on a later page rejects the whole run', async () => {
     const { fetchFn } = fakeFetch({ '?p=1': readFixture('sammel-ente-p1.html') });
-    await expect(createSammelEnteFetcher(fetchFn, noDelay).fetchListings()).rejects.toBeInstanceOf(
-      HttpError
-    );
+    await expect(
+      createSammelEnteFetcher(SERIES_3, fetchFn, noDelay).fetchListings()
+    ).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+describe('series 1', () => {
+  test('the series 1 category is read from its settings', async () => {
+    const { fetchFn, calls } = fakeFetch({
+      '?p=1': readFixture('sammel-ente-serie-1-p1.html'),
+      '?p=12': readFixture('sammel-ente-serie-1-p12.html'),
+      '?p=': '<div class="card product-box"></div>',
+    });
+    const settings = { category: 'https://shop-sammel-ente.de/Minecraft/Serie-1/' };
+    const { listings } = await createSammelEnteFetcher(settings, fetchFn, {
+      delayMs: 0,
+    }).fetchListings();
+    expect(calls[0]).toBe('https://shop-sammel-ente.de/Minecraft/Serie-1/?p=1');
+    const ids = listings.map((l) => l.cardIds[0]);
+    expect(ids).toContain(cid('1'));
+    expect(ids).toContain(cid('LE8'));
+    expect(ids).toContain(cid('XXL1'));
   });
 });

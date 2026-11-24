@@ -34,6 +34,7 @@ const { createSammelEnteFetcher } = await import('../src/bot/shops/sammelEnte');
 const { createCollectItFetcher } = await import('../src/bot/shops/collectIt');
 const { createEbayFetcher } = await import('../src/bot/shops/ebay');
 const { sleep } = await import('../src/bot/utils/async');
+const { legoMinecraft3 } = await import('../src/bot/collections/legoMinecraft3');
 type Listing = import('../src/bot/shops/types').Listing;
 type ReferenceVector = import('../src/bot/matcher/identify').ReferenceVector;
 type CardId = import('../src/bot/cards/cardId').CardId;
@@ -96,11 +97,16 @@ const once = <T>(load: () => Promise<T>): (() => Promise<T>) => {
 const shops: { name: string; load: () => Promise<readonly Listing[]> }[] = [
   {
     name: 'sammel-ente',
-    load: once(async () => (await createSammelEnteFetcher().fetchListings()).listings),
+    load: once(
+      async () =>
+        (await createSammelEnteFetcher(legoMinecraft3.shops['sammel-ente']!).fetchListings())
+          .listings
+    ),
   },
   {
     name: 'collect-it',
-    load: async () => (await createCollectItFetcher().fetchListings()).listings,
+    load: async () =>
+      (await createCollectItFetcher(legoMinecraft3.shops['collect-it']!).fetchListings()).listings,
   },
 ];
 const { EBAY_CLIENT_ID, EBAY_CLIENT_SECRET } = process.env;

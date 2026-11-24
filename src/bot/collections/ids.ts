@@ -28,6 +28,18 @@ export function isCollectionId(value: string): value is CollectionId {
 }
 
 /** One card set the bot watches: its own catalog, shops and wanted lists. */
+/** A collection's settings per shop; a collection lists only the shops that sell it. */
+export interface CollectionShops {
+  /** The category page (absolute URL, `?p=N` pages). */
+  readonly 'sammel-ente'?: { readonly category: string };
+  /** The single-card category (absolute URL) and the series label its titles end with. */
+  readonly 'collect-it'?: { readonly category: string; readonly series: string };
+  /** Series 3 only, today's category (PR 3c reads the TCC categories). */
+  readonly 'blue-ocean'?: Record<string, never>;
+  /** Series 3 only until eBay is read for every collection (PR 3b). */
+  readonly ebay?: Record<string, never>;
+}
+
 export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   readonly id: K;
   /** Display name in commands and alerts. */
@@ -53,6 +65,8 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
    * other whatever their reference pictures score, so the picture alone never tells them apart.
    */
   readonly knownTwins?: readonly (readonly [string, string])[];
+  /** The shops that sell the collection, with their settings for it. */
+  readonly shops: CollectionShops;
 }
 
 /**

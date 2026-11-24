@@ -11,6 +11,15 @@ describe('legoMinecraft3', () => {
       laststicker: { set: 'blue_ocean_lego_minecraft_on_fire' },
       referenceFallbackShop: 'sammel-ente',
       knownTwins: [['59', 'XXL1']],
+      shops: {
+        'sammel-ente': { category: 'https://shop-sammel-ente.de/Minecraft/Serie-3/' },
+        'blue-ocean': {},
+        'collect-it': {
+          category: 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten',
+          series: 'Serie 3',
+        },
+        ebay: {},
+      },
     });
   });
 });

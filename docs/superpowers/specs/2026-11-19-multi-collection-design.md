@@ -187,9 +187,10 @@ laststicker is the reference of every collection (the maintainer's decision), Mi
 - Puzzle cards come from laststicker's kind `Puzzlekarte` (sticky `puzzle_seen` as today); the
   "Puzzlekarte" name rule goes, since laststicker names puzzle cards by picture and piece
   ("Entdecke die Oberwelt 1").
-- The series 3 eBay name check (PR #22) reads laststicker's names. Its tests use fixture names;
-  step 2 re-runs the eBay fixture with laststicker's series 3 names and records the listings
-  that change (expected: few, as the names are the same characters in German).
+- The series 3 eBay name check (PR #22) reads laststicker's names. Its tests use the series 3
+  names of 2026-11-24 (laststicker and sammel-ente give the same names), plus two made-up names
+  for title forms; step 2 re-runs the eBay fixture with laststicker's series 3 names and records
+  the listings that change.
 
 **Threshold measurement (step 2, before the switch).** Compare laststicker scans with shop
 pictures (sammel-ente, collect-it, eBay) of the same and of neighbouring cards on series 3, and

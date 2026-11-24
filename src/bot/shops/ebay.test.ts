@@ -605,11 +605,13 @@ describe('nameMatchedCardIds', () => {
   });
 
   test('a number whose catalog name is another one gives nothing', () => {
-    // Series 3 #103 is Zombie, #16 is not in the map.
+    // Series 3 #103 is Zombie; #16 (Team Wolf Skin and Wolf Tamer) is not in the map.
     expect(nameMatchedCardIds('LEGO Minecraft Karte 103 - Ghast', names)).toEqual([]);
     expect(nameMatchedCardIds('LEGO Minecraft Karte 16 - Ghast', names)).toEqual([]);
     // The name elsewhere in the title, not beside the number, does not count.
-    expect(nameMatchedCardIds('LEGO Minecraft Ghast Karte 103 Snow', names)).toEqual([]);
+    expect(nameMatchedCardIds('LEGO Minecraft Zombie Ultra Rare Karte 103', names)).toEqual([]);
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 103 Ultra Rare Zombie', names)).toEqual([]);
+    expect(nameMatchedCardIds('LEGO Minecraft Karte 103 Zombie', names)).toEqual(ids('103'));
     expect(nameMatchedCardIds('LEGO Minecraft Karte 131 - Ghasty', names)).toEqual([]);
   });
 
@@ -764,8 +766,8 @@ describe('nameMatchedCardIds', () => {
       ['LEGO Minecraft Gold-Ghast Karte 131', []],
       ['LEGO Minecraft Wither-Skeleton Karte 13', []],
       ['LEGO Minecraft Glow-Squid Karte 12', []],
-      // A word of a longer catalog name left over, even across a separator: LE21 "Gold Ghast",
-      // #29 "Burning Zombie".
+      // A word of another card's longer name (LE21 "Gold Ghast", #29 "Burning Zombie") is no
+      // allowed word, even across a separator.
       ['LEGO Minecraft Karte 131 - Ghast (Gold)', []],
       ['LEGO Minecraft Karte 131 - Ghast - Gold', []],
       ['LEGO Minecraft Karte 6 - Zombie - Burning', []],
@@ -1047,6 +1049,12 @@ describe('createEbayFetcher', () => {
               title: 'LEGO Minecraft Karte 131 - Ghast',
             }),
             item({
+              itemId: 'v1|168608734848|0',
+              legacyItemId: '168608734848',
+              itemWebUrl: 'https://www.ebay.de/itm/168608734848',
+              title: 'LEGO Minecraft Karte 104 - Ghast',
+            }),
+            item({
               itemId: 'v1|220000000103|0',
               legacyItemId: '220000000103',
               itemWebUrl: 'https://www.ebay.de/itm/220000000103',
@@ -1071,6 +1079,7 @@ describe('createEbayFetcher', () => {
           reads++;
           return new Map([
             [cid('131'), 'Ghast'],
+            [cid('104'), 'Ghast'],
             [cid('103'), 'Zombie'],
           ]);
         },
@@ -1078,6 +1087,8 @@ describe('createEbayFetcher', () => {
       const result = await adapter.fetchListings();
       expect(result.listings.map((l) => [l.url, l.cardIds, l.idSource])).toEqual([
         ['https://www.ebay.de/itm/220000000131', ids('131'), undefined],
+        // The listing of 2026-11-19: series 3 #104 is Ghast too.
+        ['https://www.ebay.de/itm/168608734848', ids('104'), undefined],
       ]);
       // The 103 title (#103 is Zombie) and the variation listing stay excluded.
       expect(result.skippedExcluded).toBe(2);

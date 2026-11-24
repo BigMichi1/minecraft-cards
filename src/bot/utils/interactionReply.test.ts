@@ -1,5 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import { replyWithError } from './interactionReply';
+import { MessageFlags } from 'discord.js';
+import { ephemeral, replyWithError } from './interactionReply';
 
 // ---------------------------------------------------------------------------
 // Commands previously called interaction.editReply() directly inside catch. If
@@ -81,5 +82,11 @@ describe('replyWithError', () => {
     expect(embed.data.title).toBe('❌ Could Not Open Chests');
     expect(embed.data.description).toBe('The game server rejected it.');
     expect(embed.data.color).toBe(0xff0000);
+  });
+});
+
+describe('ephemeral', () => {
+  test('is a reply only the clicking user sees', () => {
+    expect(ephemeral('hi')).toEqual({ content: 'hi', flags: MessageFlags.Ephemeral });
   });
 });

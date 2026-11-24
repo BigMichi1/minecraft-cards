@@ -1,51 +1,54 @@
 /**
- * The admin's one-click buttons on a listing DM: Confirm (what `/admin map` does with the
- * listing's current cards, without re-notifying anyone) and Dismiss (what `/admin clear` does).
+ * The admin's side of a listing DM (a user's Right, a wrong-card report): the shared listing
+ * embed, `withPictures` that attaches its pictures, and the one-click buttons Confirm (what
+ * `/admin map` does with the listing's current cards, without re-notifying anyone) and Dismiss
+ * (what `/admin clear` does).
  */
-import {
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
-  EmbedBuilder,
-  MessageFlags,
-} from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import type { APIEmbedField, ButtonInteraction, MessageCreateOptions } from 'discord.js';
-import { normalizeCardId, type CardId } from '../cards/cardId';
 import { catalogManager } from '../database/catalogManager';
-import { imageFingerprint, listingManager, type StoredListing } from '../database/listingManager';
+import { listingManager, type StaleReason, type StoredListing } from '../database/listingManager';
 import { downloadImage } from '../matcher/embedder';
 import { validUrl } from '../notify/messages';
 import { attachPictures, PictureRun, type DownloadFn } from '../notify/pictures';
+import { isPayloadRejection } from '../notify/sender';
+import { ephemeral, replyWithError } from '../utils/interactionReply';
 import logger, { logError } from '../utils/logger';
-import { errorMessage } from '../utils/async';
-import { replyWithError } from '../utils/interactionReply';
-import { clipText } from '../utils/messageLimit';
+import { clipText, DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
+import { decodeConfirmId, decodeDismissId, encodeConfirmId, encodeDismissId } from './buttonIds';
 
-/** Discord's limit for a component's customId. */
-const MAX_CUSTOM_ID = 100;
 const MAX_FIELD = 1024;
-const NO_LISTING = 'This listing no longer exists.';
+export const NO_LISTING = 'This listing no longer exists.';
+export const INVALID_BUTTON = 'This button is not valid.';
 const NOT_ADMIN = 'Only the admin can do this.';
-const CARDS_CHANGED =
-  'The listing changed since this message (cards, picture or check); look again or use /admin map.';
+/** Why Confirm was refused, as the admin reads it. */
+export const STALE_REPLIES: Record<StaleReason, string> = {
+  cards: "The listing's cards changed since this message; look again or use /admin map.",
+  picture: "The listing's picture changed since this message; look again or use /admin map.",
+  status:
+    "The listing's picture check is due again or found another card; look again or use /admin map.",
+};
 
-interface AdminDeps {
+/** A DM to the admin. */
+export type AdminDm = (msg: MessageCreateOptions) => Promise<void>;
+
+/** What the admin-only handlers need: who the admin is, and a clock for tests. */
+export interface AdminDeps {
   adminId: string;
+  now?: () => number;
 }
-
-const ephemeral = (content: string) => ({ content, flags: MessageFlags.Ephemeral as const });
-
-type SendFn = (msg: MessageCreateOptions) => Promise<void>;
 
 const defaultDownload: DownloadFn = (url, maxBytes) => downloadImage(url, fetch, maxBytes);
 
 /**
- * `send` with the embed pictures attached, as user alerts are: Discord's proxy shows no
- * collect-it pictures, and the admin confirms by the picture. A picture that cannot be attached
- * keeps its URL; a DM refused with pictures is resent once without them, and the error of that
- * resend is the one raised.
+ * `send` with the embed pictures attached, as user alerts do: Discord's proxy shows no collect-it
+ * pictures, and the admin confirms by the picture. A picture that cannot be attached keeps its
+ * URL. A DM Discord refuses as a bad payload (400/413, never 50007) is resent once without the
+ * pictures, and the error of that resend is the one raised; any other failure is raised as it is,
+ * with no second send. Fallbacks here are only logged, never the `notify-pictures` alert: the
+ * admin is the reader of this DM and sees a missing picture.
  */
-export function withPictures(send: SendFn, download: DownloadFn = defaultDownload): SendFn {
+export function withPictures(send: AdminDm, download: DownloadFn = defaultDownload): AdminDm {
   return async (message) => {
     const attached = await attachPictures(message, new PictureRun(download));
     if (attached === message) {
@@ -55,7 +58,8 @@ export function withPictures(send: SendFn, download: DownloadFn = defaultDownloa
     try {
       await send(attached);
     } catch (error) {
-      logger.warn(`Admin DM with pictures failed, sending without: ${errorMessage(error)}`);
+      if (!isPayloadRejection(error)) throw error;
+      logError('Admin DM with pictures rejected, resending without them', error, 'warn');
       await send(message);
     }
   };
@@ -63,7 +67,7 @@ export function withPictures(send: SendFn, download: DownloadFn = defaultDownloa
 
 /**
  * The listing as the admin sees it: `lead` fields first, then cards, shop and URL, the listing
- * picture, and the reference of its first card as thumbnail.
+ * picture, and the usable reference of its first card as thumbnail (never a placeholder).
  */
 export function adminListingEmbed(
   listing: StoredListing,
@@ -84,30 +88,36 @@ export function adminListingEmbed(
   if (url) embed.setURL(url);
   const image = validUrl(listing.imageUrl);
   if (image) embed.setImage(image);
-  const reference = listing.cardIds[0] ? catalogManager.getCard(listing.cardIds[0]) : undefined;
+  const [first] = listing.cardIds;
+  const reference = first
+    ? catalogManager.referenceCatalog().usable.find((c) => c.cardId === first)
+    : undefined;
   const thumbnail = validUrl(reference?.referenceImageUrl);
   if (thumbnail) embed.setThumbnail(thumbnail);
   return embed;
 }
 
 /**
- * Confirm (when the listing has cards and their ids fit a customId) and, with `dismiss`, Dismiss;
- * null when neither applies.
+ * Confirm (when the listing has cards and its Confirm id, picture fingerprint included, fits
+ * Discord's 100 characters) and, with `dismiss`, Dismiss; null when neither applies.
  */
 export function adminActionRow(
   listing: StoredListing,
   opts: { dismiss: boolean }
 ): ActionRowBuilder<ButtonBuilder> | null {
   const buttons: ButtonBuilder[] = [];
-  // The picture's fingerprint lets Confirm refuse once the picture changed after this DM.
-  const confirmId = `admin-confirm:${listing.id}:${listing.cardIds.join(',')}:${imageFingerprint(listing.imageUrl)}`;
-  const [first] = listing.cardIds;
-  if (first && confirmId.length <= MAX_CUSTOM_ID) {
+  const confirmId = encodeConfirmId(listing);
+  if (confirmId) {
+    const [first] = listing.cardIds;
     buttons.push(
       new ButtonBuilder()
         .setStyle(ButtonStyle.Success)
         .setLabel(listing.cardIds.length > 1 ? '✅ Confirm bundle' : `✅ Confirm #${first}`)
         .setCustomId(confirmId)
+    );
+  } else if (listing.cardIds.length > 0) {
+    logger.warn(
+      `[ADMIN ACTION] Confirm button left out for listing ${listing.id}: its id would pass 100 characters`
     );
   }
   if (opts.dismiss) {
@@ -115,38 +125,31 @@ export function adminActionRow(
       new ButtonBuilder()
         .setStyle(ButtonStyle.Secondary)
         .setLabel('🗑️ Dismiss')
-        .setCustomId(`admin-dismiss:${listing.id}`)
+        .setCustomId(encodeDismissId(listing.id))
     );
   }
   return buttons.length > 0 ? new ActionRowBuilder<ButtonBuilder>().addComponents(buttons) : null;
 }
 
-function parseListingId(value: string | undefined): number | null {
-  return value !== undefined && /^\d{1,15}$/.test(value) ? Number(value) : null;
+/** A button whose id did not parse: a wrong format or a button of an older build. */
+export async function rejectInvalidButton(i: ButtonInteraction, tag: string): Promise<void> {
+  logger.warn(`${tag} button with an unreadable id: ${clipText(i.customId, 200)}`);
+  await i.reply(ephemeral(INVALID_BUTTON));
 }
 
-/** `admin-confirm:<listingId>:<cardIds>:<image fingerprint>`; null when malformed. */
-function parseConfirmId(
-  customId: string
-): { listingId: number; cardIds: CardId[]; image: string } | null {
-  const parts = customId.split(':');
-  if (parts.length !== 4 || !parts[3]) return null;
-  const listingId = parseListingId(parts[1]);
-  if (listingId === null || !parts[2]) return null;
-  const cardIds: CardId[] = [];
-  for (const raw of parts[2].split(',')) {
-    const id = normalizeCardId(raw);
-    if (!id) return null;
-    cardIds.push(id);
+/**
+ * Mark the admin's DM as handled: status line appended, buttons removed. When the DM cannot be
+ * updated, the action already took effect, so the admin is told that instead of a failure.
+ */
+async function markHandled(i: ButtonInteraction, status: string, done: string): Promise<void> {
+  const room = DISCORD_MESSAGE_LIMIT - status.length - 1;
+  const content = [clipText(i.message.content, room), status].filter(Boolean).join('\n');
+  try {
+    await i.update({ content, components: [] });
+  } catch (err) {
+    logError(`[ADMIN ACTION] ${done}, but the DM ${i.customId} could not be updated`, err, 'warn');
+    await i.reply(ephemeral(`${done}; this message could not be updated.`));
   }
-  return { listingId, cardIds, image: parts[3] };
-}
-
-/** Mark the admin's DM as handled: status line appended, buttons removed. */
-async function markHandled(i: ButtonInteraction, status: string): Promise<void> {
-  const suffix = `\n${status}`;
-  const content = `${clipText(i.message.content, 2000 - suffix.length)}${suffix}`;
-  await i.update({ content, components: [] });
 }
 
 export async function handleAdminConfirm(i: ButtonInteraction, deps: AdminDeps): Promise<void> {
@@ -155,21 +158,30 @@ export async function handleAdminConfirm(i: ButtonInteraction, deps: AdminDeps):
       await i.reply(ephemeral(NOT_ADMIN));
       return;
     }
-    const parsed = parseConfirmId(i.customId);
-    const result = parsed
-      ? listingManager.confirmCards(parsed.listingId, parsed.cardIds, Date.now(), parsed.image)
-      : undefined;
-    if (result === undefined) {
+    const parsed = decodeConfirmId(i.customId);
+    if (!parsed) {
+      await rejectInvalidButton(i, '[ADMIN ACTION] Confirm');
+      return;
+    }
+    const now = (deps.now ?? Date.now)();
+    const result = listingManager.confirmCards(parsed.listingId, parsed, now);
+    if (result.kind === 'gone') {
       await i.reply(ephemeral(NO_LISTING));
       return;
     }
-    if (result === 'changed') {
-      await i.reply(ephemeral(CARDS_CHANGED));
+    if (result.kind === 'stale') {
+      logger.info(
+        `[ADMIN ACTION] Confirm of listing ${parsed.listingId} refused: ${result.reason} changed`
+      );
+      await i.reply(ephemeral(STALE_REPLIES[result.reason]));
       return;
     }
-    await markHandled(i, '✅ Confirmed');
+    logger.info(
+      `[ADMIN ACTION] listing ${parsed.listingId} confirmed as ${parsed.cardIds.join(', ')} by the admin`
+    );
+    await markHandled(i, '✅ Confirmed', 'Confirmed');
   } catch (err) {
-    logError('[ADMIN ACTION] confirm failed', err);
+    logError(`[ADMIN ACTION] Confirm ${i.customId} failed`, err);
     await replyWithError(i, 'Confirm failed', 'Something went wrong. Please try again later.');
   }
 }
@@ -180,16 +192,20 @@ export async function handleAdminDismiss(i: ButtonInteraction, deps: AdminDeps):
       await i.reply(ephemeral(NOT_ADMIN));
       return;
     }
-    const parts = i.customId.split(':');
-    const listingId = parts.length === 2 ? parseListingId(parts[1]) : null;
-    const listing = listingId === null ? undefined : listingManager.getById(listingId);
+    const listingId = decodeDismissId(i.customId);
+    if (listingId === null) {
+      await rejectInvalidButton(i, '[ADMIN ACTION] Dismiss');
+      return;
+    }
+    const listing = listingManager.getById(listingId);
     if (!listing || !listingManager.clearHold(listing.url)) {
       await i.reply(ephemeral(NO_LISTING));
       return;
     }
-    await markHandled(i, '🗑️ Dismissed');
+    logger.info(`[ADMIN ACTION] listing ${listingId} dismissed by the admin`);
+    await markHandled(i, '🗑️ Dismissed', 'Dismissed');
   } catch (err) {
-    logError('[ADMIN ACTION] dismiss failed', err);
+    logError(`[ADMIN ACTION] Dismiss ${i.customId} failed`, err);
     await replyWithError(i, 'Dismiss failed', 'Something went wrong. Please try again later.');
   }
 }

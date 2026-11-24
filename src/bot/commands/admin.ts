@@ -14,16 +14,16 @@ import { PICTURE_REJECTIONS, type PictureRejection } from '../matcher/matchStatu
 import { catalogManager, parseKnownCardList } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { runManager } from '../database/runManager';
+import type { AdminDeps } from '../interactions/adminActions';
 import { buildPreviewText, importStore } from '../interactions/catalogImport';
 import { errorMessage } from '../utils/async';
-import { replyWithError } from '../utils/interactionReply';
+import { ephemeral, replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
 import { DISCORD_MESSAGE_LIMIT, joinWithinLimit } from '../utils/messageLimit';
 
 const LIST_OPTION_MAX_LENGTH = 6000;
 
-export interface AdminContext {
-  adminId: string;
+export interface AdminContext extends AdminDeps {
   trigger: () => Promise<RunSummary | 'busy' | 'stopping'>;
 }
 
@@ -68,8 +68,6 @@ export const data = new SlashCommandBuilder()
           )
       )
   );
-
-const ephemeral = (content: string) => ({ content, flags: MessageFlags.Ephemeral as const });
 
 const REJECTION_TEXT: Record<PictureRejection, string> = {
   undecided: 'undecided',

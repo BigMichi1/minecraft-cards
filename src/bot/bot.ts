@@ -74,7 +74,7 @@ async function dmAdmin(message: string | MessageCreateOptions): Promise<void> {
   await admin.send(message);
 }
 
-/** Admin DMs about one listing (Right, wrong reports): pictures attached, as in user alerts. */
+/** Admin DMs about one listing (Right, wrong reports), pictures attached: see `withPictures`. */
 const dmAdminListing = withPictures(dmAdmin);
 
 /** How long shutdown waits for a check in progress before closing the client and database. */
@@ -175,7 +175,7 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await dispatchButton(interaction.customId, {
         report: () => handleReportButton(interaction),
         'report-reason': () => handleReportReason(interaction),
-        right: () => handleRightButton(interaction, dmAdminListing),
+        right: () => handleRightButton(interaction, { notifyAdmin: dmAdminListing }),
         'admin-confirm': () => handleAdminConfirm(interaction, { adminId: config.botAdminId }),
         'admin-dismiss': () => handleAdminDismiss(interaction, { adminId: config.botAdminId }),
         // No store argument: the module-level store is the one /admin catalog import fills.

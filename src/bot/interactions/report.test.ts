@@ -4,7 +4,8 @@ import type { ButtonInteraction, MessageCreateOptions, ModalSubmitInteraction } 
 import { db, initializeDatabase } from '../database/db';
 import { cards, listingCards, listings, reports, adminAlerts } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
-import { imageFingerprint, listingManager, type StoredListing } from '../database/listingManager';
+import { listingManager, type StoredListing } from '../database/listingManager';
+import { encodeConfirmId } from './buttonIds';
 import { reportManager } from '../database/reportManager';
 import { runManager } from '../database/runManager';
 import logger from '../utils/logger';
@@ -407,10 +408,7 @@ describe('report flow', () => {
     );
     expect(msg.components).toHaveLength(1);
     const ids = (msg.components![0] as any).toJSON().components.map((c: any) => c.custom_id);
-    expect(ids).toEqual([
-      `admin-confirm:${l.id}:12:${imageFingerprint(l.imageUrl)}`,
-      `admin-dismiss:${l.id}`,
-    ]);
+    expect(ids).toEqual([encodeConfirmId(l), `admin-dismiss:${l.id}`]);
     expect(msg.content).toContain('/admin map url:');
   });
 

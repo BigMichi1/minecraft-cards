@@ -74,3 +74,26 @@ export type MatchResult =
       status: Exclude<ResolvedMatchStatus, 'mismatch' | 'confirmed'>;
       picture: null;
     });
+
+/** What the admin-confirmation rules read of a listing. */
+interface ConfirmationState {
+  manualOverride: boolean;
+  matchStatus: MatchStatus;
+}
+
+/** Confirmed by the admin (`/admin map` or the Confirm button): never compared again. */
+export function isAdminConfirmed(listing: ConfirmationState): boolean {
+  return listing.manualOverride && listing.matchStatus === 'confirmed';
+}
+
+/**
+ * May the admin confirm the listing by button? Not while it is a `mismatch` (the picture shows
+ * another card) or `pending` (a comparison is due): a confirmation is never compared again, so it
+ * would override the picture rule for good. An admin-mapped listing is never either.
+ */
+export function isConfirmable(listing: ConfirmationState): boolean {
+  return (
+    listing.manualOverride ||
+    (listing.matchStatus !== 'mismatch' && listing.matchStatus !== 'pending')
+  );
+}

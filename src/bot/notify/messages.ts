@@ -6,6 +6,7 @@ import {
   type MessageCreateOptions,
 } from 'discord.js';
 import type { CardId } from '../cards/cardId';
+import { encodeRightId } from '../interactions/buttonIds';
 import { catalogManager } from '../database/catalogManager';
 import type { StoredListing } from '../database/listingManager';
 import type { Money, ShopId } from '../shops/types';
@@ -196,7 +197,7 @@ function buildRow(item: NotificationItem, marker: string): ActionRowBuilder<Butt
         new ButtonBuilder()
           .setStyle(ButtonStyle.Success)
           .setLabel(label)
-          .setCustomId(`right:${listing.id}`),
+          .setCustomId(encodeRightId(listing.id)),
     });
   }
   return new ActionRowBuilder<ButtonBuilder>().addComponents(

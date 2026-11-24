@@ -1,6 +1,7 @@
 import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
-import type { MatchResult, MatchStatus } from '../matcher/matchStatus';
+import { imageFingerprint, type ConfirmId } from '../interactions/buttonIds';
+import { isConfirmable, type MatchResult, type MatchStatus } from '../matcher/matchStatus';
 import type {
   IdSource,
   ListingFormat,
@@ -51,6 +52,14 @@ export interface PendingNotification {
 /** discordId -> that user's pending notifications, by listing id. */
 export type PendingNotifications = Map<string, PendingNotification[]>;
 
+/** Why a confirmation was not written: see `confirmCards`. */
+export type StaleReason = 'cards' | 'picture' | 'status';
+
+export type ConfirmResult =
+  | { kind: 'confirmed'; listing: StoredListing }
+  | { kind: 'gone' }
+  | { kind: 'stale'; reason: StaleReason };
+
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
@@ -66,14 +75,6 @@ export interface PendingOptions {
   seenSince?: number;
   /** Listings left out (their match failed this run, so they were not checked yet). */
   excludeIds?: readonly number[];
-}
-
-/**
- * A short, stable fingerprint of a listing picture URL (base 36, at most 13 characters), small
- * enough to travel in a button's customId so a confirmation can tell the picture changed.
- */
-export function imageFingerprint(imageUrl: string | null): string {
-  return BigInt.asUintN(64, BigInt(Bun.hash(imageUrl ?? ''))).toString(36);
 }
 
 function auctionEnded(auctionEndsAt: number | null, now: number): boolean {
@@ -472,35 +473,29 @@ export const listingManager = {
   /**
    * The admin's one-click confirmation: what `overrideCards` does with the listing's current
    * cards, except that `availableSince` is kept, so users who already had the alert for this
-   * availability period are not notified again. `'changed'` (nothing written) when the listing's
-   * cards no longer equal `expected`, e.g. a rescrape changed them after the button was sent;
-   * when the picture no longer has the fingerprint `expectedImage` the admin saw; and when the
-   * listing is a `mismatch` or waits for a comparison (`pending`), as a confirmation is never
-   * compared again and would override the picture rule for good.
+   * availability period are not notified again. Nothing is written, and the result says why,
+   * when the listing is gone or stale since the button was sent:
+   * - `cards`: its cards no longer equal the confirmed ones (e.g. a rescrape changed them);
+   * - `picture`: its picture URL no longer has the fingerprint the admin saw;
+   * - `status`: it is not confirmable (`isConfirmable`: a `mismatch`, or `pending` a comparison).
    */
   confirmCards(
     listingId: number,
-    expected: CardId[],
-    now: number,
-    expectedImage?: string
-  ): StoredListing | 'changed' | undefined {
-    return db.transaction((tx) => {
+    expected: Omit<ConfirmId, 'listingId'>,
+    now: number
+  ): ConfirmResult {
+    return db.transaction((tx): ConfirmResult => {
       const row = tx.select().from(listings).where(eq(listings.id, listingId)).get();
-      if (!row) return undefined;
-      if (expectedImage !== undefined && imageFingerprint(row.imageUrl) !== expectedImage) {
-        return 'changed';
-      }
-      if (
-        !row.manualOverride &&
-        (row.matchStatus === 'mismatch' || row.matchStatus === 'pending')
-      ) {
-        return 'changed';
-      }
+      if (!row) return { kind: 'gone' };
       const current = new Set(cardIdsOf(tx, [row.id]).get(row.id) ?? []);
-      const wanted = new Set(expected);
+      const wanted = new Set(expected.cardIds);
       if (current.size !== wanted.size || [...wanted].some((id) => !current.has(id))) {
-        return 'changed';
+        return { kind: 'stale', reason: 'cards' };
       }
+      if (imageFingerprint(row.imageUrl) !== expected.image) {
+        return { kind: 'stale', reason: 'picture' };
+      }
+      if (!isConfirmable(row)) return { kind: 'stale', reason: 'status' };
       tx.update(listings)
         .set({
           manualOverride: true,
@@ -512,7 +507,8 @@ export const listingManager = {
         .where(eq(listings.id, row.id))
         .run();
       resolveReports(tx, row.id, now);
-      return byUrl(tx, row.url);
+      const listing = byUrl(tx, row.url);
+      return listing ? { kind: 'confirmed', listing } : { kind: 'gone' };
     });
   },
 

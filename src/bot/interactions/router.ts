@@ -1,18 +1,20 @@
-/** Which handler a button belongs to, by its customId prefix. */
-export type ButtonRoute =
-  'report' | 'report-reason' | 'right' | 'admin-confirm' | 'admin-dismiss' | 'catalog' | 'stock';
+import { CONFIRM_PREFIX, DISMISS_PREFIX, RIGHT_PREFIX } from './buttonIds';
 
-const BUTTON_PREFIXES: [prefix: string, route: ButtonRoute][] = [
+/** customId prefix to handler route; the route union is read from this table. */
+const BUTTON_PREFIXES = [
   ['report:', 'report'],
   ['report-reason:', 'report-reason'],
-  ['right:', 'right'],
-  ['admin-confirm:', 'admin-confirm'],
-  ['admin-dismiss:', 'admin-dismiss'],
+  [RIGHT_PREFIX, 'right'],
+  [CONFIRM_PREFIX, 'admin-confirm'],
+  [DISMISS_PREFIX, 'admin-dismiss'],
   ['catalog-save:', 'catalog'],
   ['catalog-cancel:', 'catalog'],
   // The /stock paging buttons; handleStockButton validates the rest of the id.
   ['stock:', 'stock'],
-];
+] as const;
+
+/** Which handler a button belongs to, by its customId prefix. */
+export type ButtonRoute = (typeof BUTTON_PREFIXES)[number][1];
 
 export function buttonRoute(customId: string): ButtonRoute | null {
   for (const [prefix, route] of BUTTON_PREFIXES) {

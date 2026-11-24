@@ -11,9 +11,10 @@ import type { ButtonInteraction, MessageCreateOptions, ModalSubmitInteraction } 
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { reportManager, type ReportReason } from '../database/reportManager';
 import { runManager } from '../database/runManager';
-import { adminActionRow, adminListingEmbed } from './adminActions';
+import { adminActionRow, adminListingEmbed, NO_LISTING, type AdminDm } from './adminActions';
+import { parseListingId } from './buttonIds';
 import logger, { logError } from '../utils/logger';
-import { replyWithError } from '../utils/interactionReply';
+import { ephemeral, replyWithError } from '../utils/interactionReply';
 
 const REASONS: Record<ReportReason, string> = {
   wrong_number: 'Wrong number',
@@ -22,19 +23,16 @@ const REASONS: Record<ReportReason, string> = {
 };
 const MAX_NOTE = 500;
 const MAX_FIELD = 1024;
-const NO_LISTING = 'This listing no longer exists.';
 const THANKS = "Thanks — the admin has been notified. This listing is paused until it's checked.";
 const THANKS_UNSENT =
   "Thanks — this listing is paused until it's checked. The admin could not be reached just now; the bot will try again with the next check.";
-
-type NotifyAdmin = (msg: MessageCreateOptions) => Promise<void>;
 
 /**
  * DM the admin about one report and record it. True when the DM went out (even if recording
  * it then failed: the admin knows, at worst the next check DMs again).
  */
 async function sendReport(
-  notifyAdmin: NotifyAdmin,
+  notifyAdmin: AdminDm,
   report: {
     id: number;
     listingId: number;
@@ -69,10 +67,6 @@ function isReason(value: string | undefined): value is ReportReason {
   return value !== undefined && Object.hasOwn(REASONS, value);
 }
 
-function parseListingId(value: string | undefined): number | null {
-  return value !== undefined && /^\d{1,15}$/.test(value) ? Number(value) : null;
-}
-
 /** Parse `<prefix>:<listingId>[:<reason>]`; null when malformed. */
 function parseId(
   customId: string,
@@ -85,8 +79,6 @@ function parseId(
   if (!withReason) return { listingId, reason: null };
   return isReason(parts[2]) ? { listingId, reason: parts[2] } : null;
 }
-
-const ephemeral = (content: string) => ({ content, flags: MessageFlags.Ephemeral as const });
 
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
@@ -161,7 +153,8 @@ export function buildAdminReportMessage(
   const ids = listing.cardIds.join(',');
   const row = adminActionRow(listing, { dismiss: true });
   return {
-    // The command stays: mapping the listing to other cards has no button.
+    // The commands stay beside the buttons: mapping the listing to other cards has no button,
+    // and `/admin clear` keeps working where the buttons cannot (an old DM, a long id).
     content: truncate(
       `Fix with \`/admin map url:${listing.url} cards:${ids}\` or dismiss with \`/admin clear url:${listing.url}\`.`,
       2000
@@ -173,7 +166,7 @@ export function buildAdminReportMessage(
 
 export async function handleReportModal(
   i: ModalSubmitInteraction,
-  notifyAdmin: NotifyAdmin
+  notifyAdmin: AdminDm
 ): Promise<void> {
   try {
     const parsed = parseId(i.customId, true);
@@ -231,7 +224,7 @@ export function resetReportWarnings(): void {
  * once per process.
  */
 export async function retryUnsentReports(
-  notifyAdmin: NotifyAdmin,
+  notifyAdmin: AdminDm,
   now: number = Date.now()
 ): Promise<number> {
   let sent = 0;

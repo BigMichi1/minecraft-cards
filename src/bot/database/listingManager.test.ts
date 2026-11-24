@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { eq } from 'drizzle-orm';
 import { db, initializeDatabase } from './db';
 import {
   cards,
@@ -10,7 +11,8 @@ import {
   wantedCards,
 } from './schema/index';
 import { catalogManager } from './catalogManager';
-import { imageFingerprint, listingManager } from './listingManager';
+import { listingManager } from './listingManager';
+import { imageFingerprint } from '../interactions/buttonIds';
 import { userManager } from './userManager';
 import type { Listing } from '../shops/types';
 import { cid, ids } from '../../test/cardIds';
@@ -388,6 +390,10 @@ describe('listingManager', () => {
     });
   });
   describe('confirmCards', () => {
+    const IMAGE = imageFingerprint(blue12.imageUrl);
+    const confirm = (id: number, cards: string[], now = 3000, image = IMAGE) =>
+      listingManager.confirmCards(id, { cardIds: cards.map(cid), image }, now);
+
     function unconfirmed12() {
       listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;
@@ -405,7 +411,9 @@ describe('listingManager', () => {
       db.insert(reports)
         .values({ listingId: l.id, reporterId: 'r', reason: 'other', createdAt: 1 })
         .run();
-      expect(listingManager.confirmCards(l.id, [cid('12')], 3000)).toMatchObject({
+      const result = confirm(l.id, ['12']);
+      expect(result.kind).toBe('confirmed');
+      expect(result.kind === 'confirmed' && result.listing).toMatchObject({
         cardIds: ['12'],
         matchStatus: 'confirmed',
         manualOverride: true,
@@ -421,13 +429,15 @@ describe('listingManager', () => {
       userManager.setList('u1', '12');
       const l = unconfirmed12();
       listingManager.recordNotified('u1', l.id, l.availableSince!);
-      listingManager.confirmCards(l.id, [cid('12')], 3000);
+      confirm(l.id, ['12']);
       expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
     });
 
     test('refuses when the cards changed, writing nothing', () => {
       const l = unconfirmed12();
-      expect(listingManager.confirmCards(l.id, [cid('13')], 3000)).toBe('changed');
+      for (const cards of [['13'], ['12', '13'], []]) {
+        expect(confirm(l.id, cards)).toEqual({ kind: 'stale', reason: 'cards' });
+      }
       expect(listingManager.getById(l.id)).toMatchObject({
         matchStatus: 'unconfirmed',
         manualOverride: false,
@@ -435,15 +445,22 @@ describe('listingManager', () => {
       });
     });
 
-    test('refuses when the picture changed since the admin saw it', () => {
+    test('a subset of a bundle is refused as changed cards', () => {
+      listingManager.upsertFromRun(
+        'blue-ocean',
+        [{ ...blue12, cardIds: [cid('12'), cid('13')] }],
+        1000
+      );
+      const l = listingManager.getByUrl(blue12.url)!;
+      expect(confirm(l.id, ['12'])).toEqual({ kind: 'stale', reason: 'cards' });
+    });
+
+    test('refuses when the picture URL changed since the admin saw it', () => {
       const l = unconfirmed12();
       const seen = imageFingerprint('https://img/old.jpg');
-      expect(listingManager.confirmCards(l.id, [cid('12')], 3000, seen)).toBe('changed');
+      expect(confirm(l.id, ['12'], 3000, seen)).toEqual({ kind: 'stale', reason: 'picture' });
       expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
-      const current = imageFingerprint(blue12.imageUrl);
-      expect(listingManager.confirmCards(l.id, [cid('12')], 3000, current)).toMatchObject({
-        matchStatus: 'confirmed',
-      });
+      expect(confirm(l.id, ['12']).kind).toBe('confirmed');
     });
 
     test('refuses a listing that is a mismatch or waits for a comparison', () => {
@@ -453,28 +470,28 @@ describe('listingManager', () => {
         { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.9 } },
         2000
       );
-      expect(listingManager.confirmCards(l.id, [cid('12')], 3000)).toBe('changed');
-      db.update(listings).set({ matchStatus: 'pending' }).run();
-      expect(listingManager.confirmCards(l.id, [cid('12')], 3000)).toBe('changed');
+      expect(confirm(l.id, ['12'])).toEqual({ kind: 'stale', reason: 'status' });
+      db.update(listings).set({ matchStatus: 'pending' }).where(eq(listings.id, l.id)).run();
+      expect(confirm(l.id, ['12'])).toEqual({ kind: 'stale', reason: 'status' });
       expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
     });
 
-    test('imageFingerprint is short, stable and tells pictures apart', () => {
-      const a = imageFingerprint('https://img/a.jpg');
-      expect(a).toBe(imageFingerprint('https://img/a.jpg'));
-      expect(a).not.toBe(imageFingerprint('https://img/b.jpg'));
-      expect(imageFingerprint(null)).not.toBe(a);
-      expect(a).toMatch(/^[0-9a-z]{1,13}$/);
+    test('an admin-mapped listing may be confirmed whatever its status', () => {
+      const l = unconfirmed12();
+      listingManager.overrideCards(blue12.url, [cid('12')], 2000);
+      db.update(listings).set({ matchStatus: 'pending' }).where(eq(listings.id, l.id)).run();
+      expect(confirm(l.id, ['12']).kind).toBe('confirmed');
     });
 
-    test('returns undefined for a missing listing', () => {
-      expect(listingManager.confirmCards(424242, [cid('12')], 3000)).toBeUndefined();
+    test('a missing listing is gone', () => {
+      expect(confirm(424242, ['12'])).toEqual({ kind: 'gone' });
     });
 
     test('is idempotent', () => {
       const l = unconfirmed12();
-      listingManager.confirmCards(l.id, [cid('12')], 3000);
-      expect(listingManager.confirmCards(l.id, [cid('12')], 4000)).toMatchObject({
+      confirm(l.id, ['12']);
+      const again = confirm(l.id, ['12'], 4000);
+      expect(again.kind === 'confirmed' && again.listing).toMatchObject({
         matchStatus: 'confirmed',
         manualOverride: true,
         availableSince: 1000,
@@ -483,7 +500,7 @@ describe('listingManager', () => {
 
     test('survives a rescrape', () => {
       const l = unconfirmed12();
-      listingManager.confirmCards(l.id, [cid('12')], 3000);
+      confirm(l.id, ['12']);
       listingManager.upsertFromRun(
         'blue-ocean',
         [{ ...blue12, imageUrl: 'https://img/new.jpg' }],

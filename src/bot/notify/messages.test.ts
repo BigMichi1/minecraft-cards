@@ -350,11 +350,16 @@ describe('notification messages', () => {
         item(2, { matchStatus: 'pending' }),
         item(3, { matchStatus: 'no_reference' }),
         item(4, { matchStatus: 'unconfirmed', cardIds: [cid('12'), cid('13')] }),
+        item(5, { matchStatus: 'image_unavailable' }),
+        item(6, { matchStatus: 'model_unavailable' }),
+        item(7, { matchStatus: 'mismatch' }),
       ]);
-      for (let i = 0; i < 4; i++) {
-        expect(buttonsOf(atMsg(msgs, i)).some((b) => b.custom_id?.startsWith('right:'))).toBe(
-          false
-        );
+      const rows = msgs.flatMap((m) =>
+        m.message.components!.map((_, r) => buttonsOf(m.message, r))
+      );
+      expect(rows).toHaveLength(7);
+      for (const buttons of rows) {
+        expect(buttons.some((b) => b.custom_id?.startsWith('right:'))).toBe(false);
       }
     });
 

@@ -175,11 +175,11 @@ describe('catalogManager', () => {
     catalogManager.seedIfEmpty();
     catalogManager.updateNamesAndReferences('lego-minecraft-3', [
       { cardId: cid('131'), name: 'Ghast', imageUrl: null },
-      { cardId: cid('LE8'), name: 'Golden Steve', imageUrl: null },
+      { cardId: cid('LE8'), name: 'Charged Creeper', imageUrl: null },
     ]);
     const names = catalogManager.cardNames('lego-minecraft-3');
     expect(names.get(cid('131'))).toBe('Ghast');
-    expect(names.get(cid('LE8'))).toBe('Golden Steve');
+    expect(names.get(cid('LE8'))).toBe('Charged Creeper');
     expect(names.has(cid('1'))).toBe(false);
     expect(names.size).toBe(2);
   });

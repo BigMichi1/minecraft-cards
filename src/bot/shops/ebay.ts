@@ -398,9 +398,9 @@ const NAME_TITLE_WORD_SET = new Set(NAME_TITLE_WORDS);
  * title forms (and `N - Name`, `LE  19`) read must carry its own name, and once those numbers
  * and names are taken out, nothing but NAME_TITLE_WORDS words and punctuation may be left:
  * "Comic Karte 3 - Steve", "Gold Ghast Karte 131" and "Karte 131 - Ghast 2025" give nothing.
- * "Karte 104 - Ghast" gives nothing too: series 3 #104 is not Ghast (#15 and #131 are). A
- * series 1 or 2 card sharing number and name still passes; its picture is compared as for every
- * title (docs/image-matching.md).
+ * A name several series 3 cards share counts beside each of their numbers: "Karte 104 - Ghast" is
+ * #104 (Ghast is #15, #102, #104 and #131). A series 1 or 2 card sharing number and name passes
+ * too; its picture is compared as for every title (docs/image-matching.md).
  */
 export function nameMatchedCardIds(title: string, names: ReadonlyMap<CardId, string>): CardId[] {
   if (titleExclusion(title) !== 'no series 3') return [];

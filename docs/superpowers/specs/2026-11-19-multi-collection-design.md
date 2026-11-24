@@ -187,9 +187,10 @@ laststicker is the reference of every collection (the maintainer's decision), Mi
 - Puzzle cards come from laststicker's kind `Puzzlekarte` (sticky `puzzle_seen` as today); the
   "Puzzlekarte" name rule goes, since laststicker names puzzle cards by picture and piece
   ("Entdecke die Oberwelt 1").
-- The series 3 eBay name check (PR #22) reads laststicker's names. Its tests use fixture names;
-  step 2 re-runs the eBay fixture with laststicker's series 3 names and records the listings
-  that change (expected: few, as the names are the same characters in German).
+- The series 3 eBay name check (PR #22) reads laststicker's names. Its tests use the series 3
+  names of 2026-11-24 (laststicker and sammel-ente give the same names), plus two made-up names
+  for title forms; step 2 re-runs the eBay fixture with laststicker's series 3 names and records
+  the listings that change.
 
 **Threshold measurement (step 2, before the switch).** Compare laststicker scans with shop
 pictures (sammel-ente, collect-it, eBay) of the same and of neighbouring cards on series 3, and
@@ -374,6 +375,10 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   it there. Step 3 decides moves together with title-driven collection changes.
 - Shop parsers (`ShopFetcher`) still read series 3 rules; step 3 gives them per-collection
   settings (typed per shop, a collection lists only the shops that sell it).
+- The eBay name check (`nameMatchedCardIds`) accepts a series 3 name beside its number even when
+  series 1 or 2 has the same name at that number (`Karte 104 - Ghast`: series 3 #104 is Ghast, PR
+  #22 assumed otherwise). Step 3, with the series 1 and 2 catalogs loaded, places such a title by
+  name only when no other series has that name at that number.
 
 ## Left to the builder
 

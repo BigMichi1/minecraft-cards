@@ -126,11 +126,14 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   - Titles with a pick list, range, variation or `COUNT_WORDS` word never qualify, so the common
     `Karten N - Name - Charakterkarte` form and `Holo`, `Foil` or `Sammelkarte` titles are not
     read by name.
-  - `LEGO Minecraft Karte 104 - Ghast` (2026-11-19) gives nothing: series 3 #104 is not Ghast
-    (#15 and #131 are), so it is most likely a series 1 or 2 card. A series 1 or 2 card with the
-    same number and name, and nothing else in its title, does pass; it starts `pending` and its
-    picture is compared as for any title, so a clearly other series 3 card becomes a `mismatch`,
-    and an unclear picture an alert marked "number unconfirmed" (`docs/image-matching.md`).
+  - A name several series 3 cards share counts beside each of their numbers: Ghast is #15, #102,
+    #104 and #131 (laststicker and sammel-ente, 2026-11-24), so `LEGO Minecraft Karte 104 - Ghast`
+    (2026-11-19) is read as #104. A series 1 or 2 card with the same number and name, and nothing else in its title,
+    passes too; it starts `pending` and its picture is compared as for any title, so a clearly
+    other series 3 card becomes a `mismatch`, and an unclear picture an alert marked "number
+    unconfirmed" (`docs/image-matching.md`). Multi-collection step 3, with the series 1 and 2
+    catalogs loaded, is to place such a title by name only when no other series has that name at
+    that number (`docs/superpowers/specs/2026-11-19-multi-collection-design.md`).
 - **No stock from pick lists**: no ids from listings the buyer picks a card from (`aussuchen`,
   `auswählen`, `Auswahl`, `wählen`, `waehlen`, `du wählst`, `choose`, `pick` as a whole word, so
   `Pickaxe` is not one), from titles with a number range (`Einzelkarten 1 - 228`, `151-254`,

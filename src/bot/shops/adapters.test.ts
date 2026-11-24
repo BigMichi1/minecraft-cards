@@ -81,7 +81,20 @@ describe('createShopAdapters', () => {
     ] as const) {
       const collections = [legoMinecraft1, { ...other, shops: { 'blue-ocean': shared } }];
       expect(() => createShopAdapters(null, undefined, { collections })).toThrow(
-        `lego-minecraft-2: blue-ocean ${field} "${String(shared[field as keyof typeof shared])}" is also lego-minecraft-1's`
+        `lego-minecraft-2: blue-ocean ${field} "${String(shared[field as keyof typeof shared])}" overlaps lego-minecraft-1's`
+      );
+    }
+  });
+
+  test("a picture part containing another collection's, in any case, is refused", () => {
+    const other = { ...legoMinecraft1, id: 'lego-minecraft-2' as const };
+    for (const picture of ['_TCC-01', '_tcc-0', '_tcc-01_de']) {
+      const collections = [
+        legoMinecraft1,
+        { ...other, shops: { 'blue-ocean': { productCode: 'x1', picture } } },
+      ];
+      expect(() => createShopAdapters(null, undefined, { collections })).toThrow(
+        `lego-minecraft-2: blue-ocean picture "${picture}" overlaps lego-minecraft-1's "_tcc-01"`
       );
     }
   });
@@ -160,7 +173,7 @@ describe('createShopAdapters', () => {
     );
   });
 
-  test('blue-ocean settings without a product code, or with a stateful title, are refused at start', () => {
+  test('invalid blue-ocean settings are refused at start', () => {
     const noCode = { ...legoMinecraft1, shops: { 'blue-ocean': { productCode: '' } } };
     expect(() => createShopAdapters(null, undefined, { collections: [noCode] })).toThrow(
       'lego-minecraft-1: blue-ocean settings without a product code'
@@ -186,13 +199,13 @@ describe('createShopAdapters', () => {
         shops: { 'blue-ocean': { productCode: '702351', excludes } },
       };
       expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
-        'the blue-ocean title must not use the g or y flag'
+        'the blue-ocean title or exclusion marker must not use the g or y flag'
       );
     }
     for (const title of [/TCC 1/g, /TCC 1/y]) {
       const bad = { ...legoMinecraft1, shops: { 'blue-ocean': { productCode: '702351', title } } };
       expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
-        'lego-minecraft-1: the blue-ocean title must not use the g or y flag'
+        'lego-minecraft-1: the blue-ocean title or exclusion marker must not use the g or y flag'
       );
     }
   });

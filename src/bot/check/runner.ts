@@ -129,11 +129,12 @@ const DROP_ALERT_SHARE = 0.5;
 /**
  * A collection a shared run found nothing of (`emptyCollections`) is a shop error of that
  * collection, its listings kept. Only one the fetcher says may have sold out (`mayHaveSoldOut`,
- * blue-ocean: it drops sold-out singles) whose recent peak (`SHOP_PEAK_WINDOW_MS`) stayed below
- * this many listings has sold out, such as blue-ocean's last series 3 singles: it is stored
- * empty, its listings are marked gone, and the admin is told (`shop-soldout`). Without a recent
- * successful run, with an unreadable run in the window, or when the counts cannot be read, it
- * stays a shop error.
+ * blue-ocean: it drops sold-out singles), with nothing placed in it (no admin-mapped listing
+ * either), whose recent peak (`SHOP_PEAK_WINDOW_MS`) stayed below this many listings has sold
+ * out, such as blue-ocean's last series 3 singles: it is stored empty and its listings are
+ * marked gone, the admin told (`shop-soldout`) while the window still holds a run with listings.
+ * Without a recent successful run, with an unreadable run row or entry in the window, or when
+ * the counts cannot be read, it stays a shop error.
  */
 const EMPTY_COLLECTION_FLOOR = 5;
 
@@ -724,18 +725,39 @@ async function checkShop(
       `shop ${adapter.id}: empty collection(s) ${[...new Set(strays)].join(', ')} reported outside the run's collections, ignored`
     );
   }
+  // Products the shop still lists but the fetcher could not read: never marked gone.
+  const unreadableUrls = result.unreadableUrls ?? [];
+  if (unreadableUrls.length > 0) {
+    await alert(
+      `shop-unreadable:${runKey}`,
+      clipText(
+        `Shop ${runShop}: ${unreadableUrls.length} product(s) could not be read (their stored listings are kept as they are): ${unreadableUrls.slice(0, MAX_NAMED).join(', ')}`,
+        DISCORD_MESSAGE_LIMIT
+      )
+    );
+  }
+  const seenUrls = placement ? new Set([...placement.seenUrls, ...unreadableUrls]) : undefined;
   for (const collection of covered) {
-    const soldOutPossible = empty.has(collection) && mayHaveSoldOut.has(collection);
+    const found = placement
+      ? result.listings.filter((l) => placement.homes.get(l.url) === collection)
+      : result.listings;
+    // Only a collection with nothing to store at all can have sold out (an admin-mapped listing
+    // placed in it says otherwise).
+    const soldOutPossible =
+      empty.has(collection) && mayHaveSoldOut.has(collection) && found.length === 0;
     const peak = soldOutPossible
       ? recentPeak(adapter.id, collection, deps.now(), 'kept as a shop error', true)
       : undefined;
     const soldOut = soldOutPossible && peak !== undefined && peak < EMPTY_COLLECTION_FLOOR;
     if (empty.has(collection) && !soldOut) {
-      // Nothing of it found: a query, API or layout problem there, not every card sold.
+      // Taken as a query, API or layout problem, not a sell-out (see EMPTY_COLLECTION_FLOOR).
       const message =
-        adapter.id === 'ebay'
+        (adapter.id === 'ebay'
           ? `all searches of ${collectionName(collection)} returned no usable items`
-          : `no card of ${collectionName(collection)} on any page`;
+          : `no card of ${collectionName(collection)} on any page`) +
+        (soldOutPossible && peak === undefined
+          ? ' (no readable recent listing counts to tell a sell-out)'
+          : '');
       const homes = [...(placement?.homes.values() ?? [])];
       const dropped = homes.filter((c) => c === collection).length;
       logger.warn(
@@ -755,15 +777,17 @@ async function checkShop(
     }
     if (soldOut) {
       const message = `no card of ${collectionName(collection)} on any page, at most ${peak} listing(s) in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)}: read as sold out, its listings are marked gone`;
-      logger.warn(`shop ${adapter.id}: ${message}`);
-      await alert(
-        `shop-soldout:${adapter.id}:${collection}`,
-        `Shop ${adapter.id} (${collectionName(collection)}): ${message}. If the shop still sells them, check its URL and title forms (docs/shops.md).`
-      );
+      if (peak > 0) {
+        logger.warn(`shop ${adapter.id}: ${message}`);
+        await alert(
+          `shop-soldout:${adapter.id}:${collection}`,
+          `Shop ${adapter.id} (${collectionName(collection)}): ${message}. If the shop still sells them, check its URL and title forms (docs/shops.md).`
+        );
+      } else {
+        // Sold out for the whole window: told already, nothing left to mark gone.
+        logger.info(`shop ${adapter.id}: ${collectionName(collection)} still sold out`);
+      }
     }
-    const found = placement
-      ? result.listings.filter((l) => placement.homes.get(l.url) === collection)
-      : result.listings;
     await storeShopResult(
       deps,
       alert,
@@ -775,7 +799,7 @@ async function checkShop(
       summary,
       stored,
       fetched,
-      placement?.seenUrls,
+      seenUrls,
       soldOut
     );
   }

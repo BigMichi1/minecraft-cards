@@ -30,30 +30,41 @@ changes or a new one is suggested.
   ending with another series label is skipped and counted, and still counts toward the article
   total; one without a series label fails the walk, as does a walk with no card of the series.
   `XXL 1 - …` (with a space) reads as XXL1.
-- blue-ocean (2026-11-24 probe): there is no series 1 category page; the sticker-cards category
-  lists every series' singles, stickers and packs (31 pages, 733 products; series 1 250 singles,
-  series 2 254, series 3 3). One walk reads it for every collection, and each product is placed
-  by its URL: the category path (`…/trading-card-collection-serie-1/18166/nummer-250-i-…`,
-  `…/trading-card-collection-boom-bastic/…`), else the product code before the card number of a
-  root URL (#1 to 9: `/nummer-001-i-steve-i-lego-minecraft-tcc-1-702351-01`,
-  `/nummer-001-i-alex-00702502-01`; series 3 `…-tcc-on-fire-2dd00088-16`). Stickers
-  (`stickerserie-1`, `…-00702506-NN`, pictures `…_sticker2025.jpg`) and packs (no `Nummer`
-  title and no card number in the URL) are no cards: ignored, counted only as products. A title or picture
-  naming another series than the URL's (series 1 titles end `I LEGO Minecraft TCC 1`, series 3
-  ones name "On Fire", series 2 titles name no series; pictures `250_lego_minecraft_tcc-01_de.jpg`
-  and `249_lego_minecraft_tcc-02.jpg`), or a series 1 or 3 title without its own marker, is
-  skipped and counted (`skippedExcluded`). Series 1 and 2 ids are the title's `Nummer NNN`
-  (`Nummer 266 I Never trust this chef`), which must equal the URL's number (else
-  `skippedNoId`); a picture number other than the id is an id conflict. A product whose URL has a card number but whose title has no `Nummer`, and a single's picture
-  (series part and card number) at a URL of no known form, count as `skippedNoId` too. Series 2
-  titles name no series, but `TCC 2` or `Boom-Bastic` in a title at another series' URL excludes
-  it. A collection without a card in the whole walk is a shop error of that collection
-  (`emptyCollections`), its listings untouched. blue-ocean drops sold-out singles (731 of 733
-  products were in stock), so when no product of the collection was seen but unreadable and it
-  had fewer than 5 listings at its recent peak (3 days), it sold out there (series 3 had 3
-  singles left on 2026-11-24): its listings are marked gone, with a throttled sold-out alert. No
-  recent successful run, an unreadable run row or a failed lookup keep it a shop error. eBay's
-  empty searches are never read as a sell-out.
+- blue-ocean (2026-11-24 probe): series 1 has no category page of its own (series 2's
+  `…/trading-card-collection-boom-bastic/` lists the same series 2 products as the walk); the
+  sticker-cards category lists every series' singles, stickers and packs (31 pages, 734
+  products, "734 Produkte" above the grid; series 1 250 singles, series 2 254, series 3 3). One
+  walk reads it for every collection:
+  - **Placement** by URL: the category path (`…/trading-card-collection-serie-1/18166/nummer-250-i-…`,
+    `…/trading-card-collection-boom-bastic/…`), else the product code before the card number of
+    a root URL (#1 to 9: `/nummer-001-i-steve-i-lego-minecraft-tcc-1-702351-01`,
+    `/nummer-001-i-alex-00702502-01`; series 3 `…-tcc-on-fire-2dd00088-16`).
+  - **Ignored** (counted only as products): stickers (`stickerserie-1`, `…-00702506-NN`,
+    pictures `…_sticker2025.jpg`) and packs (in a series category: no `Nummer` title and no
+    card number in the URL; at the root: no product code and card number).
+  - **Excluded** (`skippedExcluded`): a title or picture naming another series than the URL's
+    (series 1 titles end `I LEGO Minecraft TCC 1`, series 3 ones name "On Fire", series 2
+    titles name no series but `TCC 2` or `Boom-Bastic` at another series' URL excludes;
+    pictures `250_lego_minecraft_tcc-01_de.jpg`, `249_lego_minecraft_tcc-02.jpg`,
+    `LMC_TCG3_.P16.jpg`), or a series 1 or 3 title without its own marker.
+  - **Ids:** series 1 and 2 the title's `Nummer NNN` (`Nummer 266 I Never trust this chef`),
+    which must equal the URL's number; a picture number other than the id is an id conflict.
+    Otherwise `skippedNoId`, as are a URL with a card number but a title without `Nummer`, and
+    a single's picture (series part and card number) at a URL of no known form.
+  - **Unreadable products** (excluded or without id) keep their stored listings (neither
+    refreshed nor marked gone) and raise a throttled `shop-unreadable:blue-ocean` alert.
+  - **The walk must read exactly the total** page 1 names (unique product URLs plus boxes
+    without a link); a missing total, a different count (an empty page in the middle, products
+    shifting between pages) or reaching the 60-page cap is a `ShopLayoutError`, as is a walk
+    without any card.
+  - **An empty collection** (no card in the whole walk) is a shop error of that collection
+    (`emptyCollections`), its listings untouched. blue-ocean drops sold-out singles (733 of 734
+    products were in stock), so when no product of the collection was seen but unreadable,
+    nothing is placed in it, and it had fewer than 5 listings at its recent peak (3 days), it
+    sold out there (series 3 had 3 singles left on 2026-11-24): its listings are marked gone,
+    with a throttled sold-out alert while the window still holds a run with listings. No recent
+    successful run, an unreadable run row or entry, or a failed lookup keep it a shop error.
+    eBay's empty searches are never read as a sell-out.
 
 ## eBay details
 

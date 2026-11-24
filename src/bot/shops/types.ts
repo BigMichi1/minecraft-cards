@@ -64,7 +64,9 @@ export interface FetchResult {
    * Items whose card number could not be read: sammel-ente titles with a "| #" number that does
    * not parse, eBay titles naming no card (but not the picture candidates, which are listings
    * with `idSource` `picture`). Other sammel-ente products (boosters, puzzle packs) are not
-   * counted.
+   * counted. blue-ocean: series 1 and 2 singles whose `Nummer` is missing or differs from the
+   * URL's number, a category URL without a card number, and a single's picture at a URL of no
+   * known form.
    */
   skippedNoId?: number;
   /**
@@ -72,7 +74,8 @@ export interface FetchResult {
    * or none (unless its catalog name confirms a series 3 number, see nameMatchedCardIds), a
    * collection this run does not read (`other series`), a pick list, a number range, or a
    * listing with variations. Not "without card number". sammel-ente and collect-it: card titles
-   * of another series than the category's.
+   * of another series than the category's. blue-ocean: products whose title or picture
+   * contradicts their URL's collection.
    */
   skippedExcluded?: number;
   /** Product boxes or items without a usable link or title. */
@@ -101,6 +104,12 @@ export interface FetchResult {
    * searches are a query or API problem.
    */
   mayHaveSoldOut?: readonly CollectionId[];
+  /**
+   * blue-ocean: the URLs of products the walk saw but could not read (excluded, without a card
+   * id, a single's picture at an unknown URL form). The runner neither refreshes nor marks their
+   * stored listings gone, and alerts the admin (`shop-unreadable:<shop>`).
+   */
+  unreadableUrls?: readonly string[];
 }
 
 /**
@@ -115,9 +124,9 @@ export interface ShopFetcher {
 
 /**
  * A shop checked for one collection: its listings are stored in `collection`. A shared run (eBay,
- * blue-ocean) covers several (`collections`, a shared run): each listing is stored in the
- * collection it names (`Listing.collection`), and the run's skipped counts are filed under
- * `collection`, one of them (checkAdapters).
+ * blue-ocean) covers several (`collections`): each listing is stored in the collection it names
+ * (`Listing.collection`), and the run's skipped counts are filed under `collection`, series 3
+ * when covered (`sharedAdapters`, checked by `checkAdapters`).
  */
 export interface ShopAdapter extends ShopFetcher {
   readonly collection: CollectionId;

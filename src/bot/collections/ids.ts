@@ -73,7 +73,9 @@ export interface BlueOceanSettings {
   readonly productCode: string;
   /**
    * A part of the picture file name naming the series (`_tcc-01`, series 3 `tcg3_.p`), compared
-   * lowercase: a product at another collection's URL with such a picture is excluded.
+   * lowercase: a product at another collection's URL with such a picture is excluded, and one at
+   * a URL of no known form whose picture also carries a card number is counted as an unreadable
+   * single of this collection (`skippedNoId`), so a changed URL form is seen.
    */
   readonly picture?: string;
   /**

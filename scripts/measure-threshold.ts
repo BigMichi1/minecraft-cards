@@ -105,7 +105,6 @@ function fewestErrors(trueSims: Scored, falseSims: Scored): number {
   return best.threshold;
 }
 
-// blue-ocean is read for series 3 only (SERIES_3).
 const { sammel, blue } = await loadListings();
 const reference = imagesById(sammel);
 const candidates = imagesById(blue);

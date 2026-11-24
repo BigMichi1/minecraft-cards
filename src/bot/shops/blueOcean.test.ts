@@ -62,6 +62,7 @@ describe('parseBlueOceanPage', () => {
     expect(parsed.productCount).toBe(1);
     expect(parsed.listings).toEqual([]);
     expect(parsed.skippedExcluded).toBe(1);
+    expect([...parsed.unreadable]).toEqual(['lego-minecraft-3']);
   });
 
   test('page 99 has no products', () => {
@@ -73,6 +74,9 @@ describe('parseBlueOceanPage', () => {
       skippedExcluded: 0,
       skippedInvalid: 0,
       unreadable: new Set(),
+      unreadableUrls: [],
+      productUrls: [],
+      total: 0,
     });
   });
 
@@ -230,12 +234,16 @@ describe('parseBlueOceanPage across collections', () => {
       ),
     ];
     for (const html of cases) {
-      expect(parseBlueOceanPage(html)).toMatchObject({
+      const parsed = parseBlueOceanPage(html);
+      expect(parsed).toMatchObject({
         listings: [],
         productCount: 1,
         skippedExcluded: 1,
         skippedNoId: 0,
       });
+      // The URL's collection is not read as sold out, and the listing is kept.
+      expect(parsed.unreadable.size).toBe(1);
+      expect(parsed.unreadableUrls).toHaveLength(1);
     }
   });
 
@@ -308,6 +316,39 @@ describe('parseBlueOceanPage across collections', () => {
     expect(pack.unreadable.size).toBe(0);
   });
 
+  test("a collection's own exclusion marker does not exclude it", () => {
+    const [l] = parseBlueOceanPage(
+      box(`${S2}/nummer-012-i-steve`, 'Nummer 012 I Steve I Boom-Bastic', 'x.jpg')
+    ).listings;
+    expect(l).toMatchObject({ collection: 'lego-minecraft-2', cardIds: ids('12') });
+  });
+
+  test('a series 3 card picture at a changed URL form is counted; a pack picture is not', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const changed = parseBlueOceanPage(
+        box(
+          '/nr.-12-steve-lego-minecraft-tcc-on-fire-2dd00088-12-1',
+          'Nr. 12 Steve LEGO Minecraft TCC "On Fire"',
+          'https://x.test/a/LMC_TCG3_.P12.jpg'
+        )
+      );
+      expect(changed).toMatchObject({ listings: [], skippedNoId: 1 });
+      expect([...changed.unreadable]).toEqual(['lego-minecraft-3']);
+    } finally {
+      warn.mockRestore();
+    }
+    const pack = parseBlueOceanPage(
+      box(
+        '/lego-minecraft-on-fire-blister-2dd00123',
+        'LEGO Minecraft "On Fire" Blister',
+        'https://x.test/a/LMC_TCG3_.Blister.jpg'
+      )
+    );
+    expect(pack).toMatchObject({ listings: [], skippedNoId: 0 });
+    expect(pack.unreadable.size).toBe(0);
+  });
+
   test('a pack in a series category is no card and not counted', () => {
     const parsed = parseBlueOceanPage(
       box(`${S1}/lego-minecraft-tcc-1-display`, 'LEGO Minecraft TCC 1 - Display', 'x.jpg')
@@ -340,6 +381,24 @@ describe('parseBlueOceanPage across collections', () => {
 describe('createBlueOceanFetcher', () => {
   const base =
     'https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/';
+  const s3 = BLUE_OCEAN_COLLECTIONS.filter((c) => c.id === 'lego-minecraft-3');
+  const page = (body: string) => `<div class="cms-page">${body}</div>`;
+  const withTotal = (html: string, total: number) =>
+    html.replace(/>\s*\d+ Produkte\s*</, `>${total} Produkte<`);
+  /** A walk of `pages`, then an empty page; page 1 names the walk's product count as total. */
+  function walkOf(pages: string[], total?: number) {
+    const urls = new Set(pages.flatMap((p) => parseBlueOceanPage(p).productUrls));
+    const [first, ...rest] = pages;
+    const withHeader = first!.includes(' Produkte<')
+      ? first!
+      : first!.replace('<div class="cms-page">', '<div class="cms-page"><div>0 Produkte</div>');
+    const entries = [
+      withTotal(withHeader, total ?? urls.size),
+      ...rest,
+      readFixture('blue-ocean-p99.html'),
+    ];
+    return fakeFetch(Object.fromEntries(entries.map((html, k) => [`?p=${k + 1}`, html])));
+  }
 
   test('throws ShopLayoutError when page 1 is not a shop page', async () => {
     const { fetchFn } = fakeFetch({ '?p=1': '<html>Just a moment...</html>' });
@@ -349,11 +408,10 @@ describe('createBlueOceanFetcher', () => {
   });
 
   test('walks pages until one has no products', async () => {
-    const { fetchFn, calls } = fakeFetch({
-      '?p=1': readFixture('blue-ocean-p1.html'),
-      '?p=2': readFixture('blue-ocean-p2.html'),
-      '?p=3': readFixture('blue-ocean-p99.html'),
-    });
+    const { fetchFn, calls } = walkOf([
+      readFixture('blue-ocean-p1.html'),
+      readFixture('blue-ocean-p2.html'),
+    ]);
     const sleeps: number[] = [];
     const adapter = createBlueOceanFetcher(fetchFn, {
       sleep: async (ms) => {
@@ -368,13 +426,46 @@ describe('createBlueOceanFetcher', () => {
     expect(listings.some((l) => l.cardIds[0] === '93')).toBe(true);
   });
 
-  test('reads only the given collections and sums the skipped counts', async () => {
+  test('the live probe pages pass the walk-total check as they are', async () => {
+    // tcc-p31 is the last page of the 2026-11-24 walk; its own total (734) is not met by one page.
     const { fetchFn } = fakeFetch({
-      '?p=1': readFixture('blue-ocean-tcc-p2.html'),
-      '?p=2': readFixture('blue-ocean-p1.html'),
-      '?p=3': readFixture('blue-ocean-p99.html'),
+      '?p=1': readFixture('blue-ocean-tcc-p31.html'),
+      '?p=2': readFixture('blue-ocean-p99.html'),
     });
-    const s3 = BLUE_OCEAN_COLLECTIONS.filter((c) => c.id === 'lego-minecraft-3');
+    const error = await createBlueOceanFetcher(fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toBe(
+      'blue-ocean: the walk read 14 products, the category names 734'
+    );
+  });
+
+  test('a walk reading fewer products than the total (a page cut short) is a layout error', async () => {
+    const { fetchFn } = walkOf([readFixture('blue-ocean-p1.html')], 48);
+    const error = await createBlueOceanFetcher(fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toContain('read 24 products, the category names 48');
+  });
+
+  test('a page 1 without a product total is a layout error', async () => {
+    const { fetchFn } = fakeFetch({
+      '?p=1': readFixture('blue-ocean-p1.html').replace(/>\s*\d+ Produkte\s*</, '><'),
+    });
+    const error = await createBlueOceanFetcher(fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toContain('no product total');
+  });
+
+  test('reads only the given collections and sums the skipped counts', async () => {
+    const { fetchFn } = walkOf([
+      readFixture('blue-ocean-tcc-p2.html'),
+      readFixture('blue-ocean-p1.html'),
+    ]);
     const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }, s3).fetchListings();
     expect(result.listings).toHaveLength(19);
     expect(result.listings.every((l) => l.collection === 'lego-minecraft-3')).toBe(true);
@@ -382,12 +473,11 @@ describe('createBlueOceanFetcher', () => {
   });
 
   test('one walk serves every collection', async () => {
-    const { fetchFn } = fakeFetch({
-      '?p=1': readFixture('blue-ocean-tcc-p2.html'),
-      '?p=2': readFixture('blue-ocean-tcc-p31.html'),
-      '?p=3': readFixture('blue-ocean-p1.html'),
-      '?p=4': readFixture('blue-ocean-p99.html'),
-    });
+    const { fetchFn } = walkOf([
+      readFixture('blue-ocean-tcc-p2.html'),
+      readFixture('blue-ocean-tcc-p31.html'),
+      readFixture('blue-ocean-p1.html'),
+    ]);
     const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
     const count = (c: string) => result.listings.filter((l) => l.collection === c).length;
     expect([
@@ -396,13 +486,11 @@ describe('createBlueOceanFetcher', () => {
       count('lego-minecraft-3'),
     ]).toEqual([14, 13, 19]);
     expect(result.emptyCollections).toBeUndefined();
+    expect(result.unreadableUrls).toBeUndefined();
   });
 
   test('a walk with series 3 cards only reports series 1 and 2 as empty, maybe sold out', async () => {
-    const { fetchFn } = fakeFetch({
-      '?p=1': readFixture('blue-ocean-p1.html'),
-      '?p=2': readFixture('blue-ocean-p99.html'),
-    });
+    const { fetchFn } = walkOf([readFixture('blue-ocean-p1.html')]);
     const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
     expect(result.listings).toHaveLength(19);
     expect(result.emptyCollections).toEqual(['lego-minecraft-1', 'lego-minecraft-2']);
@@ -410,25 +498,30 @@ describe('createBlueOceanFetcher', () => {
   });
 
   test('a walk without series 2 cards but with an unreadable series 2 product is no sell-out', async () => {
-    const page = (body: string) => `<div class="cms-page">${body}</div>`;
-    const { fetchFn } = fakeFetch({
-      '?p=1': readFixture('blue-ocean-tcc-p2.html').replace(
+    const unreadable =
+      'https://www.blue-ocean.de/lego/lego-minecraft/trading-card-collection-boom-bastic/1/nummer-012-i-steve';
+    const { fetchFn } = walkOf([
+      readFixture('blue-ocean-tcc-p2.html').replace(
         /trading-card-collection-boom-bastic/g,
         'trading-card-collection-gone'
       ),
-      '?p=2': page(
-        box(
-          '/lego/lego-minecraft/trading-card-collection-boom-bastic/1/nummer-012-i-steve',
-          'Nummer 013 I Steve',
-          'x.jpg'
-        )
-      ),
-      '?p=3': readFixture('blue-ocean-p1.html'),
-      '?p=4': readFixture('blue-ocean-p99.html'),
-    });
+      page(box(new URL(unreadable).pathname, 'Nummer 013 I Steve', 'x.jpg')),
+      readFixture('blue-ocean-p1.html'),
+    ]);
     const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
     expect(result.emptyCollections).toEqual(['lego-minecraft-2']);
     expect(result.mayHaveSoldOut).toBeUndefined();
+    expect(result.unreadableUrls).toContain(unreadable);
+  });
+
+  test('series 3 titles all losing "On Fire" are excluded: no sell-out, URLs unreadable', async () => {
+    const retitled = readFixture('blue-ocean-p1.html').replace(/On Fire/g, 'Off');
+    const { fetchFn } = walkOf([readFixture('blue-ocean-tcc-p2.html'), retitled]);
+    const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
+    expect(result.emptyCollections).toEqual(['lego-minecraft-3']);
+    expect(result.mayHaveSoldOut).toBeUndefined();
+    expect(result.skippedExcluded).toBe(19);
+    expect(result.unreadableUrls).toHaveLength(19);
   });
 
   test('a failing page request rejects the walk', async () => {
@@ -437,11 +530,7 @@ describe('createBlueOceanFetcher', () => {
   });
 
   test('a walk without any card is a layout error', async () => {
-    const { fetchFn } = fakeFetch({
-      '?p=1': readFixture('blue-ocean-tcc-p2.html'),
-      '?p=2': readFixture('blue-ocean-p99.html'),
-    });
-    const s3 = BLUE_OCEAN_COLLECTIONS.filter((c) => c.id === 'lego-minecraft-3');
+    const { fetchFn } = walkOf([readFixture('blue-ocean-tcc-p2.html')]);
     const error = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }, s3)
       .fetchListings()
       .catch((e: unknown) => e);
@@ -461,21 +550,14 @@ describe('createBlueOceanFetcher', () => {
     expect((error as Error).message).toContain('page 2');
   });
 
-  test('stops at the page cap when the shop never runs out of products', async () => {
-    const warn = spyOn(logger, 'warn');
+  test('reaching the page cap is a layout error, never a partial walk', async () => {
     const { fetchFn, calls } = fakeFetch({ '?p=': readFixture('blue-ocean-p1.html') });
-    let listings: Listing[];
-    try {
-      ({ listings } = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings());
-      expect(warn.mock.calls.some((c) => String(c[0]).includes('stopped after 60 pages'))).toBe(
-        true
-      );
-    } finally {
-      warn.mockRestore();
-    }
+    const error = await createBlueOceanFetcher(fetchFn, { delayMs: 0 })
+      .fetchListings()
+      .catch((e: unknown) => e);
     expect(calls).toHaveLength(60);
-    // identical pages are deduplicated by url
-    expect(listings).toHaveLength(19);
+    expect(error).toBeInstanceOf(ShopLayoutError);
+    expect((error as Error).message).toBe('blue-ocean: still products after 60 pages');
     // 60 parsed pages: under coverage on a loaded machine this exceeds the 5 s default.
   }, 30_000);
 });

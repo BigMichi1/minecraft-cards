@@ -67,8 +67,9 @@ for DINOv2-small); the directory is gitignored.
 
 ## Measurement (2026-11-17)
 
-`./bin/mise run measure:threshold` reads every page of both shops, reads blue-ocean
-for series 3 only (placed by URL, its titles naming "On Fire"), and pairs them with sammel-ente by card id:
+`./bin/mise run measure:threshold` reads every page of both shops (blue-ocean for series 3
+only: on 2026-11-17 by its "On Fire" titles, today placed by URL) and pairs them with
+sammel-ente by card id:
 
 - **true pairs**: blue-ocean card _n_ against sammel-ente card _n_;
 - **false pairs**: blue-ocean card _n_ against the sammel-ente card of the next card id both

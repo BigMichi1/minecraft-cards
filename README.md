@@ -6,9 +6,10 @@ Minecraft sticker card availability and DMs users about the cards they are missi
 picture comparison against the card's laststicker scan (sammel-ente's picture where laststicker
 has none) marks a listing as confirmed.
 
-Users keep one list per card collection (`lego-minecraft-1`, `lego-minecraft-2` and `lego-minecraft-3`,
-LEGO Minecraft series 1, 2 "TNT Boom-Bastic" and 3 "On Fire"); the card commands (`/missing *`, `/stock`, `/card`, `/admin map`, `/admin catalog
-import`) take a required `collection:` option. Users manage their list with
+Users keep one list per card collection (`lego-minecraft-1`, `lego-minecraft-2` and
+`lego-minecraft-3`, LEGO Minecraft series 1, 2 "TNT Boom-Bastic" and 3 "On Fire"); the card
+commands (`/missing *`, `/stock`, `/card`, `/admin map`, `/admin catalog import`) take a
+required `collection:` option. Users manage their list with
 `/missing set|add|remove|list|clear|status`; the admin runs `/admin` (`map`, `clear`, `status`,
 `run`, `catalog import|sync|add|edit|remove|release`). The catalog (card list and names) is
 synced from laststicker once a day; `catalog add` adds a card laststicker lacks. `/help`

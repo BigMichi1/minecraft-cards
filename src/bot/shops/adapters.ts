@@ -45,8 +45,8 @@ export interface AdapterDeps {
 
 /**
  * Throws for settings a run would get wrong: a category on another host than its shop (it would
- * skip the shop's pacer), blue-ocean settings without a product code (nothing would be placed in
- * the collection), with one that is not lowercase letters and digits (it is put into a regular
+ * skip the shop's pacer), blue-ocean settings without a product code (its root-URL cards would never be placed, all
+ * of series 3's), with one that is not lowercase letters and digits (it is put into a regular
  * expression and compared with lowercased URLs), with an empty picture part (in every file name),
  * an empty category path or one holding `/` (never matched, yet it makes the collection read titles
  * by `Nummer`), or with a `g`/`y` title or exclusion marker, or eBay settings without a search (the
@@ -84,7 +84,9 @@ function checkSettings(definition: CollectionDefinition): void {
   }
   for (const marker of [blueOcean?.title, blueOcean?.excludes]) {
     if (marker && (marker.global || marker.sticky)) {
-      throw new Error(`${definition.id}: the blue-ocean title must not use the g or y flag`);
+      throw new Error(
+        `${definition.id}: the blue-ocean title or exclusion marker must not use the g or y flag`
+      );
     }
   }
   const ebay = definition.shops.ebay;
@@ -97,18 +99,26 @@ function checkSettings(definition: CollectionDefinition): void {
 }
 
 /**
- * Throws when two collections share a blue-ocean product code, category path or picture part:
- * the walk would place every product of the later one in the earlier one, or exclude both.
+ * Throws when two collections share a blue-ocean product code or category path, or when one's
+ * picture part contains another's (compared lowercase, as the parser does): the walk would place
+ * every product of the later one in the earlier one, or exclude both.
  */
 function checkDistinctBlueOcean(definitions: readonly CollectionDefinition[]): void {
   for (const field of ['productCode', 'categoryPath', 'picture'] as const) {
-    const seen = new Map<string, CollectionId>();
+    const seen: [string, CollectionId][] = [];
     for (const d of definitions) {
-      const value = d.shops['blue-ocean']?.[field];
-      if (value === undefined) continue;
-      const other = seen.get(value);
-      if (other) throw new Error(`${d.id}: blue-ocean ${field} "${value}" is also ${other}'s`);
-      seen.set(value, d.id);
+      const raw = d.shops['blue-ocean']?.[field];
+      if (raw === undefined) continue;
+      const value = field === 'picture' ? raw.toLowerCase() : raw;
+      const clash = seen.find(([v]) =>
+        field === 'picture' ? v.includes(value) || value.includes(v) : v === value
+      );
+      if (clash) {
+        throw new Error(
+          `${d.id}: blue-ocean ${field} "${raw}" overlaps ${clash[1]}'s "${clash[0]}"`
+        );
+      }
+      seen.push([value, d.id]);
     }
   }
 }

@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
+import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or, sql } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
 import type { CollectionCards, CollectionId } from '../collections/ids';
 import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
@@ -386,6 +386,15 @@ export const listingManager = {
     db.update(listings).set({ mismatchNotedAt: now }).where(eq(listings.id, listingId)).run();
   },
 
+  /** Mark several mismatches noted in one write: all of them, or (failing) none. */
+  markMismatchesNoted(listingIds: readonly number[], now: number): void {
+    if (listingIds.length === 0) return;
+    db.update(listings)
+      .set({ mismatchNotedAt: now })
+      .where(inArray(listings.id, [...listingIds]))
+      .run();
+  },
+
   /**
    * After the reference pictures of the collection's `cardIds` changed: compare again (back to
    * `pending`) every mismatch of the collection whose title card or picture card is one of them,
@@ -418,6 +427,9 @@ export const listingManager = {
           similarity: null,
           matchCheckedAt: null,
           pictureCardId: null,
+          // Held back from users until it is compared again (pendingNotifications): the run that
+          // resets it may not compare it, and its DMs go out the same run.
+          rematchFrom: sql`coalesce(${listings.rematchFrom}, 'mismatch')`,
         })
         .where(
           and(

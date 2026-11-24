@@ -82,7 +82,7 @@ describe('syncCatalogs', () => {
       expect((await run(10))[0]).toMatchObject({ ok: true });
       expect(catalogManager.syncSucceededAt('lego-minecraft-3')).toBe(10);
       // The re-pictured cards are known only now: the admin is told which to re-check.
-      const alert = alerts.find((a) => a.key === 'catalog-rematch:lego-minecraft-3');
+      const alert = alerts.find((a) => a.key.startsWith('catalog-rematch:lego-minecraft-3:'));
       expect(alert?.text).toContain('could not compare the mismatches of 251 card(s) again');
     } finally {
       spy.mockRestore();
@@ -294,11 +294,11 @@ describe('syncCatalogs', () => {
     expect(alerts).toEqual([
       {
         key: 'catalog-vanished:lego-minecraft-3',
-        text: 'LEGO Minecraft Serie 3 "On Fire": 1 card(s) no longer on laststicker, kept: 12',
+        text: 'LEGO Minecraft Serie 3 "On Fire": 1 card(s) no longer on laststicker, kept: #12',
       },
       {
         key: 'catalog-listed:lego-minecraft-3:229',
-        text: 'LEGO Minecraft Serie 3 "On Fire": manual card(s) now on laststicker: 229 — /admin catalog release hands one over',
+        text: 'LEGO Minecraft Serie 3 "On Fire": manual card(s) now on laststicker: #229 — /admin catalog release hands one over',
       },
     ]);
   });
@@ -381,8 +381,8 @@ describe('formatSyncOutcome', () => {
       ok: true,
       result: { added: [], renamed: [], vanished: many, nowListed: [], repictured: [] },
     });
-    expect(text).toContain('25 vanished (1, 2,');
-    expect(text).toContain('20 … and 5 more)');
+    expect(text).toContain('25 vanished (#1, #2,');
+    expect(text).toContain('#20 … and 5 more)');
   });
 
   test('names the collection and the counts, or the error', () => {
@@ -399,7 +399,7 @@ describe('formatSyncOutcome', () => {
         },
       })
     ).toBe(
-      'LEGO Minecraft Serie 3 "On Fire": 1 added, 2 renamed, 1 vanished (12), 0 manual now listed'
+      'LEGO Minecraft Serie 3 "On Fire": 1 added, 2 renamed, 1 vanished (#12), 0 manual now listed'
     );
     expect(
       formatSyncOutcome({

@@ -29,6 +29,7 @@ import {
 } from '../shops/types';
 import {
   rematchText,
+  reportRematch,
   runCheck,
   type NotificationSender,
   type PendingNotifications,
@@ -349,13 +350,49 @@ describe('runCheck', () => {
       );
     });
 
-    test('failing scan-mark and re-match writes are logged; the run goes on', async () => {
+    const notifiedUrls = () =>
+      db
+        .select({ url: listings.url })
+        .from(notifications)
+        .innerJoin(listings, eq(listings.id, notifications.listingId))
+        .all()
+        .map((r) => r.url);
+
+    test('a mismatch reset by a missing scan is not sent to users in the same run', async () => {
       setCatalogCards('lego-minecraft-3', [
         { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
       ]);
-      const clear = spyOn(catalogManager, 'clearScanMissing').mockImplementation(() => {
-        throw new Error('db locked');
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], clock);
+      const l = listingManager.getByUrl(blue12.url)!;
+      listingManager.setMatch(
+        l.id,
+        { status: 'mismatch', similarity: 0.4, picture: { cardId: cid('45'), similarity: 0.95 } },
+        clock
+      );
+      // Another listing needs comparing, so the run loads the references (and finds the 404).
+      userManager.setList('u1', 'lego-minecraft-3', '12, 13');
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('13'), imageUrl: 'https://ente/13.jpg' }]);
+      const blue13: Listing = {
+        ...blue12,
+        url: 'https://www.blue-ocean.de/p/13',
+        cardIds: [cid('13')],
+        available: false,
+      };
+      await runCheck(
+        depsWith([ok('blue-ocean', [blue12, { ...blue13, available: true }])], { embedder: noScan })
+      );
+      expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+        matchStatus: 'pending',
+        rematchFrom: 'mismatch',
       });
+      expect(notifiedUrls()).not.toContain(blue12.url);
+    });
+
+    test('a failing re-match of a returning scan keeps its record, to be tried again', async () => {
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+      ]);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('12'), clock - SCAN_RETRY_MS - 5000);
       const rematch = spyOn(listingManager, 'rematchMismatches').mockImplementation(() => {
         throw new Error('db locked');
       });
@@ -363,17 +400,99 @@ describe('runCheck', () => {
       try {
         await runCheck(depsWith([ok('blue-ocean', [blue12])]));
         expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
-        const logged = (text: string) =>
-          log.mock.calls.some((c: unknown[]) => String(c[1]).includes(text));
-        expect(logged('clearing the missing-scan marks of lego-minecraft-3 failed')).toBe(true);
-        expect(logged('re-matching the cards of lego-minecraft-3 with changed scans failed')).toBe(
-          true
-        );
+        expect(
+          log.mock.calls.some((c: unknown[]) =>
+            String(c[1]).includes(
+              're-matching the cards of lego-minecraft-3 whose scans loaded again failed'
+            )
+          )
+        ).toBe(true);
       } finally {
-        clear.mockRestore();
         rematch.mockRestore();
         log.mockRestore();
       }
+      expect(catalogManager.markedScans('lego-minecraft-3', ids('12'))).toEqual(ids('12'));
+    });
+
+    test('a failing re-match of a first missing scan records nothing and says so', async () => {
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+      ]);
+      const rematch = spyOn(listingManager, 'rematchMismatches').mockImplementation(() => {
+        throw new Error('db locked');
+      });
+      try {
+        await runCheck(depsWith([ok('blue-ocean', [blue12])], { embedder: noScan }));
+      } finally {
+        rematch.mockRestore();
+      }
+      expect(catalogManager.markedScans('lego-minecraft-3', ids('12'))).toEqual([]);
+      expect(alerts.find((a) => a.includes('laststicker scans'))).toContain(
+        'could not be recorded, tried again next run: #12'
+      );
+    });
+
+    test('a scan that stays missing is fetched and alerted once, and its retry changes nothing', async () => {
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('12'), scanUrl: scan, imageUrl: 'https://ente/12.jpg' },
+      ]);
+      await runCheck(depsWith([ok('blue-ocean', [blue12])], { embedder: noScan }));
+      // Next day: the shop picture is the reference, the scan is not asked for.
+      clock += 25 * 60 * 60 * 1000;
+      listingManager.upsertFromRun(
+        'blue-ocean',
+        'lego-minecraft-3',
+        [{ ...blue12, imageUrl: 'https://img/12b.jpg' }],
+        clock
+      );
+      await runCheck(
+        depsWith([ok('blue-ocean', [{ ...blue12, imageUrl: 'https://img/12b.jpg' }])], {
+          embedder: noScan,
+        })
+      );
+      expect(embedded.filter((u) => u === scan)).toHaveLength(1);
+      // After SCAN_RETRY_MS it answers 404 again: no change, no new alert, no re-match.
+      clock += SCAN_RETRY_MS;
+      const rematch = spyOn(listingManager, 'rematchMismatches');
+      try {
+        await runCheck(
+          depsWith([ok('blue-ocean', [{ ...blue12, imageUrl: 'https://img/12c.jpg' }])], {
+            embedder: noScan,
+          })
+        );
+        expect(rematch).not.toHaveBeenCalledWith('lego-minecraft-3', ids('12'));
+      } finally {
+        rematch.mockRestore();
+      }
+      expect(embedded.filter((u) => u === scan)).toHaveLength(2);
+      expect(alerts.filter((a) => a.includes('no laststicker scan'))).toHaveLength(1);
+    });
+
+    test('more than ten missing scans are named with how many more', async () => {
+      const lost = Array.from({ length: 12 }, (_, i) => String(i + 1));
+      setCatalogCards(
+        'lego-minecraft-3',
+        lost.map((id) => ({
+          cardId: cid(id),
+          scanUrl: `https://www.laststicker.com/i/cards/12125/${id}.jpg`,
+        }))
+      );
+      const allGone: ImageEmbedder = {
+        model: 'fake',
+        embed: async (url) => {
+          if (url.includes('laststicker')) {
+            throw new ImageUnavailableError(`HTTP 404 for ${url}`, {
+              cause: new HttpError(404, url),
+            });
+          }
+          return new Float32Array([1, 0]);
+        },
+      };
+      await runCheck(depsWith([ok('blue-ocean', [blue12])], { embedder: allGone }));
+      const text = alerts.find((a) => a.includes('no laststicker scan'))!;
+      expect(text).toContain('12 card(s)');
+      expect(text).toContain('#10 … and 2 more');
+      expect(text).toContain('now without any reference: #1, #2');
     });
 
     test('a scan that loads again after its retry clears the mark and re-matches the card', async () => {
@@ -1119,7 +1238,8 @@ describe('runCheck', () => {
     describe('the re-match after the reference switch', () => {
       const DAY_AND_MORE = 25 * 60 * 60 * 1000;
       const mismatchNotes = () => notes().filter((a) => a.startsWith('Picture mismatch'));
-      const summaries = () => notes().filter((a) => a.startsWith('Reference switch'));
+      const summaries = () =>
+        notes().filter((a) => a.startsWith('Re-match against new reference pictures'));
       /** What migration 0008 does to the stored listing, with `from` as its old status. */
       const resetAsMigration = (from: LegacyMatchStatus) =>
         db
@@ -1165,7 +1285,8 @@ describe('runCheck', () => {
         resetAsMigration('confirmed');
         clock += DAY_AND_MORE;
         const alertAdmin = async (text: string) => {
-          if (text.startsWith('Reference switch')) throw new Error('DM failed');
+          if (text.startsWith('Re-match against new reference pictures'))
+            throw new Error('DM failed');
           alerts.push(text);
         };
         await run(shopsAt(60), { alertAdmin });
@@ -1216,7 +1337,7 @@ describe('runCheck', () => {
         await run(shopsAt(60));
         resetAsMigration('confirmed');
         clock += DAY_AND_MORE;
-        const spy = spyOn(listingManager, 'markMismatchNoted').mockImplementation(() => {
+        const spy = spyOn(listingManager, 'markMismatchesNoted').mockImplementation(() => {
           throw new Error('db locked');
         });
         try {
@@ -1224,8 +1345,8 @@ describe('runCheck', () => {
           expect(alerts.some((a) => a.startsWith('The re-match summary failed: db locked'))).toBe(
             true
           );
-          // The run went on to the notes and the DMs: sendMismatchNotes tried to mark one too.
-          expect(spy.mock.calls.length).toBeGreaterThan(1);
+          // The run went on: the mismatch, not marked noted, gets its own note.
+          expect(mismatchNotes()).toHaveLength(2);
         } finally {
           spy.mockRestore();
         }
@@ -1731,11 +1852,13 @@ describe('rematchText', () => {
       compared: 30,
       changed: 12,
       changes,
-      mismatches: [{ id: 7, line: line(99, 'mismatch') }],
+      mismatches: [{ id: 7, line: line(99, 'mismatch'), changed: true }],
     });
-    expect(text.startsWith('Reference switch: compared 30 listing(s) again, 12 changed.')).toBe(
-      true
-    );
+    expect(
+      text.startsWith(
+        'Re-match against new reference pictures: compared 30 listing(s) again, 12 changed.'
+      )
+    ).toBe(true);
     expect(text.indexOf(line(99, 'mismatch'))).toBeLessThan(text.indexOf(line(1)));
     expect(named).toEqual([7]);
     expect(text.length).toBeLessThanOrEqual(2000);
@@ -1743,12 +1866,94 @@ describe('rematchText', () => {
   });
 
   test('a mismatch without room keeps its own note', () => {
-    const mismatches = Array.from({ length: 20 }, (_, i) => ({ id: i, line: line(i, 'mismatch') }));
+    const mismatches = Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      line: line(i, 'mismatch'),
+      changed: true,
+    }));
     const { text, named } = rematchText({ compared: 20, changed: 20, changes: [], mismatches });
     expect(named.length).toBeGreaterThan(0);
     expect(named.length).toBeLessThan(20);
     expect(text).toContain(`… and ${20 - named.length} more, each with its own note.`);
     for (const id of named) expect(text).toContain(mismatches[id]!.line);
     expect(text.length).toBeLessThanOrEqual(2000);
+  });
+
+  test('the tail counts each change once: a named mismatch is no hidden change', () => {
+    const { text } = rematchText({
+      compared: 12,
+      changed: 12,
+      changes: Array.from({ length: 10 }, (_, i) => line(i + 1)),
+      mismatches: [{ id: 99, line: line(99, 'mismatch'), changed: true }],
+    });
+    // 12 changes: 1 named mismatch, up to 10 shown, the rest counted.
+    const shown = (text.match(/confirmed→unconfirmed/g) ?? []).length;
+    expect(text).toMatch(new RegExp(`… and ${12 - 1 - shown} more`));
+  });
+
+  test('changes with no room left are still counted', () => {
+    const mismatches = Array.from({ length: 20 }, (_, i) => ({
+      id: i,
+      line: line(i, 'mismatch'),
+      changed: false,
+    }));
+    const { text, named } = rematchText({
+      compared: 23,
+      changed: 3,
+      changes: [line(101), line(102), line(103)],
+      mismatches,
+    });
+    expect(named.length).toBeLessThan(20);
+    expect(text).toContain('… and 3 more change(s).');
+  });
+});
+
+describe('reportRematch', () => {
+  const tally = (n: number) => ({
+    compared: n,
+    changed: n,
+    changes: [],
+    mismatches: Array.from({ length: n }, (_, i) => ({
+      id: i + 1,
+      line: `#${i} ebay confirmed→mismatch https://www.ebay.de/itm/${'9'.repeat(200)}${i}`,
+      changed: true,
+    })),
+  });
+
+  test('marks only the mismatches the summary names; the rest keep their notes', async () => {
+    const marked: number[][] = [];
+    const spy = spyOn(listingManager, 'markMismatchesNoted').mockImplementation((ids) => {
+      marked.push([...ids]);
+    });
+    try {
+      const summary = { startedAt: 1, finishedAt: 1, shops: {}, notified: 0, dmFailures: 0 };
+      await reportRematch(
+        { now: () => 5 } as unknown as RunDeps,
+        async () => 'sent',
+        summary,
+        tally(20)
+      );
+      expect(marked).toHaveLength(1);
+      expect(marked[0]!.length).toBeGreaterThan(0);
+      expect(marked[0]!.length).toBeLessThan(20);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test('a failed summary marks nothing', async () => {
+    const spy = spyOn(listingManager, 'markMismatchesNoted');
+    try {
+      const summary = { startedAt: 1, finishedAt: 1, shops: {}, notified: 0, dmFailures: 0 };
+      await reportRematch(
+        { now: () => 5 } as unknown as RunDeps,
+        async () => 'failed',
+        summary,
+        tally(2)
+      );
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -148,19 +148,22 @@ function readPicture(
   };
 }
 
-/** `/admin catalog sync|add|edit|remove|release` for one collection. */
 /**
  * The card's reference picture changed (a manual card's new picture, a release): compare its
- * mismatches again. A failure is logged only; the change itself is made.
+ * mismatches again. The change itself is made either way; a failure is logged and returned as
+ * the line the admin's reply adds.
  */
-function rematchCard(collection: CollectionId, cardId: CardId): void {
+function rematchCard(collection: CollectionId, cardId: CardId): string {
   try {
     listingManager.rematchMismatches(collection, [cardId]);
+    return '';
   } catch (error) {
     logError(`re-matching the mismatches of #${cardId} failed`, error);
+    return `\n⚠️ Its mismatches could not be compared again (${errorMessage(error)}); run the command again to retry.`;
   }
 }
 
+/** `/admin catalog sync|add|edit|remove|release` for one collection. */
 async function catalogCardCommand(
   interaction: ChatInputCommandInteraction,
   sub: string,
@@ -228,9 +231,9 @@ async function catalogCardCommand(
         await refused(result.reason);
         return;
       }
-      if (picture.url) rematchCard(collection, cardId);
+      const warning = picture.url ? rematchCard(collection, cardId) : '';
       const card = catalogManager.getCard(collection, cardId);
-      await interaction.reply(ephemeral(`#${cardId} now: ${card?.name ?? '(no name)'}.`));
+      await interaction.reply(ephemeral(`#${cardId} now: ${card?.name ?? '(no name)'}.${warning}`));
       return;
     }
     case 'remove': {
@@ -254,8 +257,10 @@ async function catalogCardCommand(
         await refused(result.reason);
         return;
       }
-      rematchCard(collection, cardId);
-      await interaction.reply(ephemeral(`#${cardId} now follows laststicker from the next sync.`));
+      const warning = rematchCard(collection, cardId);
+      await interaction.reply(
+        ephemeral(`#${cardId} now follows laststicker from the next sync.${warning}`)
+      );
       return;
     }
     default:

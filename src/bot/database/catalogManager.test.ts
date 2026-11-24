@@ -396,6 +396,16 @@ describe('catalogManager', () => {
       expect(catalogManager.clearScanMissing('lego-minecraft-3', [])).toEqual([]);
     });
 
+    test('markedScans names the given cards with a missing-scan record, of any age', () => {
+      catalogManager.seedIfEmpty();
+      catalogManager.markScanMissing('lego-minecraft-3', cid('3'), 1);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('1'), 1);
+      expect(catalogManager.markedScans('lego-minecraft-3', ids('3', '2', '1'))).toEqual(
+        ids('1', '3')
+      );
+      expect(catalogManager.markedScans('lego-minecraft-3', [])).toEqual([]);
+    });
+
     test("a shop picture shared by one card's reference and another's fallback serves neither", () => {
       catalogManager.seedIfEmpty();
       setCatalogCards('lego-minecraft-3', [

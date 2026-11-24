@@ -184,18 +184,9 @@ function referencesOnce(
     loading ??= (async () => {
       const now = deps.now();
       const catalog = catalogOf();
-      const missingScans: CardId[] = [];
+      const scans: ScanChanges = { missing: [], failed: [] };
       const set = await loadReferenceSet(catalog, embedder, {
-        // laststicker has no scan of the card: record it, so the shop picture (if any) is its
-        // reference for SCAN_RETRY_MS.
-        onScanMissing: (cardId) => {
-          missingScans.push(cardId);
-          try {
-            catalogManager.markScanMissing(collection, cardId, now);
-          } catch (error) {
-            logError(`recording the missing scan of #${cardId} failed`, error);
-          }
-        },
+        onScanMissing: (cardId) => recordMissingScan(deps, collection, cardId, now, scans),
         skip: (url) => {
           const at = failures?.get(url);
           return at !== undefined && now - at < IMAGE_RETRY_MS
@@ -203,7 +194,7 @@ function referencesOnce(
             : null;
         },
       });
-      await reportScanChanges(deps, alert, collection, catalog, set, missingScans);
+      await reportScanChanges(alert, collection, catalog, set, scans);
       const urlOf = new Map(catalog.usable.map((c) => [c.cardId, c.referenceImageUrl]));
       const failed = set.missing.filter(isTransient);
       if (failures) {
@@ -245,50 +236,87 @@ function referencesOnce(
   };
 }
 
+/** What a reference load found out about the collection's scans. */
+interface ScanChanges {
+  /** Scans that answered 404/410 for the first time (recorded): the card's reference changed. */
+  missing: CardId[];
+  /** Missing or returning scans whose re-match or record failed: tried again next run. */
+  failed: CardId[];
+}
+
 /**
- * After a reference set loaded: a scan that answered 404 (now the shop picture, or no reference)
- * and a scan that loaded again after its SCAN_RETRY_MS mark both change the card's reference, so
- * its mismatches are compared again; missing scans are named in one throttled alert. Failures
- * here are logged: the set is loaded and the run goes on.
+ * laststicker has no scan of the card (404/410). A first miss changes its reference (to the
+ * shop picture, if usable): its mismatches are compared again, then the miss is recorded, so
+ * a failed re-match leaves no record and the next run tries both again. A card already recorded
+ * (its SCAN_RETRY_MS retry answering 404 again) keeps its reference: the record is renewed only.
+ */
+function recordMissingScan(
+  deps: RunDeps,
+  collection: CollectionId,
+  cardId: CardId,
+  now: number,
+  scans: ScanChanges
+): void {
+  try {
+    const first = catalogManager.markedScans(collection, [cardId]).length === 0;
+    if (first) listingManager.rematchMismatches(collection, [cardId]);
+    catalogManager.markScanMissing(collection, cardId, now);
+    if (first) scans.missing.push(cardId);
+  } catch (error) {
+    logError(`recording the missing scan of #${cardId} failed`, error);
+    scans.failed.push(cardId);
+  }
+}
+
+/**
+ * After a reference set loaded: a scan that loaded again after its SCAN_RETRY_MS record changes
+ * the card's reference back, so its mismatches are compared again before the record is cleared
+ * (a failure keeps the record: retried next run). New misses and failures are named in one
+ * throttled alert.
  */
 async function reportScanChanges(
-  deps: RunDeps,
   alert: AlertFn,
   collection: CollectionId,
   catalog: ReferenceCatalog,
   set: LoadedReferenceSet,
-  missingScans: readonly CardId[]
+  scans: ScanChanges
 ): Promise<void> {
-  const back = catalog.usable
+  const loadedScans = catalog.usable
     .filter((c) => c.source === 'laststicker' && set.urls.get(c.cardId) === c.referenceImageUrl)
     .map((c) => c.cardId);
-  let changed: CardId[] = [...missingScans];
   try {
-    changed = [...changed, ...catalogManager.clearScanMissing(collection, back)];
+    const back = catalogManager.markedScans(collection, loadedScans);
+    listingManager.rematchMismatches(collection, back);
+    catalogManager.clearScanMissing(collection, back);
   } catch (error) {
-    logError(`clearing the missing-scan marks of ${collection} failed`, error);
+    logError(`re-matching the cards of ${collection} whose scans loaded again failed`, error);
   }
-  try {
-    listingManager.rematchMismatches(collection, changed);
-  } catch (error) {
-    logError(`re-matching the cards of ${collection} with changed scans failed`, error);
-  }
-  if (missingScans.length === 0) return;
+  const { missing, failed } = scans;
+  if (missing.length === 0 && failed.length === 0) return;
   const without = set.missing
-    .filter((m) => m.reason === 'no_picture' && missingScans.includes(m.cardId))
-    .map((m) => `#${m.cardId}`);
-  const named = missingScans
+    .filter((m) => m.reason === 'no_picture' && missing.includes(m.cardId))
+    .map((m) => m.cardId);
+  const parts = [
+    missing.length > 0
+      ? `${missing.length} card(s) of ${collectionName(collection)} have no laststicker scan (404/410), the shop picture stands in for ${formatWindow(SCAN_RETRY_MS)}: ${namedCards(missing)}`
+      : `Missing laststicker scans of ${collectionName(collection)}`,
+    ...(without.length > 0 ? [`now without any reference: ${namedCards(without)}`] : []),
+    ...(failed.length > 0
+      ? [`could not be recorded, tried again next run: ${namedCards(failed)}`]
+      : []),
+  ];
+  const text = clipText(parts.join('; '), DISCORD_MESSAGE_LIMIT);
+  logger.warn(text);
+  await alert(`scan-missing:${collection}`, text);
+}
+
+/** `#1, #2, … and 3 more`: at most MAX_NAMED card ids. */
+function namedCards(ids: readonly CardId[]): string {
+  const shown = ids
     .slice(0, MAX_NAMED)
     .map((id) => `#${id}`)
     .join(', ');
-  const more =
-    missingScans.length > MAX_NAMED ? ` … and ${missingScans.length - MAX_NAMED} more` : '';
-  const text = clipText(
-    `${missingScans.length} card(s) of ${collectionName(collection)} have no laststicker scan (404), the shop picture stands in for ${formatWindow(SCAN_RETRY_MS)}: ${named}${more}${without.length > 0 ? `; now without any reference: ${without.slice(0, MAX_NAMED).join(', ')}` : ''}`,
-    DISCORD_MESSAGE_LIMIT
-  );
-  logger.warn(text);
-  await alert(`scan-missing:${collection}`, text);
+  return ids.length > MAX_NAMED ? `${shown} … and ${ids.length - MAX_NAMED} more` : shown;
 }
 
 /** The admin note for a listing whose picture shows another card than its title names. */
@@ -333,7 +361,7 @@ export interface RematchTally {
    * whether its note went out are not known after migration 0008): named in the summary first;
    * the ones named count as noted once it is delivered, the rest keep their own notes.
    */
-  mismatches: { id: number; line: string }[];
+  mismatches: { id: number; line: string; changed: boolean }[];
 }
 
 /** The old status as the new statuses name it: sammel-ente's `reference` was its confirmation. */
@@ -357,7 +385,9 @@ function countRematch(
   const card = l.cardIds.map((id) => `#${id}`).join(', ') || 'no card';
   const picture = result.picture ? ` (picture #${result.picture.cardId})` : '';
   const line = `${card} ${l.shop} ${before}→${result.status}${picture} ${l.url}`;
-  if (result.status === 'mismatch') tally.mismatches.push({ id: l.id, line });
+  if (result.status === 'mismatch') {
+    tally.mismatches.push({ id: l.id, line, changed: before !== result.status });
+  }
   if (before === result.status) return;
   tally.changed++;
   if (tally.changes.length < MAX_REMATCH_NAMED) tally.changes.push(line);
@@ -365,9 +395,9 @@ function countRematch(
 
 /** The summary text, and the mismatches it names in full (mismatches first, then the changes). */
 export function rematchText(tally: RematchTally): { text: string; named: number[] } {
-  let text = `Reference switch: compared ${tally.compared} listing(s) again, ${tally.changed} changed.`;
+  let text = `Re-match against new reference pictures: compared ${tally.compared} listing(s) again, ${tally.changed} changed.`;
   const named: number[] = [];
-  const room = DISCORD_MESSAGE_LIMIT - 40; // keeps space for the "… and N more" tails
+  const room = DISCORD_MESSAGE_LIMIT - 100; // keeps space for the "… and N more" tails
   if (tally.mismatches.length > 0) {
     text += ' Mismatches, not sent to users:';
     for (const m of tally.mismatches) {
@@ -387,8 +417,12 @@ export function rematchText(tally: RematchTally): { text: string; named: number[
     length += line.length + 2;
   }
   if (shown.length > 0) text += ` Other changes: ${shown.join('; ')}`;
-  const hidden = tally.changed - (tally.changes.length - others.length) - shown.length;
-  if (shown.length > 0 && hidden > 0) text += `; … and ${hidden} more`;
+  // Every changed listing is either a named mismatch, a shown change, or counted here.
+  const namedChanged = tally.mismatches.filter((m) => m.changed && named.includes(m.id)).length;
+  const hidden = tally.changed - namedChanged - shown.length;
+  if (hidden > 0) {
+    text += shown.length > 0 ? `; … and ${hidden} more` : ` … and ${hidden} more change(s).`;
+  }
   return { text: clipText(text, DISCORD_MESSAGE_LIMIT), named };
 }
 
@@ -397,7 +431,7 @@ export function rematchText(tally: RematchTally): { text: string; named: number[
  * changed or a mismatch was found; once it is delivered, the mismatches it names count as noted.
  * A summary that fails, or a mismatch it had no room for, keeps its own note due.
  */
-async function reportRematch(
+export async function reportRematch(
   deps: RunDeps,
   alert: AlertFn,
   summary: RunSummary,
@@ -411,7 +445,7 @@ async function reportRematch(
   // Keyed per run: a later run's re-matches are other listings, never throttled away.
   const outcome = await alert(`rematch-summary:${summary.startedAt}`, text);
   if (outcome === 'failed') return;
-  for (const id of named) listingManager.markMismatchNoted(id, deps.now());
+  listingManager.markMismatchesNoted(named, deps.now());
 }
 
 /** One collection's reference lookups for a run: the title card's picture, and the whole set. */
@@ -525,7 +559,10 @@ async function matchPending(
   } catch (error) {
     // The summary is the admin's; it must not cost the users their DMs. Notes stay due.
     logError('the re-match summary failed', error);
-    await alert('rematch-summary-error', `The re-match summary failed: ${errorMessage(error)}`);
+    await alert(
+      'rematch-summary-error',
+      `The re-match summary failed: ${errorMessage(error)}. Its mismatches get their own notes instead.`
+    );
   }
   for (const [status, reasons] of unavailable) {
     logger.warn(
@@ -620,12 +657,10 @@ async function checkShop(
         // The listings are stored; only the re-check is lost, and these cards are known only now.
         logError(`shop ${adapter.id}: re-matching the cards with new pictures failed`, error);
         await alert(
-          `shop-rematch:${adapter.collection}`,
+          // Per card list: another run's failure names other cards and must not be throttled.
+          `shop-rematch:${adapter.collection}:${changed.join(',')}`,
           clipText(
-            `Shop ${adapter.id}: could not compare the mismatches of ${changed.length} card(s) again: ${changed
-              .slice(0, MAX_NAMED)
-              .map((id) => `#${id}`)
-              .join(', ')} — ${errorMessage(error)}`,
+            `Shop ${adapter.id}: could not compare the mismatches of ${changed.length} card(s) again: ${namedCards(changed)} — ${errorMessage(error)}`,
             DISCORD_MESSAGE_LIMIT
           )
         );

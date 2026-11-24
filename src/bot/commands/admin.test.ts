@@ -504,7 +504,9 @@ describe('/admin', () => {
             fakeAdmin('catalog', 'edit', { card: '229', picture: 'https://m/3.jpg' }),
             ctx
           );
-          expect(lastReply().content).toBe('#229 now: Mine.');
+          expect(lastReply().content).toBe(
+            '#229 now: Mine.\n⚠️ Its mismatches could not be compared again (db locked); run the command again to retry.'
+          );
           expect(
             log.mock.calls.some((c: unknown[]) =>
               String(c[1]).includes('re-matching the mismatches of #229 failed')
@@ -522,7 +524,14 @@ describe('/admin', () => {
       catalogManager.addManual('lego-minecraft-3', cid('229'), 'Extra', null, 1);
       await adminExecute(fakeAdmin('catalog', 'edit', { card: '229' }), ctx);
       expect(lastReply().content).toBe('Nothing to change: give name or picture.');
-      await adminExecute(fakeAdmin('catalog', 'edit', { card: '229', name: 'Better' }), ctx);
+      const nameOnly = spyOn(listingManager, 'rematchMismatches');
+      try {
+        await adminExecute(fakeAdmin('catalog', 'edit', { card: '229', name: 'Better' }), ctx);
+        // A new name changes no picture: nothing to compare again.
+        expect(nameOnly).not.toHaveBeenCalled();
+      } finally {
+        nameOnly.mockRestore();
+      }
       expect(lastReply().content).toBe('#229 now: Better.');
       await adminExecute(fakeAdmin('catalog', 'edit', { card: '12', name: 'X' }), ctx);
       expect(lastReply().content).toBe(

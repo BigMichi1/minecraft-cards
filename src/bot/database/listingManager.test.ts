@@ -1061,6 +1061,19 @@ describe('listingManager', () => {
       });
     });
 
+    test('markMismatchesNoted marks every given mismatch at once', () => {
+      const other = { ...blue12, url: 'https://x/13', cardIds: ids('13') };
+      listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, other], 1000);
+      const a = listingManager.getByUrl(blue12.url)!;
+      const b = listingManager.getByUrl(other.url)!;
+      listingManager.setMatch(a.id, mismatch45, 1001);
+      listingManager.setMatch(b.id, mismatch45, 1001);
+      listingManager.markMismatchesNoted([], 1002);
+      expect(listingManager.pendingMismatchNotes()).toHaveLength(2);
+      listingManager.markMismatchesNoted([a.id, b.id], 1002);
+      expect(listingManager.pendingMismatchNotes()).toEqual([]);
+    });
+
     test('an admin-mapped mismatch needs no note', () => {
       listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 1000);
       const l = listingManager.getByUrl(blue12.url)!;

@@ -37,7 +37,7 @@ sammel-ente's listings are compared like every other shop's.
 **The switch re-matched once.** Migration 0008 set every listing the admin had not mapped and
 that is no bundle back to `pending`, keeping its old status when it was a judgement
 (`rematch_from`). Each run counts the ones it compared again: when any changed status or is a
-mismatch, the admin gets one summary (`Reference switch: compared N listing(s) again, M
+mismatch, the admin gets one summary (`Re-match against new reference pictures: compared N listing(s) again, M
 changed.`, every mismatch named first with its picture card, then up to 10 other changes)
 instead of a note per mismatch, and `/admin run` shows `Re-match: N compared, M changed`. A
 mismatch the summary has no room for, or a summary that cannot be delivered, keeps its own

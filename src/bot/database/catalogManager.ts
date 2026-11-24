@@ -333,6 +333,24 @@ export const catalogManager = {
     db.update(cards).set({ laststickerScanMissingAt: now }).where(ofCard(collection, cardId)).run();
   },
 
+  /** The given cards whose scan is recorded missing (any age), sorted. */
+  markedScans(collection: CollectionId, cardIds: readonly CardId[]): CardId[] {
+    if (cardIds.length === 0) return [];
+    return db
+      .select({ cardId: cards.cardId })
+      .from(cards)
+      .where(
+        and(
+          eq(cards.collection, collection),
+          inArray(cards.cardId, [...cardIds]),
+          isNotNull(cards.laststickerScanMissingAt)
+        )
+      )
+      .all()
+      .map((r) => r.cardId)
+      .sort(compareCardIds);
+  },
+
   /**
    * Clear the missing-scan mark of the given cards (their scan loaded again after
    * SCAN_RETRY_MS); returns the ones that had a mark, sorted: their reference changed back.

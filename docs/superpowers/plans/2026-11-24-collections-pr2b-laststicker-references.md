@@ -285,7 +285,7 @@ git commit -s -m "docs(matcher): measure the threshold on laststicker scans"
     - It changed unless the old and new status are equal; `reference` counts as `confirmed`.
     - Call `finishRematch(l.id, result.status === 'mismatch' ? deps.now() : null)`.
   - After the loop, when `changed > 0`, send one alert with key `rematch-summary`:
-    - Text: `Reference switch: compared <compared> listing(s) again, <changed> changed: <changes joined "; ">`.
+    - Text: `Re-match against new reference pictures: compared <compared> listing(s) again, <changed> changed: <changes joined "; ">`.
     - New mismatches are not sent to users and get no note of their own.
     - Clip the text with `DISCORD_MESSAGE_LIMIT`.
   - `formatSummary` adds the line `re-match: <compared> compared, <changed> changed` when `rematch` is set.

@@ -104,7 +104,10 @@ export interface SyncDeps {
 }
 
 function named(ids: readonly CardId[]): string {
-  const shown = ids.slice(0, MAX_NAMED).join(', ');
+  const shown = ids
+    .slice(0, MAX_NAMED)
+    .map((id) => `#${id}`)
+    .join(', ');
   return ids.length > MAX_NAMED ? `${shown} … and ${ids.length - MAX_NAMED} more` : shown;
 }
 
@@ -182,7 +185,8 @@ async function report(collection: CollectionId, result: SyncResult, deps: SyncDe
     );
     // The changed cards are known only to this sync: name them, so the admin can act.
     await deps.alert(
-      `catalog-rematch:${collection}`,
+      // Per card list: a later sync's failure names other cards and must not be throttled.
+      `catalog-rematch:${collection}:${result.repictured.join(',')}`,
       clipText(
         `${name}: the sync could not compare the mismatches of ${result.repictured.length} card(s) again (new pictures): ${named(result.repictured)} — ${errorMessage(error)}`,
         DISCORD_MESSAGE_LIMIT

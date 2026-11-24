@@ -15,6 +15,7 @@ import { db } from './db';
 import { listingCards, listings, notifications, reports } from './schema/index';
 import type { Listing as ListingRow } from './schema/index';
 import { userManager } from './userManager';
+import logger from '../utils/logger';
 
 export type StoredListing = {
   id: number;
@@ -183,14 +184,18 @@ export const listingManager = {
     found: ShopListing[],
     now: number
   ): StoredListing[] {
-    return db.transaction((tx) => {
+    const foreign: string[] = [];
+    const stored = db.transaction((tx) => {
       const ids: number[] = [];
       for (const scraped of found) {
         const item = auctionEnded(scraped.auctionEndsAt, now)
           ? { ...scraped, available: false }
           : scraped;
         const existing = tx.select().from(listings).where(eq(listings.url, item.url)).get();
-        if (existing && existing.collection !== collection) continue;
+        if (existing && existing.collection !== collection) {
+          foreign.push(`${item.url} (${existing.collection})`);
+          continue;
+        }
         const fields = {
           title: item.title,
           imageUrl: item.imageUrl,
@@ -289,6 +294,12 @@ export const listingManager = {
         ids.length === 0 ? [] : tx.select().from(listings).where(inArray(listings.id, ids)).all()
       );
     });
+    if (foreign.length > 0) {
+      logger.warn(
+        `${shop} (${collection}): ${foreign.length} listing(s) stored under another collection left unchanged: ${foreign.slice(0, 10).join(', ')}`
+      );
+    }
+    return stored;
   },
 
   /**

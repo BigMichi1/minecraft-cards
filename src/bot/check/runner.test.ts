@@ -253,6 +253,30 @@ describe('runCheck', () => {
     expect(s.notified).toBe(0);
   });
 
+  test("a listing is compared with its own collection's references only", async () => {
+    catalogManager.updateNamesAndReferences('lego-minecraft-3', [
+      { cardId: cid('12'), name: 'Creeper', imageUrl: 'https://ente/12.jpg' },
+    ]);
+    db.insert(cards)
+      .values({
+        collection: OTHER,
+        cardId: cid('12'),
+        type: 'base',
+        referenceImageUrl: 'https://o/12.jpg',
+        updatedAt: 1,
+      })
+      .run();
+    db.insert(users).values({ discordId: 'u9', createdAt: 1 }).run();
+    db.insert(wantedCards)
+      .values({ discordId: 'u9', collection: OTHER, cardId: cid('12') })
+      .run();
+    await runCheck(depsWith([ok('blue-ocean', [blue12], {}, OTHER)]));
+    expect(embedded).toContain('https://o/12.jpg');
+    expect(embedded).toContain(blue12.imageUrl!);
+    expect(embedded).not.toContain('https://ente/12.jpg');
+    expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
+  });
+
   test('a sammel-ente listing without a name or with several ids leaves the catalog alone', async () => {
     const nameless: Listing = {
       ...blue12,
@@ -1049,7 +1073,16 @@ describe('runCheck', () => {
       await run(shops(5), { embedder: broken });
       const sent = () => notes().filter((a) => a.includes('could not be loaded'));
       expect(sent()).toHaveLength(1);
-      expect(sent()[0]).toStartWith('2 reference picture(s) could not be loaded this run');
+      expect(sent()[0]).toStartWith(
+        '2 reference picture(s) of LEGO Minecraft Serie 3 "On Fire" could not be loaded this run'
+      );
+      expect(
+        db
+          .select()
+          .from(adminAlerts)
+          .all()
+          .map((r) => r.key)
+      ).toContain('reference-unavailable:lego-minecraft-3');
       expect(sent()[0]).toContain('#45 (image_unavailable: HTTP 404, https://ente/45.jpg)');
       expect(sent()[0]).toContain('#77 (image_unavailable: HTTP 410, https://ente/77.jpg)');
       // A new listing needs the set again the same day: throttled.
@@ -1232,6 +1265,7 @@ describe('runCheck', () => {
         down = false;
         await run(shops(), { alertAdmin });
         expect(mismatchNotes()).toHaveLength(1);
+        expect(mismatchNotes()[0]).toContain('fix it with /admin map collection:lego-minecraft-3');
         await run(shops(), { alertAdmin });
         expect(mismatchNotes()).toHaveLength(1);
       });

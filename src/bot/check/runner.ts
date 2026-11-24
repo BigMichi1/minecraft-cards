@@ -1,5 +1,6 @@
 import type { CardId } from '../cards/cardId';
 import type { CollectionId } from '../collections/ids';
+import { collectionName } from '../collections/index';
 import { catalogManager, type ReferenceCatalog } from '../database/catalogManager';
 import {
   listingManager,
@@ -133,7 +134,7 @@ function wantedOrPictureOnly(l: StoredListing, wanted: Map<CollectionId, Set<Car
 const MAX_NAMED = 10;
 
 /**
- * Every catalog card's reference picture for this run: read from the catalog and embedded on
+ * One collection's reference pictures for this run: read from its catalog and embedded on
  * first use (through the embedding cache), then reused. A reference that failed to load within
  * IMAGE_RETRY_MS (`referenceFailures`) is not tried again. Placeholder and shared pictures are
  * named in one warning; load failures in one warning and a throttled admin alert.
@@ -142,6 +143,7 @@ function referencesOnce(
   deps: RunDeps,
   embedder: ImageEmbedder,
   alert: AlertFn,
+  collection: CollectionId,
   catalogOf: () => ReferenceCatalog
 ): () => Promise<ReferenceSet> {
   let loading: Promise<ReferenceSet> | null = null;
@@ -188,9 +190,10 @@ function referencesOnce(
             (m) => `#${m.cardId} (${m.reason}: ${m.detail ?? '?'}, ${urlOf.get(m.cardId) ?? '?'})`
           )
           .join('; ');
-        const text = `${failed.length} reference picture(s) could not be loaded this run, so no picture decides a card on its own and no mismatch is made until they load: ${named}`;
+        const text = `${failed.length} reference picture(s) of ${collectionName(collection)} could not be loaded this run, so no picture decides a card on its own and no mismatch is made until they load: ${named}`;
         logger.warn(text);
-        await alert('reference-unavailable', text);
+        // Keyed per collection: one collection's failures must not throttle another's alert.
+        await alert(`reference-unavailable:${collection}`, text);
       }
       return set;
     })();
@@ -205,7 +208,7 @@ function mismatchNote(l: StoredListing, pictureCard: CardId): string {
     l.similarity === null ? '' : ` (#${titleCard} only ${l.similarity.toFixed(2)})`;
   return (
     `Picture mismatch, not sent to users: the title says #${titleCard}, the picture shows ` +
-    `#${pictureCard}${titleScore}. ${l.url} — if the title is wrong, fix it with /admin map.`
+    `#${pictureCard}${titleScore}. ${l.url} — if the title is wrong, fix it with /admin map collection:${l.collection}.`
   );
 }
 
@@ -249,7 +252,9 @@ function collectionReferences(
       usable ??= new Map(catalogOf().usable.map((c) => [c.cardId, c.referenceImageUrl]));
       return usable.get(id) ?? null;
     },
-    references: deps.embedder ? referencesOnce(deps, deps.embedder, alert, catalogOf) : undefined,
+    references: deps.embedder
+      ? referencesOnce(deps, deps.embedder, alert, collection, catalogOf)
+      : undefined,
   };
 }
 

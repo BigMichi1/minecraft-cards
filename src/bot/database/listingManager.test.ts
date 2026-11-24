@@ -1,4 +1,5 @@
-import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import logger from '../utils/logger';
 import { eq } from 'drizzle-orm';
 import { db, initializeDatabase } from './db';
 import {
@@ -100,12 +101,21 @@ describe('listingManager', () => {
 
     test('a URL stored under another collection keeps its row, cards and collection', () => {
       listingManager.upsertFromRun('blue-ocean', OTHER, [blue12], 1000);
-      const found = listingManager.upsertFromRun(
-        'blue-ocean',
-        'lego-minecraft-3',
-        [{ ...blue12, title: 'changed', cardIds: [cid('45')] }],
-        2000
-      );
+      const warn = spyOn(logger, 'warn');
+      let found;
+      try {
+        found = listingManager.upsertFromRun(
+          'blue-ocean',
+          'lego-minecraft-3',
+          [{ ...blue12, title: 'changed', cardIds: [cid('45')] }],
+          2000
+        );
+        expect(warn.mock.calls.map((c: unknown[]) => String(c[0]))).toEqual([
+          `blue-ocean (lego-minecraft-3): 1 listing(s) stored under another collection left unchanged: ${blue12.url} (other-set)`,
+        ]);
+      } finally {
+        warn.mockRestore();
+      }
       expect(found).toEqual([]);
       const kept = listingManager.getByUrl(blue12.url)!;
       expect(kept).toMatchObject({ collection: OTHER, title: blue12.title, lastSeenAt: 1000 });

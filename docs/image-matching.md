@@ -186,7 +186,8 @@ listing (throttle `confirm-request:<listing>`, released when the DM fails); it p
 listing and files no report. The admin's "❌ Wrong" report DM carries "✅ Confirm" and
 "🗑️ Dismiss". Confirm is `/admin map` with the listing's current cards (admin-mapped from then
 on), except that it keeps `availableSince`, so nobody who had the alert is notified again; it is
-refused when the cards changed since the DM. Dismiss is `/admin clear`. Only the admin can press
+refused when the cards or the picture (a fingerprint in the button) changed since the DM, or
+when the listing is a `mismatch` or `pending`: a confirmation is never compared again. Dismiss is `/admin clear`. Only the admin can press
 either.
 
 **Puzzle cards** come from data: sammel-ente names them "Puzzlekarte <picture> <piece>"

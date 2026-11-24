@@ -12,7 +12,7 @@ import {
 import type { APIEmbedField, ButtonInteraction } from 'discord.js';
 import { normalizeCardId, type CardId } from '../cards/cardId';
 import { catalogManager } from '../database/catalogManager';
-import { listingManager, type StoredListing } from '../database/listingManager';
+import { imageFingerprint, listingManager, type StoredListing } from '../database/listingManager';
 import { validUrl } from '../notify/messages';
 import { logError } from '../utils/logger';
 import { replyWithError } from '../utils/interactionReply';
@@ -23,7 +23,8 @@ const MAX_CUSTOM_ID = 100;
 const MAX_FIELD = 1024;
 const NO_LISTING = 'This listing no longer exists.';
 const NOT_ADMIN = 'Only the admin can do this.';
-const CARDS_CHANGED = "The listing's cards changed since this message; use /admin map.";
+const CARDS_CHANGED =
+  'The listing changed since this message (cards, picture or check); look again or use /admin map.';
 
 interface AdminDeps {
   adminId: string;
@@ -69,7 +70,8 @@ export function adminActionRow(
   opts: { dismiss: boolean }
 ): ActionRowBuilder<ButtonBuilder> | null {
   const buttons: ButtonBuilder[] = [];
-  const confirmId = `admin-confirm:${listing.id}:${listing.cardIds.join(',')}`;
+  // The picture's fingerprint lets Confirm refuse once the picture changed after this DM.
+  const confirmId = `admin-confirm:${listing.id}:${listing.cardIds.join(',')}:${imageFingerprint(listing.imageUrl)}`;
   const [first] = listing.cardIds;
   if (first && confirmId.length <= MAX_CUSTOM_ID) {
     buttons.push(
@@ -94,10 +96,12 @@ function parseListingId(value: string | undefined): number | null {
   return value !== undefined && /^\d{1,15}$/.test(value) ? Number(value) : null;
 }
 
-/** `admin-confirm:<listingId>:<cardIds>`; null when malformed. */
-function parseConfirmId(customId: string): { listingId: number; cardIds: CardId[] } | null {
+/** `admin-confirm:<listingId>:<cardIds>:<image fingerprint>`; null when malformed. */
+function parseConfirmId(
+  customId: string
+): { listingId: number; cardIds: CardId[]; image: string } | null {
   const parts = customId.split(':');
-  if (parts.length !== 3) return null;
+  if (parts.length !== 4 || !parts[3]) return null;
   const listingId = parseListingId(parts[1]);
   if (listingId === null || !parts[2]) return null;
   const cardIds: CardId[] = [];
@@ -106,7 +110,7 @@ function parseConfirmId(customId: string): { listingId: number; cardIds: CardId[
     if (!id) return null;
     cardIds.push(id);
   }
-  return { listingId, cardIds };
+  return { listingId, cardIds, image: parts[3] };
 }
 
 /** Mark the admin's DM as handled: status line appended, buttons removed. */
@@ -124,7 +128,7 @@ export async function handleAdminConfirm(i: ButtonInteraction, deps: AdminDeps):
     }
     const parsed = parseConfirmId(i.customId);
     const result = parsed
-      ? listingManager.confirmCards(parsed.listingId, parsed.cardIds, Date.now())
+      ? listingManager.confirmCards(parsed.listingId, parsed.cardIds, Date.now(), parsed.image)
       : undefined;
     if (result === undefined) {
       await i.reply(ephemeral(NO_LISTING));

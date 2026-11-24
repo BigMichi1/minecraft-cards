@@ -68,6 +68,14 @@ export interface PendingOptions {
   excludeIds?: readonly number[];
 }
 
+/**
+ * A short, stable fingerprint of a listing picture URL (base 36, at most 13 characters), small
+ * enough to travel in a button's customId so a confirmation can tell the picture changed.
+ */
+export function imageFingerprint(imageUrl: string | null): string {
+  return BigInt.asUintN(64, BigInt(Bun.hash(imageUrl ?? ''))).toString(36);
+}
+
 function auctionEnded(auctionEndsAt: number | null, now: number): boolean {
   return auctionEndsAt !== null && auctionEndsAt < now;
 }
@@ -465,16 +473,29 @@ export const listingManager = {
    * The admin's one-click confirmation: what `overrideCards` does with the listing's current
    * cards, except that `availableSince` is kept, so users who already had the alert for this
    * availability period are not notified again. `'changed'` (nothing written) when the listing's
-   * cards no longer equal `expected`, e.g. a rescrape changed them after the button was sent.
+   * cards no longer equal `expected`, e.g. a rescrape changed them after the button was sent;
+   * when the picture no longer has the fingerprint `expectedImage` the admin saw; and when the
+   * listing is a `mismatch` or waits for a comparison (`pending`), as a confirmation is never
+   * compared again and would override the picture rule for good.
    */
   confirmCards(
     listingId: number,
     expected: CardId[],
-    now: number
+    now: number,
+    expectedImage?: string
   ): StoredListing | 'changed' | undefined {
     return db.transaction((tx) => {
       const row = tx.select().from(listings).where(eq(listings.id, listingId)).get();
       if (!row) return undefined;
+      if (expectedImage !== undefined && imageFingerprint(row.imageUrl) !== expectedImage) {
+        return 'changed';
+      }
+      if (
+        !row.manualOverride &&
+        (row.matchStatus === 'mismatch' || row.matchStatus === 'pending')
+      ) {
+        return 'changed';
+      }
       const current = new Set(cardIdsOf(tx, [row.id]).get(row.id) ?? []);
       const wanted = new Set(expected);
       if (current.size !== wanted.size || [...wanted].some((id) => !current.has(id))) {

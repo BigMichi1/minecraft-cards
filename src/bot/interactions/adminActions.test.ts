@@ -4,7 +4,7 @@ import type { ButtonInteraction } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
 import { cards, listingCards, listings, reports } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
-import { listingManager, type StoredListing } from '../database/listingManager';
+import { imageFingerprint, listingManager, type StoredListing } from '../database/listingManager';
 import {
   adminActionRow,
   adminListingEmbed,
@@ -87,7 +87,7 @@ describe('admin actions', () => {
       const l = makeListing();
       const row = rowJson(l, true);
       expect(row.components.map((c: any) => [c.label, c.custom_id])).toEqual([
-        ['✅ Confirm #12', `admin-confirm:${l.id}:12`],
+        ['✅ Confirm #12', `admin-confirm:${l.id}:12:${imageFingerprint(l.imageUrl)}`],
         ['🗑️ Dismiss', `admin-dismiss:${l.id}`],
       ]);
     });
@@ -95,7 +95,7 @@ describe('admin actions', () => {
     test('without dismiss only Confirm', () => {
       const l = makeListing();
       expect(rowJson(l, false).components.map((c: any) => c.custom_id)).toEqual([
-        `admin-confirm:${l.id}:12`,
+        `admin-confirm:${l.id}:12:${imageFingerprint(l.imageUrl)}`,
       ]);
     });
 
@@ -103,7 +103,7 @@ describe('admin actions', () => {
       const l = makeListing([cid('12'), cid('13')]);
       expect(rowJson(l, false).components[0]).toMatchObject({
         label: '✅ Confirm bundle',
-        custom_id: `admin-confirm:${l.id}:12,13`,
+        custom_id: `admin-confirm:${l.id}:12,13:${imageFingerprint(l.imageUrl)}`,
       });
     });
 
@@ -133,7 +133,10 @@ describe('admin actions', () => {
   describe('Confirm', () => {
     test('by the admin confirms and updates the DM', async () => {
       const l = makeListing();
-      await handleAdminConfirm(fakeButton(`admin-confirm:${l.id}:12`), { adminId: ADMIN });
+      await handleAdminConfirm(
+        fakeButton(`admin-confirm:${l.id}:12:${imageFingerprint(l.imageUrl)}`),
+        { adminId: ADMIN }
+      );
       expect(updates).toEqual([{ content: 'orig\n✅ Confirmed', components: [] }]);
       expect(listingManager.getById(l.id)).toMatchObject({
         matchStatus: 'confirmed',
@@ -144,7 +147,10 @@ describe('admin actions', () => {
 
     test('by someone else changes nothing', async () => {
       const l = makeListing();
-      await handleAdminConfirm(fakeButton(`admin-confirm:${l.id}:12`, 'u2'), { adminId: ADMIN });
+      await handleAdminConfirm(
+        fakeButton(`admin-confirm:${l.id}:12:${imageFingerprint(l.imageUrl)}`, 'u2'),
+        { adminId: ADMIN }
+      );
       expect(replies).toEqual([ephemeralText('Only the admin can do this.')]);
       expect(updates).toEqual([]);
       expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
@@ -152,15 +158,39 @@ describe('admin actions', () => {
 
     test('after the cards changed is refused', async () => {
       const l = makeListing();
-      await handleAdminConfirm(fakeButton(`admin-confirm:${l.id}:13`), { adminId: ADMIN });
+      await handleAdminConfirm(
+        fakeButton(`admin-confirm:${l.id}:13:${imageFingerprint(l.imageUrl)}`),
+        { adminId: ADMIN }
+      );
       expect(replies).toEqual([
-        ephemeralText("The listing's cards changed since this message; use /admin map."),
+        ephemeralText(
+          'The listing changed since this message (cards, picture or check); look again or use /admin map.'
+        ),
+      ]);
+      expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
+    });
+
+    test('after the picture changed is refused', async () => {
+      const l = makeListing();
+      const stale = imageFingerprint('https://img/old.jpg');
+      await handleAdminConfirm(fakeButton(`admin-confirm:${l.id}:12:${stale}`), {
+        adminId: ADMIN,
+      });
+      expect(replies).toEqual([
+        ephemeralText(
+          'The listing changed since this message (cards, picture or check); look again or use /admin map.'
+        ),
       ]);
       expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
     });
 
     test('of a missing listing or a malformed id', async () => {
-      for (const id of ['admin-confirm:999999:12', 'admin-confirm:x:12', 'admin-confirm:1:??']) {
+      for (const id of [
+        'admin-confirm:999999:12:abc',
+        'admin-confirm:x:12:abc',
+        'admin-confirm:1:??:abc',
+        'admin-confirm:1:12',
+      ]) {
         replies = [];
         await handleAdminConfirm(fakeButton(id), { adminId: ADMIN });
         expect(replies).toEqual([ephemeralText('This listing no longer exists.')]);
@@ -173,7 +203,10 @@ describe('admin actions', () => {
         throw new Error('db down');
       });
       try {
-        await handleAdminConfirm(fakeButton(`admin-confirm:${l.id}:12`), { adminId: ADMIN });
+        await handleAdminConfirm(
+          fakeButton(`admin-confirm:${l.id}:12:${imageFingerprint(l.imageUrl)}`),
+          { adminId: ADMIN }
+        );
       } finally {
         spy.mockRestore();
       }
@@ -182,9 +215,16 @@ describe('admin actions', () => {
 
     test('the status line keeps the DM within 2000 characters', async () => {
       const l = makeListing();
-      await handleAdminConfirm(fakeButton(`admin-confirm:${l.id}:12`, ADMIN, 'x'.repeat(2000)), {
-        adminId: ADMIN,
-      });
+      await handleAdminConfirm(
+        fakeButton(
+          `admin-confirm:${l.id}:12:${imageFingerprint(l.imageUrl)}`,
+          ADMIN,
+          'x'.repeat(2000)
+        ),
+        {
+          adminId: ADMIN,
+        }
+      );
       expect(updates[0].content.length).toBeLessThanOrEqual(2000);
       expect(updates[0].content).toEndWith('✅ Confirmed');
     });

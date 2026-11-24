@@ -10,7 +10,7 @@ import {
   wantedCards,
 } from './schema/index';
 import { catalogManager } from './catalogManager';
-import { listingManager } from './listingManager';
+import { imageFingerprint, listingManager } from './listingManager';
 import { userManager } from './userManager';
 import type { Listing } from '../shops/types';
 import { cid, ids } from '../../test/cardIds';
@@ -433,6 +433,38 @@ describe('listingManager', () => {
         manualOverride: false,
         similarity: 0.7,
       });
+    });
+
+    test('refuses when the picture changed since the admin saw it', () => {
+      const l = unconfirmed12();
+      const seen = imageFingerprint('https://img/old.jpg');
+      expect(listingManager.confirmCards(l.id, [cid('12')], 3000, seen)).toBe('changed');
+      expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
+      const current = imageFingerprint(blue12.imageUrl);
+      expect(listingManager.confirmCards(l.id, [cid('12')], 3000, current)).toMatchObject({
+        matchStatus: 'confirmed',
+      });
+    });
+
+    test('refuses a listing that is a mismatch or waits for a comparison', () => {
+      const l = unconfirmed12();
+      listingManager.setMatch(
+        l.id,
+        { status: 'mismatch', similarity: 0.5, picture: { cardId: cid('45'), similarity: 0.9 } },
+        2000
+      );
+      expect(listingManager.confirmCards(l.id, [cid('12')], 3000)).toBe('changed');
+      db.update(listings).set({ matchStatus: 'pending' }).run();
+      expect(listingManager.confirmCards(l.id, [cid('12')], 3000)).toBe('changed');
+      expect(listingManager.getById(l.id)!.manualOverride).toBe(false);
+    });
+
+    test('imageFingerprint is short, stable and tells pictures apart', () => {
+      const a = imageFingerprint('https://img/a.jpg');
+      expect(a).toBe(imageFingerprint('https://img/a.jpg'));
+      expect(a).not.toBe(imageFingerprint('https://img/b.jpg'));
+      expect(imageFingerprint(null)).not.toBe(a);
+      expect(a).toMatch(/^[0-9a-z]{1,13}$/);
     });
 
     test('returns undefined for a missing listing', () => {

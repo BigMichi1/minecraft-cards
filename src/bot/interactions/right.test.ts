@@ -4,7 +4,7 @@ import type { ButtonInteraction, MessageCreateOptions } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
 import { adminAlerts, cards, listingCards, listings, reports } from '../database/schema/index';
 import { catalogManager } from '../database/catalogManager';
-import { listingManager, type StoredListing } from '../database/listingManager';
+import { imageFingerprint, listingManager, type StoredListing } from '../database/listingManager';
 import { handleRightButton } from './right';
 import { cid } from '../../test/cardIds';
 
@@ -98,7 +98,7 @@ describe('Right button', () => {
     expect(embed.title).toBe(`👍 Card confirmed by a user (listing ${l.id})`);
     expect(embed.fields[0]).toMatchObject({ name: 'By', value: 'bob#1 (u1)' });
     const ids = (msg.components![0] as any).toJSON().components.map((c: any) => c.custom_id);
-    expect(ids).toEqual([`admin-confirm:${l.id}:LE22`]);
+    expect(ids).toEqual([`admin-confirm:${l.id}:LE22:${imageFingerprint(l.imageUrl)}`]);
 
     now += DAY - 1;
     await handleRightButton(fakeButton(`right:${l.id}`), spy, () => now);

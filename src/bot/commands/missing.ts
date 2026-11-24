@@ -90,7 +90,6 @@ function describeChange(change: ListChange): string {
 
 /** What `/missing` needs from the bot's wiring. */
 export interface MissingContext {
-  /** The shops this process checks (one per adapter built in bot.ts). */
   /** The shops checked per collection; any other shop is not enabled there. */
   enabledShops: EnabledShops;
 }

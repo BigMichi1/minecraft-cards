@@ -1,8 +1,10 @@
 /**
  * Measure laststicker's scans as image references (multi-collection step 2, before the switch).
  *
- * Reads the series 3 laststicker set and the single-card listings of sammel-ente, collect-it
- * and, when EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are set, eBay (titles naming one card). Per
+ * Reads the collection's laststicker set (`--collection`, default series 3; a set with
+ * `scans: false` has no scans, so only its fallbacks are measured) and the single-card listings
+ * of its sammel-ente and collect-it categories,
+ * and, for series 3 when EBAY_CLIENT_ID and EBAY_CLIENT_SECRET are set, eBay (titles naming one card). Per
  * shop it prints the cosine similarity of each listing picture with the scan of its own card
  * (true pairs) and with the scan of the next card id that shop has (false pairs, usually the
  * neighbouring panorama piece), min / median / max, the errors at IMAGE_MATCH_THRESHOLD and the

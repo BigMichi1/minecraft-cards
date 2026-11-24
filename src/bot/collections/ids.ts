@@ -27,19 +27,34 @@ export function isCollectionId(value: string): value is CollectionId {
   return (COLLECTION_IDS as readonly string[]).includes(value);
 }
 
-/** One card set the bot watches: its own catalog, shops and wanted lists. */
+/** A shop category of one series: its absolute URL and the series label its titles carry. */
+export interface CategoryShopSettings {
+  readonly category: string;
+  /** `Serie N`: sammel-ente titles name it before their pipe, collect-it's end with it. */
+  readonly series: string;
+}
+
+/** How a collection's laststicker set page is read. */
+export interface LaststickerSetOptions {
+  /** `false`: laststicker has no scans of the set (the fallback shop's pictures serve). */
+  readonly scans?: false;
+  /** A raw checklist number taken as this card id (series 2's bare `XXL` is `XXL1`). */
+  readonly numberAliases?: Readonly<Record<string, string>>;
+}
+
 /** A collection's settings per shop; a collection lists only the shops that sell it. */
 export interface CollectionShops {
-  /** The category page (absolute URL, `?p=N` pages) and the series label its titles name. */
-  readonly 'sammel-ente'?: { readonly category: string; readonly series: string };
-  /** The single-card category (absolute URL) and the series label its titles end with. */
-  readonly 'collect-it'?: { readonly category: string; readonly series: string };
+  /** The category page (`?p=N` pages). */
+  readonly 'sammel-ente'?: CategoryShopSettings;
+  /** The single-card category (walked by `rel="next"`). */
+  readonly 'collect-it'?: CategoryShopSettings;
   /** Series 3 only, today's category (PR 3c reads the TCC categories). */
   readonly 'blue-ocean'?: Record<string, never>;
   /** Series 3 only until eBay is read for every collection (PR 3b). */
   readonly ebay?: Record<string, never>;
 }
 
+/** One card set the bot watches: its own catalog, shops and wanted lists. */
 export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   readonly id: K;
   /** Display name in commands and alerts. */
@@ -47,13 +62,7 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   /** A checklist (`parseChecklist` form) seeded into an empty catalog at start, if any. */
   readonly starterChecklist?: string;
   /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */
-  readonly laststicker?: {
-    readonly set: string;
-    /** `false`: laststicker has no scans of the set (the fallback shop's pictures serve). */
-    readonly scans?: false;
-    /** A raw checklist number taken as this card id (series 2's bare `XXL` is `XXL1`). */
-    readonly numberAliases?: Readonly<Record<string, string>>;
-  };
+  readonly laststicker?: { readonly set: string } & LaststickerSetOptions;
   /**
    * The shop whose listing picture is a card's reference when laststicker has no scan of it
    * (404 or 410, or none synced yet), or a manual card has no picture of the admin's; none: such

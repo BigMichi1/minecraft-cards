@@ -22,7 +22,6 @@ import {
 
 /** What `/card` needs from the bot's wiring. */
 export interface CardContext {
-  /** The shops this process checks (one per adapter built in bot.ts). */
   /** The shops checked per collection; any other shop is not enabled there. */
   enabledShops: EnabledShops;
   /** Downloads the reference picture to attach; the bounded matcher download by default. */

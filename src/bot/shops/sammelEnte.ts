@@ -4,6 +4,7 @@ import { sleep as realSleep } from '../utils/async';
 import { fetchText } from '../utils/http';
 import { clipText } from '../utils/messageLimit';
 import logger, { logError } from '../utils/logger';
+import type { CategoryShopSettings } from '../collections/ids';
 import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher } from './types';
 import { ShopLayoutError } from './types';
 
@@ -28,17 +29,8 @@ function parsePrice(text: string): Listing['price'] {
   return { cents: euros * 100 + Number.parseInt(match[2] ?? '0', 10), currency: 'EUR' };
 }
 
-/**
- * Parse one category page. `productCount` counts every product box, cards or not; of the boxes
- * that are not card listings, `skippedNoId` had a title naming a card number ("|#" or "| #")
- * that could not be read (other products such as boosters and puzzle packs are not counted) and
- * `skippedInvalid` no link or title. `lastPage` is the highest `?p=N` in the pagination (1 when
- * none).
- */
-export function parseSammelEntePage(
-  html: string,
-  series: string | null = null
-): {
+/** One parsed category page; see `parseSammelEntePage`. */
+export interface SammelEntePage {
   listings: Listing[];
   lastPage: number;
   productCount: number;
@@ -48,7 +40,18 @@ export function parseSammelEntePage(
   /** Card titles naming no series (with `series`): the title format changed; the fetch fails. */
   noSeries: string[];
   skippedInvalid: number;
-} {
+}
+
+/**
+ * Parse one category page. `productCount` counts every product box, cards or not; of the boxes
+ * that are not card listings, `skippedNoId` had a title naming a card number ("|#" or "| #")
+ * that could not be read (other products such as boosters and puzzle packs are not counted) and
+ * `skippedInvalid` no link or title. `lastPage` is the highest `?p=N` in the pagination (1 when
+ * none). With `series`, a card title naming another series before its pipe is skipped and
+ * counted in `skippedExcluded` (its picture would otherwise become this collection's reference),
+ * and one naming none goes to `noSeries` (the fetch fails); null reads every title.
+ */
+export function parseSammelEntePage(html: string, series: string | null): SammelEntePage {
   const $ = cheerio.load(html);
 
   let lastPage = 1;
@@ -123,7 +126,7 @@ export function parseSammelEntePage(
 
 /** One collection's category (CollectionDefinition.shops). */
 export function createSammelEnteFetcher(
-  settings: { readonly category: string; readonly series: string },
+  settings: CategoryShopSettings,
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
 ): ShopFetcher {
@@ -173,7 +176,7 @@ export function createSammelEnteFetcher(
       return {
         listings: [...byUrl.values()],
         skippedNoId,
-        ...(skippedExcluded > 0 ? { skippedExcluded } : {}),
+        skippedExcluded,
         skippedInvalid,
       };
     },

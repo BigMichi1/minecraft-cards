@@ -4,6 +4,7 @@ import { errorMessage, sleep as realSleep } from '../utils/async';
 import { fetchText, HttpError } from '../utils/http';
 import logger from '../utils/logger';
 import { clipText } from '../utils/messageLimit';
+import type { CategoryShopSettings } from '../collections/ids';
 import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher, ShopId } from './types';
 import { ShopLayoutError } from './types';
 
@@ -118,7 +119,7 @@ export interface CollectItPage {
   next: string | null;
   /** Boxes whose title does not start with a card number. */
   skippedNoId: number;
-  /** Card boxes of another series than the one asked for (`series`), by URL. */
+  /** Card boxes whose title ends with another series label than `series`, by URL. */
   excluded: string[];
   /** Boxes without a link, a title or a known schema.org availability. */
   skippedInvalid: number;
@@ -130,10 +131,12 @@ export interface CollectItPage {
 
 /**
  * Parse one category page. The category holds only singles, so a skipped box is parser drift,
- * and the adapter rejects a page with any. `canonical` and `next` are returned raw; the adapter
- * checks them with `categoryPageNumber`.
+ * and the adapter rejects a page with any. With `series`, a card box whose title ends with
+ * another series label goes to `excluded` (no skip), and one with no series label is a skip
+ * (the title format changed); null reads every series. `canonical` and `next` are returned raw;
+ * the adapter checks them with `categoryPageNumber`.
  */
-export function parseCollectItPage(html: string, series: string | null = null): CollectItPage {
+export function parseCollectItPage(html: string, series: string | null): CollectItPage {
   const $ = cheerio.load(html);
   const listings: Listing[] = [];
   const excluded: string[] = [];
@@ -306,19 +309,20 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
 }
 
 /**
- * collect-it.de lists every single card in one category, 30 per page. It hides sold-out products
+ * collect-it.de lists a series' single cards in one category (`settings.category`), 30 per page. It hides sold-out products
  * instead of marking them, so a card that sells out simply vanishes (and the run marks the stored
  * listing unavailable). That makes a partial read dangerous: every card on an unread page would
  * read as sold out and re-notify on the next healthy run. So the walk follows each page's
  * `<link rel="next">`, and a page whose canonical link is missing, unreadable or names another
  * page than the one linked is a `ShopLayoutError` (a page past the end redirects to page 1), as is
  * reaching MAX_PAGES or any unreadable product box or title. So is a walk whose unique listings
- * do not add up to the article total page 1 names, or a page with a next page that is not full
+ * and other-series items (`skippedExcluded`) do not add up to the article total page 1 names, or
+ * that finds no card of the category's series, or a page with a next page that is not full
  * (PAGE_SIZE): both catch a dropped `rel="next"` and cards shifting between pages. The runner
  * then leaves the stored listings untouched, and the run is retried next hour.
  */
 export function createCollectItFetcher(
-  settings: { readonly category: string; readonly series: string },
+  settings: CategoryShopSettings,
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
 ): ShopFetcher {
@@ -371,6 +375,8 @@ export function createCollectItFetcher(
       }
       // Catches a dropped rel="next" (page 1 read alone) and cards that moved between pages
       // during the walk (one sold out, so a later card moved onto a page already read).
+      // A URL read as this series' card on one page is never also counted as another series'.
+      for (const url of byUrl.keys()) excluded.delete(url);
       if (byUrl.size === 0) {
         // Every card of another series (a series label typo, or a renamed suffix): reading it as
         // none would mark every stored listing sold out.

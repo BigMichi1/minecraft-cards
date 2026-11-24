@@ -257,3 +257,12 @@
   - The spec's "Notes from PR 3a": the split into 3a/3b/3c, the `scans`/`numberAliases` options, the puzzle section rule, and the summary's `collections` map.
 - [ ] **Step 2: Check.** Run `./bin/mise run format:check`. Expected: clean.
 - [ ] **Step 3: Commit** `docs: describe LEGO Minecraft series 1 and 2`
+
+## Deviations (rulings in the plan ledger)
+
+- Task 4: series 3 stays in the run summary's `shops` (as in every stored row); `collections`
+  holds the other collections, read through `runManager.shopEntry`.
+- Task 3 and the reviews: sammel-ente settings carry a `series` label too (`{ category, series }`),
+  and both parsers check it, so "today's parser reads both unchanged" no longer holds.
+- The reviews also added a start check of the settings (shop host, blue-ocean and eBay series 3
+  only), the "not loaded yet" replies and the foreign-listing alert.

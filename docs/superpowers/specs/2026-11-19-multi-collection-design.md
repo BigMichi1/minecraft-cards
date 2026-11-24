@@ -417,6 +417,9 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   section starting with `Puzzlekarte`.
 - The run summary keeps series 3 in `shops` (every stored row) and the other collections in
   `collections`; `runManager.shopEntry` reads both.
+- Shop alert keys are per (shop, collection) for now, eBay included
+  (`shop-truncated:ebay:lego-minecraft-3`); 3b, with one eBay run for every collection, keys
+  eBay once (`shop:ebay`) as designed above.
 - Step 4 (Turbo Attax): its id rule goes into the definition (`normalize` for the laststicker
   parser, the shops' title patterns), and `collect-it` settings already take a series label.
 

@@ -21,7 +21,6 @@ import {
 
 /** What `/stock` needs from the bot's wiring. */
 export interface StockContext {
-  /** The shops this process checks (one per adapter built in bot.ts). */
   /** The shops checked per collection; any other shop is not enabled there. */
   enabledShops: EnabledShops;
 }

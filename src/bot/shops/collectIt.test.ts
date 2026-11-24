@@ -107,8 +107,8 @@ function warnings(fn: () => void): string[] {
 }
 
 describe('parseCollectItPage', () => {
-  const p1: CollectItPage = parseCollectItPage(P1);
-  const p8: CollectItPage = parseCollectItPage(P8);
+  const p1: CollectItPage = parseCollectItPage(P1, null);
+  const p8: CollectItPage = parseCollectItPage(P8, null);
 
   test('reads id, name, price, stock, url and picture of a base card', () => {
     const squid = p1.listings.find((l) => l.cardIds[0] === '12')!;
@@ -169,7 +169,8 @@ describe('parseCollectItPage', () => {
   describe('titles and links', () => {
     const withTitle = (title: string) =>
       parseCollectItPage(
-        firstBoxOnly(($, box) => box.find('.c-product-box-content-title').text(title))
+        firstBoxOnly(($, box) => box.find('.c-product-box-content-title').text(title)),
+        null
       ).listings[0];
 
     test('an XXL title maps to the XXL id', () => {
@@ -195,14 +196,15 @@ describe('parseCollectItPage', () => {
       const html = firstBoxOnly(($, box) =>
         box.find('a[href]').attr('href', '/1-Alex-Charakterkarte-Serie-3')
       );
-      expect(parseCollectItPage(html).listings[0]?.url).toBe(
+      expect(parseCollectItPage(html, null).listings[0]?.url).toBe(
         'https://www.collect-it.de/1-Alex-Charakterkarte-Serie-3'
       );
     });
 
     test('a box with a link but no title is skipped as invalid, naming its link', () => {
       const parsed = parseCollectItPage(
-        firstBoxOnly(($, box) => box.find('.c-product-box-content-title').remove())
+        firstBoxOnly(($, box) => box.find('.c-product-box-content-title').remove()),
+        null
       );
       expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
       expect(parsed.firstSkipped).toBe(
@@ -224,13 +226,16 @@ describe('parseCollectItPage', () => {
   });
 
   test('a product page is not a listing page', () => {
-    expect(parseCollectItPage(readFixture('collect-it-product-12.html')).productCount).toBe(0);
+    expect(parseCollectItPage(readFixture('collect-it-product-12.html'), null).productCount).toBe(
+      0
+    );
   });
 
   describe('availability', () => {
     const withAvailability = (href: string) =>
       parseCollectItPage(
-        firstBoxOnly(($, box) => box.find('link[itemprop="availability"]').attr('href', href))
+        firstBoxOnly(($, box) => box.find('link[itemprop="availability"]').attr('href', href)),
+        null
       );
     for (const [href, available] of [
       ['https://schema.org/InStock', true],
@@ -260,7 +265,8 @@ describe('parseCollectItPage', () => {
 
     test('a box without availability is an unreadable box', () => {
       const parsed = parseCollectItPage(
-        firstBoxOnly(($, box) => box.find('link[itemprop="availability"]').remove())
+        firstBoxOnly(($, box) => box.find('link[itemprop="availability"]').remove()),
+        null
       );
       expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
       expect(parsed.firstSkipped).toContain('no availability');
@@ -271,14 +277,14 @@ describe('parseCollectItPage', () => {
     const html = firstBoxOnly(($, box) =>
       box.find('.c-product-box-content-title').text('Sammelmappe - Serie 3')
     );
-    const parsed = parseCollectItPage(html);
+    const parsed = parseCollectItPage(html, null);
     expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedNoId: 1 });
     expect(parsed.firstSkipped).toContain('"Sammelmappe - Serie 3"');
   });
 
   test('skips and counts a product box without a link', () => {
     const html = firstBoxOnly(($, box) => box.find('a').removeAttr('href'));
-    const parsed = parseCollectItPage(html);
+    const parsed = parseCollectItPage(html, null);
     expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
     expect(parsed.firstSkipped).toContain('without a link');
     expect(parsed.firstSkipped).toContain('1 - Alex');
@@ -287,7 +293,7 @@ describe('parseCollectItPage', () => {
   test('a missing price is null with a warning, not a parse error', () => {
     const html = firstBoxOnly(($, box) => box.find('meta[itemprop="price"]').remove());
     let parsed: CollectItPage | undefined;
-    const warned = warnings(() => (parsed = parseCollectItPage(html)));
+    const warned = warnings(() => (parsed = parseCollectItPage(html, null)));
     expect(parsed?.listings[0]?.price).toBeNull();
     expect(warned.some((w) => w.includes('no price'))).toBe(true);
   });
@@ -298,7 +304,7 @@ describe('parseCollectItPage', () => {
         box.find('meta[itemprop="price"]').attr('content', raw)
       );
       let parsed: CollectItPage | undefined;
-      const warned = warnings(() => (parsed = parseCollectItPage(html)));
+      const warned = warnings(() => (parsed = parseCollectItPage(html, null)));
       expect(parsed?.listings[0]?.price).toBeNull();
       expect(warned.some((w) => w.includes(`"${raw}"`) && w.includes('1 - Alex'))).toBe(true);
     });
@@ -306,7 +312,10 @@ describe('parseCollectItPage', () => {
 
   test('a missing priceCurrency defaults to EUR', () => {
     const html = firstBoxOnly(($, box) => box.find('meta[itemprop="priceCurrency"]').remove());
-    expect(parseCollectItPage(html).listings[0]?.price).toEqual({ cents: 55, currency: 'EUR' });
+    expect(parseCollectItPage(html, null).listings[0]?.price).toEqual({
+      cents: 55,
+      currency: 'EUR',
+    });
   });
 
   test('the picture falls back to the <img> src, resolved against the shop', () => {
@@ -316,7 +325,7 @@ describe('parseCollectItPage', () => {
         .find('.c-product-box-thumbnail img')
         .attr('src', '/media/image/product/623985/sm/1-alex.jpg');
     });
-    expect(parseCollectItPage(html).listings[0]?.imageUrl).toBe(
+    expect(parseCollectItPage(html, null).listings[0]?.imageUrl).toBe(
       'https://www.collect-it.de/media/image/product/623985/sm/1-alex.jpg'
     );
   });
@@ -327,13 +336,13 @@ describe('parseCollectItPage', () => {
         .find('meta[itemprop="image"]')
         .attr('content', '/media/image/product/623985/md/1-alex.jpg')
     );
-    expect(parseCollectItPage(html).listings[0]?.imageUrl).toBe(
+    expect(parseCollectItPage(html, null).listings[0]?.imageUrl).toBe(
       'https://www.collect-it.de/media/image/product/623985/md/1-alex.jpg'
     );
   });
 
   test('a page without products and without a canonical link', () => {
-    expect(parseCollectItPage('<html>Just a moment...</html>')).toEqual({
+    expect(parseCollectItPage('<html>Just a moment...</html>', null)).toEqual({
       listings: [],
       productCount: 0,
       canonical: null,
@@ -353,7 +362,8 @@ describe('parseCollectItPage', () => {
 
   test('a link that is not a URL is an unreadable box, naming it', () => {
     const parsed = parseCollectItPage(
-      firstBoxOnly(($, box) => box.find('a[href]').attr('href', 'http://['))
+      firstBoxOnly(($, box) => box.find('a[href]').attr('href', 'http://[')),
+      null
     );
     expect(parsed).toMatchObject({ listings: [], productCount: 1, skippedInvalid: 1 });
     expect(parsed.firstSkipped).toContain('unreadable link "http://["');
@@ -363,7 +373,7 @@ describe('parseCollectItPage', () => {
     const $ = cheerio.load(P1);
     $('#product-list .c-product-box .c-product-box-content-title').slice(0, 3).text('Sammelmappe');
     let parsed: CollectItPage | undefined;
-    const warned = warnings(() => (parsed = parseCollectItPage($.html())));
+    const warned = warnings(() => (parsed = parseCollectItPage($.html(), null)));
     expect(parsed?.skippedNoId).toBe(3);
     const skips = warned.filter((w) => w.includes('skipped'));
     expect(skips).toHaveLength(1);
@@ -373,7 +383,8 @@ describe('parseCollectItPage', () => {
   test('a very long title is clipped in what the parser reports', () => {
     const long = 'X'.repeat(5000);
     const parsed = parseCollectItPage(
-      firstBoxOnly(($, box) => box.find('.c-product-box-content-title').text(long))
+      firstBoxOnly(($, box) => box.find('.c-product-box-content-title').text(long)),
+      null
     );
     expect(parsed.firstSkipped!.length).toBeLessThan(500);
     expect(parsed.firstSkipped).toContain('…');
@@ -553,7 +564,7 @@ describe('createCollectItFetcher', () => {
         [P1, true],
         [P8, false],
       ] as const) {
-        const parsed = parseCollectItPage(html);
+        const parsed = parseCollectItPage(html, null);
         expect(readArticleTotal(parsed.countText!)).toBe(235);
         if (hasNext) expect(parsed.productCount).toBe(30);
         else expect(parsed.productCount).toBeLessThanOrEqual(30);

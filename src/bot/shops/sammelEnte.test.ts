@@ -10,7 +10,7 @@ import { legoMinecraft3 } from '../collections/legoMinecraft3';
 const SERIES_3 = legoMinecraft3.shops['sammel-ente']!;
 
 describe('parseSammelEntePage', () => {
-  const p1 = parseSammelEntePage(readFixture('sammel-ente-p1.html'));
+  const p1 = parseSammelEntePage(readFixture('sammel-ente-p1.html'), null);
 
   test('reads the last page from the pagination', () => {
     expect(p1.lastPage).toBe(11);
@@ -63,7 +63,8 @@ describe('parseSammelEntePage', () => {
         box('LEGO Minecraft Serie 3 |#abc') +
         box('LEGO Minecraft Serie 3 | #000 Zero') +
         box('LEGO Minecraft Serie 3 Booster') +
-        box('Puzzle-Paket #1 (154 - 162)')
+        box('Puzzle-Paket #1 (154 - 162)'),
+      null
     );
     expect(parsed).toMatchObject({ productCount: 5, skippedNoId: 3, skippedInvalid: 0 });
     expect(parsed.listings).toEqual([]);
@@ -71,13 +72,14 @@ describe('parseSammelEntePage', () => {
 
   test('counts product boxes without a link or title as invalid', () => {
     const parsed = parseSammelEntePage(
-      '<div class="card product-box"><a class="product-name"></a></div>'
+      '<div class="card product-box"><a class="product-name"></a></div>',
+      null
     );
     expect(parsed).toMatchObject({ productCount: 1, skippedInvalid: 1, skippedNoId: 0 });
   });
 
   test('maps LE and XXL cards and skips puzzle packs on the last page', () => {
-    const p11 = parseSammelEntePage(readFixture('sammel-ente-p11.html'));
+    const p11 = parseSammelEntePage(readFixture('sammel-ente-p11.html'), null);
     expect(p11.lastPage).toBe(11);
     const ids = p11.listings.map((l) => l.cardIds[0]);
     expect(ids).toContain(cid('LE12'));
@@ -91,7 +93,7 @@ describe('parseSammelEntePage', () => {
   });
 
   test('a page that is not a shop page yields nothing and one page', () => {
-    expect(parseSammelEntePage('<html>Just a moment...</html>')).toEqual({
+    expect(parseSammelEntePage('<html>Just a moment...</html>', null)).toEqual({
       listings: [],
       lastPage: 1,
       productCount: 0,
@@ -129,7 +131,7 @@ describe('createSammelEnteFetcher', () => {
     const result = await adapter.fetchListings();
     const { listings } = result;
     // The series filter keeps every series 3 card of the saved pages, and excludes none.
-    expect(result.skippedExcluded).toBeUndefined();
+    expect(result.skippedExcluded).toBe(0);
     expect(listings).toHaveLength(
       new Set(
         [

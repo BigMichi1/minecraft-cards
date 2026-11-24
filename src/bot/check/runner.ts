@@ -46,6 +46,10 @@ export interface ShopSummary extends Pick<
 export interface RunSummary {
   startedAt: number;
   finishedAt: number;
+  /**
+   * Series 3's (LEGACY_COLLECTION) shop results, as in every row before collections; read and
+   * write only through runManager.shopEntry and setShopEntry.
+   */
   shops: Partial<Record<ShopId, ShopSummary>>;
   notified: number;
   dmFailures: number;

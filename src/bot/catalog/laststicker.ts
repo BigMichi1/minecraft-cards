@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { normalizeCardId, type CardId } from '../cards/cardId';
+import type { LaststickerSetOptions } from '../collections/ids';
 import type { FetchFn } from '../shops/types';
 import { fetchText } from '../utils/http';
 import { clipText } from '../utils/messageLimit';
@@ -37,12 +38,7 @@ export interface LaststickerRow {
 }
 
 /** How a collection's set page is read (CollectionDefinition.laststicker). */
-export interface LaststickerOptions {
-  /** `false`: laststicker has no scans of this set; rows carry no picture URL. */
-  readonly scans?: false;
-  /** A raw checklist number taken as this card id (series 2's bare `XXL` is `XXL1`). */
-  readonly numberAliases?: Readonly<Record<string, string>>;
-}
+export type LaststickerOptions = LaststickerSetOptions;
 
 /** A parsed set page. */
 export interface LaststickerSet {

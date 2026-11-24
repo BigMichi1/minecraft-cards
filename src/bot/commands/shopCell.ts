@@ -23,9 +23,12 @@ export interface CellContext {
   collection: CollectionId;
   /** The newest readable check run, and whether a newer record could not be read. */
   latest: LatestRun;
-  /** The shops this process checks for the collection; any other shop is not enabled. */
+  /**
+   * The shops this process checks for `collection` (`enabledFor(map, collection)`, as every
+   * command builds it); any other shop is not enabled.
+   */
   enabledShops: readonly ShopId[];
-  /** Stored listings carrying the cards asked about (others are ignored). */
+  /** Stored listings of `collection` carrying the cards asked about (others are ignored). */
   listings: StoredListing[];
   /** Current time; an auction whose end is before it counts as ended. */
   now: number;

@@ -479,9 +479,9 @@ export const catalogManager = {
   /**
    * Apply a laststicker checklist to the collection, in one transaction: insert missing cards,
    * set name, kind, variant and scan URL of every laststicker card (and the puzzle flag for a
-   * piece marker or a section starting `Puzzlekarte`, never cleared). Never deletes a card and never
-   * changes a manual card's name, picture or kind; a manual card the rows list is reported
-   * (`nowListed`) until markListedNoted. More stored cards missing than `maxVanished` is a
+   * piece marker or a section starting `Puzzlekarte`, never cleared). Never deletes a card and
+   * never changes a manual card's name, picture or kind; a manual card the rows list is
+   * reported (`nowListed`) until markListedNoted. More stored cards missing than `maxVanished` is a
    * CatalogLayoutError and changes nothing.
    */
   syncCollection(

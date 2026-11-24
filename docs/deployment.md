@@ -63,8 +63,8 @@ Podman works the same way: `podman build -t minecraft-cards .`, then
 The container healthcheck is `pgrep -f "[b]ot/bot\.ts"` (the bracket keeps the check from
 matching itself): it reports whether the process lives, not whether Discord is reachable.
 
-These reach the admin as DMs. Throttled alerts go out at most once a day per kind (per shop for
-shop alerts): shop failures and unparseable pages, a shop whose card listings all read as
+These reach the admin as DMs. Throttled alerts go out at most once a day per kind (per shop and
+collection for shop alerts): shop failures and unparseable pages, a shop whose card listings all read as
 unavailable (a changed stock marker), a shop returning less than half of its peak count (the
 highest over its successful runs of the last 3 days: a pagination or markup change; a lasting
 drop keeps alerting daily until its last healthy run is older than 3 days, about three alerts),
@@ -75,8 +75,9 @@ next check; one still unsent after a day also logs a warning, once a day.
 
 ## First start
 
-The starter catalog (228 base cards, LE1-LE22, XXL1) is seeded on the first start, and the
-first check run syncs it from laststicker (`/admin catalog sync` runs that now).
+Series 3's starter catalog (228 base cards, LE1-LE22, XXL1) is seeded on the first start, and
+the first check run syncs it from laststicker (`/admin catalog sync collection:<collection>`
+runs that now).
 `/admin catalog add` covers a card laststicker lacks; `/admin catalog import` remains for a
 collection laststicker cannot serve (it never removes manual cards, and a synced collection's
 next sync brings laststicker's cards back). Run
@@ -84,7 +85,7 @@ next sync brings laststicker's cards back). Run
 listings on hold after a report.
 
 Series 1 and 2 have no starter catalog: their cards arrive with their first laststicker sync
-(the first check run, or `/admin catalog sync` now), and `/missing set` for them refuses every
+(the first check run, or `/admin catalog sync collection:lego-minecraft-1` and `-2` now), and `/missing set` for them refuses every
 card until then. sammel-ente sells two series 2 cards laststicker lacks (LE21 "Chicken Jockey",
 LE22 "Enderman"); add them with `/admin catalog add collection:lego-minecraft-2` if they are
 wanted.

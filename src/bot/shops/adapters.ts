@@ -15,7 +15,11 @@ import { createSammelEnteFetcher } from './sammelEnte';
 import type { EnabledShops } from '../commands/shopCell';
 import { SHOP_IDS, type FetchFn, type ShopAdapter, type ShopFetcher, type ShopId } from './types';
 
-/** Between two page requests to one shop, also across collections (CLAUDE.md, shop requests). */
+/**
+ * Between two page requests to one shop, also across collections (CLAUDE.md, shop requests).
+ * The fetchers keep their own 1500 ms sleep between their pages too; the pacer adds the wait
+ * between one collection's last page and the next one's first (it waits only what is left).
+ */
 const SHOP_DELAY_MS = 1500;
 
 /** Each shop's host: every fetcher of one shop shares one pacer for it. */

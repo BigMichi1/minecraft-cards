@@ -50,7 +50,7 @@ const cacheDir = process.env.MODEL_CACHE_DIR || path.join(process.cwd(), 'models
 async function loadListings(): Promise<{ sammel: Listing[]; blue: Listing[] }> {
   if (pagesArg === '1') {
     return {
-      sammel: parseSammelEntePage(await fetchText(SAMMEL_ENTE_P1)).listings,
+      sammel: parseSammelEntePage(await fetchText(SAMMEL_ENTE_P1), null).listings,
       blue: parseBlueOceanPage(await fetchText(BLUE_OCEAN_P1)).listings,
     };
   }

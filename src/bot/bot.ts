@@ -19,6 +19,8 @@ import {
   handleReportReason,
   retryUnsentReports,
 } from './interactions/report';
+import { handleAdminConfirm, handleAdminDismiss } from './interactions/adminActions';
+import { handleRightButton } from './interactions/right';
 import { dispatchButton, isReportModal } from './interactions/router';
 import { createShutdown, runChatCommand, type ChatCommand } from './lifecycle';
 import {
@@ -170,6 +172,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await dispatchButton(interaction.customId, {
         report: () => handleReportButton(interaction),
         'report-reason': () => handleReportReason(interaction),
+        right: () => handleRightButton(interaction, dmAdmin),
+        'admin-confirm': () => handleAdminConfirm(interaction, { adminId: config.botAdminId }),
+        'admin-dismiss': () => handleAdminDismiss(interaction, { adminId: config.botAdminId }),
         // No store argument: the module-level store is the one /admin catalog import fills.
         catalog: () => handleCatalogButton(interaction, { adminId: config.botAdminId }),
         stock: () => stockCommand.handleStockButton(interaction, { enabledShops }),

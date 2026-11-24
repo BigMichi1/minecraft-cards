@@ -9,16 +9,25 @@ describe('buttonRoute', () => {
     ['catalog-cancel:abc', 'catalog'],
     ['stock:2:all', 'stock'],
     ['stock:anything', 'stock'],
+    ['right:5', 'right'],
+    ['admin-confirm:5:12', 'admin-confirm'],
+    ['admin-dismiss:5', 'admin-dismiss'],
   ])('routes %p to %p', (customId, route) => {
     expect(buttonRoute(customId)).toBe(route);
   });
 
-  test.each(['codes:1', 'reportx:1', 'report-modal:1:other', 'catalog:abc', 'stocks:1:all', ''])(
-    'ignores %p',
-    (customId) => {
-      expect(buttonRoute(customId)).toBeNull();
-    }
-  );
+  test.each([
+    'codes:1',
+    'reportx:1',
+    'report-modal:1:other',
+    'catalog:abc',
+    'stocks:1:all',
+    'rights:1',
+    'admin-confirmx:1',
+    '',
+  ])('ignores %p', (customId) => {
+    expect(buttonRoute(customId)).toBeNull();
+  });
 });
 
 describe('isReportModal', () => {
@@ -40,6 +49,9 @@ describe('dispatchButton', () => {
       handlers: {
         report: h('report'),
         'report-reason': h('report-reason'),
+        right: h('right'),
+        'admin-confirm': h('admin-confirm'),
+        'admin-dismiss': h('admin-dismiss'),
         catalog: h('catalog'),
         stock: h('stock'),
       },
@@ -51,6 +63,9 @@ describe('dispatchButton', () => {
     ['report:12', 'report'],
     ['report-reason:12:wrong_number', 'report-reason'],
     ['catalog-save:abc', 'catalog'],
+    ['right:5', 'right'],
+    ['admin-confirm:5:12', 'admin-confirm'],
+    ['admin-dismiss:5', 'admin-dismiss'],
   ])('%p runs only the %p handler', async (customId, route) => {
     const { called, handlers: hs } = handlers();
     expect(await dispatchButton(customId, hs)).toBe(true);

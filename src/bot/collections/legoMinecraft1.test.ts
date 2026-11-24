@@ -18,6 +18,12 @@ describe('legoMinecraft1', () => {
             'https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten',
           series: 'Serie 1',
         },
+        'blue-ocean': {
+          categoryPath: 'trading-card-collection-serie-1',
+          productCode: '702351',
+          picture: '_tcc-01',
+          title: /\bTCC\s*1\b/i,
+        },
         ebay: {
           queries: ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'],
           series: /\b(?:Series?|Staffel)\s*1\b|\bTCC\s*1\b/i,

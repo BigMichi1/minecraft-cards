@@ -117,11 +117,17 @@ describe('createShopAdapters', () => {
     );
   });
 
-  test('blue-ocean or eBay for another collection than series 3 is refused at start', () => {
-    const bad = { ...legoMinecraft1, shops: { 'blue-ocean': {} } };
-    expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
-      'lego-minecraft-1: blue-ocean is read for lego-minecraft-3 only'
+  test('blue-ocean settings without a product code, or with a stateful title, are refused at start', () => {
+    const noCode = { ...legoMinecraft1, shops: { 'blue-ocean': { productCode: '' } } };
+    expect(() => createShopAdapters(null, undefined, { collections: [noCode] })).toThrow(
+      'lego-minecraft-1: blue-ocean settings without a product code'
     );
+    for (const title of [/TCC 1/g, /TCC 1/y]) {
+      const bad = { ...legoMinecraft1, shops: { 'blue-ocean': { productCode: '702351', title } } };
+      expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+        'lego-minecraft-1: the blue-ocean title must not use the g or y flag'
+      );
+    }
   });
 
   test('a collect-it category on another host is refused', () => {

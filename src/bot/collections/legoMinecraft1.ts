@@ -15,6 +15,14 @@ export const legoMinecraft1: CollectionDefinition<'lego-minecraft-1'> = {
         'https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten',
       series: 'Serie 1',
     },
+    // "Nummer 250 I Schildkröte I LEGO Minecraft TCC 1", picture 250_lego_minecraft_tcc-01_de.jpg;
+    // #1-9 at root URLs ("…-i-lego-minecraft-tcc-1-702351-01") (2026-11-24 probe).
+    'blue-ocean': {
+      categoryPath: 'trading-card-collection-serie-1',
+      productCode: '702351',
+      picture: '_tcc-01',
+      title: /\bTCC\s*1\b/i,
+    },
     // "LEGO Minecraft Serie 1 Trading Card 134 - Neon Lohe - Mob Karte" (2026-11-24 probe).
     ebay: {
       queries: ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'],

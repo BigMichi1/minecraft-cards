@@ -22,12 +22,12 @@
 
 The category mixes four product families. Each is told apart by its URL and its picture file:
 
-| Series | Category path in the URL | Root URL code | Picture file | Title |
-| --- | --- | --- | --- | --- |
-| 1 | `/lego/lego-minecraft/trading-card-collection-serie-1/18166/nummer-250-i-…` | `/nummer-009-i-comic-alex-i-lego-minecraft-tcc-1-702351-09` | `250_lego_minecraft_tcc-01_de.jpg` | `Nummer 250 I Schildkröte I LEGO Minecraft TCC 1` |
-| 2 | `/lego/lego-minecraft/trading-card-collection-boom-bastic/22122/nummer-266-i-…` | `/nummer-009-i-zombie-00702502-09` | `249_lego_minecraft_tcc-02.jpg` | `Nummer 266 I Never trust this chef` (no series word) |
-| 3 | none | `/nr.-12-team-wolf-skin-…-tcc-on-fire-2dd00088-16` | as today | `Nr. 12 Team Wolf Skin … LEGO Minecraft TCC "On Fire"` (the title's Nr. is wrong; the URL suffix is the id, as today) |
-| stickers | `/lego/lego-minecraft/stickerserie-1/…` | `/nummer-009-i-lego-minecraft-sticker-00702506-09` | `…_sticker2025.jpg` | `Nummer 165 I LEGO® Minecraft Sticker` |
+| Series   | Category path in the URL                                                        | Root URL code                                               | Picture file                       | Title                                                                                                                 |
+| -------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| 1        | `/lego/lego-minecraft/trading-card-collection-serie-1/18166/nummer-250-i-…`     | `/nummer-009-i-comic-alex-i-lego-minecraft-tcc-1-702351-09` | `250_lego_minecraft_tcc-01_de.jpg` | `Nummer 250 I Schildkröte I LEGO Minecraft TCC 1`                                                                     |
+| 2        | `/lego/lego-minecraft/trading-card-collection-boom-bastic/22122/nummer-266-i-…` | `/nummer-009-i-zombie-00702502-09`                          | `249_lego_minecraft_tcc-02.jpg`    | `Nummer 266 I Never trust this chef` (no series word)                                                                 |
+| 3        | none                                                                            | `/nr.-12-team-wolf-skin-…-tcc-on-fire-2dd00088-16`          | as today                           | `Nr. 12 Team Wolf Skin … LEGO Minecraft TCC "On Fire"` (the title's Nr. is wrong; the URL suffix is the id, as today) |
+| stickers | `/lego/lego-minecraft/stickerserie-1/…`                                         | `/nummer-009-i-lego-minecraft-sticker-00702506-09`          | `…_sticker2025.jpg`                | `Nummer 165 I LEGO® Minecraft Sticker`                                                                                |
 
 **Counts per series:**
 
@@ -138,6 +138,7 @@ The category mixes four product families. Each is told apart by its URL and its 
    - the title or picture names another collection: another collection's `title` matches, or the picture contains another collection's `picture`.
 
    A failed placement is counted `skippedExcluded`.
+
 3. **Read the card id.**
    - **Series 3:** the URL suffix id and `idConflict` against the picture's `P<id>`, as today.
    - **Collections with a `categoryPath`:** the title's `Nummer NNN`, normalized. It must equal the URL's number, which is the slug's `nummer-NNN` or the suffix `-NN`. Otherwise the product is counted `skippedNoId` and logged at warn. A pack (no `Nummer`) is not a card and is not counted.
@@ -153,6 +154,7 @@ The category mixes four product families. Each is told apart by its URL and its 
     - A series 1 URL without `TCC 1` in its title.
 
     Each gives no listing and `skippedExcluded: 1`.
+
   - `a title number other than the URL's gives no id` (Review Focus 3): `Nummer 013` at `…/nummer-012-i-…` gives no listing and `skippedNoId: 1`.
   - The existing series 3 tests pass with each listing's `collection: 'lego-minecraft-3'` (Review Focus 5).
 - [ ] **Step 2:** Run `./bin/mise run test src/bot/shops/blueOcean.test.ts`. Expected: FAIL.

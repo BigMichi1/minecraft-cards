@@ -52,14 +52,33 @@ export interface EbayCollectionSettings {
   readonly series: RegExp;
 }
 
+/**
+ * How blue-ocean's one sticker-cards walk tells a collection's products: each is placed by its URL
+ * (the category path, or the product code of a root URL), and a title or picture naming another
+ * collection contradicts that placement (docs/shops.md).
+ */
+export interface BlueOceanSettings {
+  /** The category path segment of a product URL (`trading-card-collection-serie-1`). */
+  readonly categoryPath?: string;
+  /** The product code before a root URL's card number (`702351` in `…-702351-09`). */
+  readonly productCode: string;
+  /** The picture file part naming the series (`_tcc-01`); series 3 has none. */
+  readonly picture?: string;
+  /**
+   * A title of the collection must match this (series 1 `TCC 1`, series 3 `On Fire`; series 2
+   * titles name no series). No `g` or `y` flag (refused at start).
+   */
+  readonly title?: RegExp;
+}
+
 /** A collection's settings per shop; a collection lists only the shops that sell it. */
 export interface CollectionShops {
   /** The category page (`?p=N` pages). */
   readonly 'sammel-ente'?: CategoryShopSettings;
   /** The single-card category (walked by `rel="next"`). */
   readonly 'collect-it'?: CategoryShopSettings;
-  /** Series 3 only, today's category (PR 3c reads the TCC categories). */
-  readonly 'blue-ocean'?: Record<string, never>;
+  /** How the shared sticker-cards walk places the collection's products. */
+  readonly 'blue-ocean'?: BlueOceanSettings;
   /** The collection's eBay searches and the series marker its titles name (`Serie 1`). */
   readonly ebay?: EbayCollectionSettings;
 }

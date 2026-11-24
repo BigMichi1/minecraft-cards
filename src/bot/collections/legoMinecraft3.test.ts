@@ -16,7 +16,7 @@ describe('legoMinecraft3', () => {
           category: 'https://shop-sammel-ente.de/Minecraft/Serie-3/',
           series: 'Serie 3',
         },
-        'blue-ocean': {},
+        'blue-ocean': { productCode: '2dd00088', title: /on fire/i },
         'collect-it': {
           category: 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten',
           series: 'Serie 3',

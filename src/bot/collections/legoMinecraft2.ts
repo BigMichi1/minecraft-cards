@@ -11,11 +11,18 @@ export const legoMinecraft2: CollectionDefinition<'lego-minecraft-2'> = {
     numberAliases: { XXL: 'XXL1' },
   },
   referenceFallbackShop: 'sammel-ente',
-  // collect-it has no series 2 single-card category (2026-11-24); blue-ocean's comes with PR 3c.
+  // collect-it has no series 2 single-card category (2026-11-24).
   shops: {
     'sammel-ente': {
       category: 'https://shop-sammel-ente.de/Minecraft/Serie-2/',
       series: 'Serie 2',
+    },
+    // "Nummer 266 I Never trust this chef" (no series word), picture 266_lego_minecraft_tcc-02.jpg;
+    // #1-9 at root URLs ("…-i-alex-00702502-01") (2026-11-24 probe).
+    'blue-ocean': {
+      categoryPath: 'trading-card-collection-boom-bastic',
+      productCode: '00702502',
+      picture: '_tcc-02',
     },
     // Mostly category lots ("Sammelkarten Serie 2\"NETHER\""), a few "Boom-Bastic" singles.
     ebay: {

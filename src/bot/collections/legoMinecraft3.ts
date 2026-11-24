@@ -15,7 +15,8 @@ export const legoMinecraft3: CollectionDefinition<'lego-minecraft-3'> = {
       category: 'https://shop-sammel-ente.de/Minecraft/Serie-3/',
       series: 'Serie 3',
     },
-    'blue-ocean': {},
+    // Root URLs only ("…-tcc-on-fire-2dd00088-16"); the suffix is the card id, not the title's Nr.
+    'blue-ocean': { productCode: '2dd00088', title: /on fire/i },
     'collect-it': {
       category: 'https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten',
       series: 'Serie 3',

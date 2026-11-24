@@ -45,8 +45,8 @@ export interface AdapterDeps {
 
 /**
  * Throws for settings a run would get wrong: a category on another host than its shop (it would
- * skip the shop's pacer), blue-ocean for a collection its series 3 parser does not read (it
- * would store series 3 listings under it), or eBay settings without a search (the collection's
+ * skip the shop's pacer), blue-ocean settings without a product code (nothing would be placed in
+ * the collection) or with a `g`/`y` title, or eBay settings without a search (the collection's
  * listings would be marked gone, never searched) or with a `g`/`y` marker (`test` would keep
  * state between titles).
  */
@@ -59,8 +59,12 @@ function checkSettings(definition: CollectionDefinition): void {
       throw new Error(`${definition.id}: ${shop} category is on ${host}, not ${SHOP_HOSTS[shop]}`);
     }
   }
-  if (definition.shops['blue-ocean'] && definition.id !== LEGACY_COLLECTION) {
-    throw new Error(`${definition.id}: blue-ocean is read for ${LEGACY_COLLECTION} only`);
+  const blueOcean = definition.shops['blue-ocean'];
+  if (blueOcean && blueOcean.productCode.length === 0) {
+    throw new Error(`${definition.id}: blue-ocean settings without a product code`);
+  }
+  if (blueOcean?.title && (blueOcean.title.global || blueOcean.title.sticky)) {
+    throw new Error(`${definition.id}: the blue-ocean title must not use the g or y flag`);
   }
   const ebay = definition.shops.ebay;
   if (ebay && ebay.queries.length === 0) {
@@ -100,7 +104,10 @@ function fetcherFor(
       return settings ? createCollectItFetcher(settings, fetchFn) : null;
     }
     case 'blue-ocean':
-      return definition.shops['blue-ocean'] ? createBlueOceanFetcher(fetchFn) : null;
+      // The parser reads series 3 only until the shared walk reads every collection's settings.
+      return definition.shops['blue-ocean'] && definition.id === LEGACY_COLLECTION
+        ? createBlueOceanFetcher(fetchFn)
+        : null;
   }
 }
 

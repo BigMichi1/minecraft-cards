@@ -12,6 +12,7 @@ import { cid } from '../../test/cardIds';
 import { runOf, storedListing as listing } from '../../test/listings';
 import logger from '../utils/logger';
 import { data, execute, handleStockButton } from './stock';
+import { UNKNOWN_COLLECTION } from './collectionOption';
 
 const CTX = { enabledShops: ['sammel-ente', 'blue-ocean'] } as const;
 
@@ -96,13 +97,13 @@ describe('/stock', () => {
 
   test('an unknown collection is refused before anything is read', async () => {
     await execute(command('u1', null, 'lego-minecraft-9'), CTX);
-    expect(replies).toEqual([{ content: 'Unknown collection.', flags: MessageFlags.Ephemeral }]);
+    expect(replies).toEqual([{ content: UNKNOWN_COLLECTION, flags: MessageFlags.Ephemeral }]);
   });
 
   test('a paging button of another collection is refused', async () => {
     await handleStockButton(button('u1', 'stock:lego-minecraft-9:2:all'), CTX);
     expect(updates).toEqual([]);
-    expect(replies[0]!.content).toBe('This button is not valid.');
+    expect(replies[0]!.content).toBe('This button is not valid or out of date; run /stock again.');
   });
 
   test('without a filter: page 1 of the whole catalog, ephemeral, with paging buttons', async () => {
@@ -236,8 +237,8 @@ describe('/stock', () => {
     }
     expect(updates).toEqual([]);
     expect(replies.map((r) => [r.content, r.flags])).toEqual([
-      ['This button is not valid.', MessageFlags.Ephemeral],
-      ['This button is not valid.', MessageFlags.Ephemeral],
+      ['This button is not valid or out of date; run /stock again.', MessageFlags.Ephemeral],
+      ['This button is not valid or out of date; run /stock again.', MessageFlags.Ephemeral],
     ]);
   });
 

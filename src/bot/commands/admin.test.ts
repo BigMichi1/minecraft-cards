@@ -22,6 +22,7 @@ import { userManager } from '../database/userManager';
 import type { Listing } from '../shops/types';
 import logger from '../utils/logger';
 import { data, execute as adminExecute, formatSummary, type AdminContext } from './admin';
+import { UNKNOWN_COLLECTION } from './collectionOption';
 import { importStore } from '../interactions/catalogImport';
 import type { CollectionId } from '../collections/ids';
 import { cid, ids } from '../../test/cardIds';
@@ -225,13 +226,13 @@ describe('/admin', () => {
       fakeAdmin(undefined, 'map', { url: blue12.url, cards: '8', collection: 'lego-minecraft-9' }),
       ctx
     );
-    expect(lastReply()).toEqual({ content: 'Unknown collection.', flags: MessageFlags.Ephemeral });
+    expect(lastReply()).toEqual({ content: UNKNOWN_COLLECTION, flags: MessageFlags.Ephemeral });
     expect(listingManager.getByUrl(blue12.url)!.cardIds).toEqual([cid('12')]);
     await adminExecute(
       fakeAdmin('catalog', 'import', { list: '1, 2', collection: 'lego-minecraft-9' }),
       ctx
     );
-    expect(lastReply()).toEqual({ content: 'Unknown collection.', flags: MessageFlags.Ephemeral });
+    expect(lastReply()).toEqual({ content: UNKNOWN_COLLECTION, flags: MessageFlags.Ephemeral });
   });
 
   test('map with an unknown card or URL changes nothing', async () => {

@@ -65,18 +65,31 @@ const FILTER_LABEL: Record<StockFilter, string> = {
 };
 
 const EMPTY: Record<StockFilter, string> = {
-  all: 'The catalog has no cards.',
+  all: 'This collection has no cards.',
   missing: 'You have no missing cards on your list.',
   'in-stock': 'No card is in stock in any enabled shop right now.',
 };
 
-/** Collection ids are slugs, so they hold no regex syntax and no `:`. */
+/** Collection ids are slugs (checked in `collections/ids.test.ts`): no regex syntax, no `:`. */
 const CUSTOM_ID = new RegExp(
   `^stock:(?:(${COLLECTION_IDS.join('|')}):)?([1-9]\\d{0,${MAX_PAGE_DIGITS - 1}}):(${STOCK_FILTERS.join('|')})$`
 );
 
-/** The custom id of a paging button: `stock:<collection>:<page>:<filter>`. */
-export function stockCustomId(collection: CollectionId, page: number, filter: StockFilter): string {
+/** What a paging button opens: one page of one filter of one collection. */
+export interface StockButton {
+  readonly collection: CollectionId;
+  readonly page: number;
+  readonly filter: StockFilter;
+}
+
+/**
+ * The custom id of a paging button: `stock:<collection>:<page>:<filter>`. A page parseStockCustomId
+ * would refuse (not a whole number from 1 to 9999) throws, rather than build a dead button.
+ */
+export function stockCustomId({ collection, page, filter }: StockButton): string {
+  if (!Number.isInteger(page) || page < 1 || page >= 10 ** MAX_PAGE_DIGITS) {
+    throw new RangeError(`/stock: page ${page} does not fit a button`);
+  }
   return `stock:${collection}:${page}:${filter}`;
 }
 
@@ -86,9 +99,7 @@ export function stockCustomId(collection: CollectionId, page: number, filter: St
  * collection, page 1-9999, a known filter). A button sent before collections
  * (`stock:<page>:<filter>`) is one of LEGACY_COLLECTION.
  */
-export function parseStockCustomId(
-  customId: string
-): { collection: CollectionId; page: number; filter: StockFilter } | null {
+export function parseStockCustomId(customId: string): StockButton | null {
   const match = CUSTOM_ID.exec(customId);
   if (!match) return null;
   return {
@@ -163,12 +174,12 @@ function pagingRow(collection: CollectionId, page: number, pages: number, filter
   // At the ends the disabled button keeps a distinct id: Discord rejects duplicate custom ids.
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(stockCustomId(collection, Math.max(1, page - 1), filter))
+      .setCustomId(stockCustomId({ collection, page: Math.max(1, page - 1), filter }))
       .setLabel('◀')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === 1),
     new ButtonBuilder()
-      .setCustomId(stockCustomId(collection, Math.min(pages, page + 1), filter))
+      .setCustomId(stockCustomId({ collection, page: Math.min(pages, page + 1), filter }))
       .setLabel('▶')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === pages)

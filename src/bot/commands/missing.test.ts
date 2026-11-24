@@ -9,6 +9,7 @@ import { cid } from '../../test/cardIds';
 import { catalogManager } from '../database/catalogManager';
 import logger from '../utils/logger';
 import { execute as executeWith, data } from './missing';
+import { UNKNOWN_COLLECTION } from './collectionOption';
 
 let replies: Array<{ content?: string; flags?: unknown; embeds?: unknown[] }> = [];
 
@@ -85,7 +86,7 @@ describe('/missing', () => {
     for (const sub of ['set', 'add', 'remove', 'list', 'clear', 'status']) {
       await execute(fakeInteraction('u1', sub, '12', 'lego-minecraft-9'));
       expect(lastReply()).toMatchObject({
-        content: 'Unknown collection.',
+        content: UNKNOWN_COLLECTION,
         flags: MessageFlags.Ephemeral,
       });
     }

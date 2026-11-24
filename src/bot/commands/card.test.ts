@@ -13,6 +13,7 @@ import { cid } from '../../test/cardIds';
 import { runOf, storedListing as listing } from '../../test/listings';
 import logger from '../utils/logger';
 import { data, execute, type CardContext } from './card';
+import { UNKNOWN_COLLECTION } from './collectionOption';
 
 const REF = 'https://shop-sammel-ente.de/media/mnc3_12.jpg';
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
@@ -130,7 +131,7 @@ describe('/card', () => {
     try {
       await execute(command('12', null, 'lego-minecraft-9'), ctx());
       expect(read).not.toHaveBeenCalled();
-      expect(edits).toEqual([{ content: 'Unknown collection.', embeds: [], components: [] }]);
+      expect(edits).toEqual([{ content: UNKNOWN_COLLECTION, embeds: [], components: [] }]);
     } finally {
       read.mockRestore();
     }

@@ -187,7 +187,7 @@ describe('buildStockPage', () => {
       'No card is in stock in any enabled shop right now.'
     );
     expect(empty('in-stock', ids('12')).components).toEqual([]);
-    expect(empty('all').content).toBe('The catalog has no cards.');
+    expect(empty('all').content).toBe('This collection has no cards.');
   });
 
   describe('paging over the full catalog', () => {
@@ -354,12 +354,17 @@ describe('buildStockPage', () => {
 describe('stock custom ids', () => {
   test('round trip for every filter', () => {
     for (const filter of STOCK_FILTERS) {
-      expect(parseStockCustomId(stockCustomId('lego-minecraft-3', 3, filter))).toEqual({
-        collection: 'lego-minecraft-3',
-        page: 3,
-        filter,
-      });
+      const button = { collection: 'lego-minecraft-3', page: 3, filter } as const;
+      expect(parseStockCustomId(stockCustomId(button))).toEqual(button);
     }
+    const last = { collection: 'lego-minecraft-3', page: 9999, filter: 'all' } as const;
+    expect(parseStockCustomId(stockCustomId(last))).toEqual(last);
+  });
+
+  test.each([0, -1, 1.5, 10_000])('refuses to build a button for page %p', (page) => {
+    expect(() => stockCustomId({ collection: 'lego-minecraft-3', page, filter: 'all' })).toThrow(
+      RangeError
+    );
   });
 
   test('a button sent before collections (stock:<page>:<filter>) is lego-minecraft-3', () => {

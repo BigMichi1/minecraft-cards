@@ -107,7 +107,7 @@ export async function handleStockButton(
     if (!parsed) {
       logger.warn(`[STOCK BUTTON] invalid custom id ${JSON.stringify(interaction.customId)}`);
       await interaction.reply({
-        content: 'This button is not valid.',
+        content: 'This button is not valid or out of date; run /stock again.',
         flags: MessageFlags.Ephemeral,
       });
       return;

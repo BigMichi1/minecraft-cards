@@ -1,13 +1,19 @@
 import type { ChatInputCommandInteraction, SlashCommandStringOption } from 'discord.js';
 import { isCollectionId, type CollectionId } from '../collections/ids';
-import { collectionChoices } from '../collections/index';
-
-/** The reply when a command's collection is not one of the registry's. */
-export const UNKNOWN_COLLECTION = 'Unknown collection.';
+import { COLLECTIONS, collectionChoices } from '../collections/index';
+import logger from '../utils/logger';
 
 /**
- * The `collection` option of every card command: required, one choice per collection. Pass it
- * first to `addStringOption`, as Discord wants required options before optional ones.
+ * The reply when a command's collection is missing or not one of the registry's: most likely
+ * Discord still shows an older registration of the command.
+ */
+export const UNKNOWN_COLLECTION = `Unknown collection. Discord may show an outdated command: reopen Discord and pick one of: ${COLLECTIONS.map((c) => c.name).join(', ')}.`;
+
+/**
+ * The `collection` option of every card command (`/missing *`, `/stock`, `/card`, `/admin map`,
+ * `/admin catalog import`): required, one choice per collection. Add it before any optional
+ * option (Discord rejects a required option after an optional one); every command adds it
+ * first.
  */
 export function collectionOption(o: SlashCommandStringOption): SlashCommandStringOption {
   return o
@@ -18,10 +24,15 @@ export function collectionOption(o: SlashCommandStringOption): SlashCommandStrin
 }
 
 /**
- * The collection the user chose, or null when the value is missing or not in the registry (a
- * stale client or a crafted interaction); the caller then answers UNKNOWN_COLLECTION.
+ * The collection the user chose, or null when the value is missing or not in the registry (an
+ * outdated command registration, or a crafted interaction); that case is logged, and the caller
+ * answers UNKNOWN_COLLECTION.
  */
 export function readCollection(i: ChatInputCommandInteraction): CollectionId | null {
   const value = i.options.getString('collection');
-  return value !== null && isCollectionId(value) ? value : null;
+  if (value !== null && isCollectionId(value)) return value;
+  logger.warn(
+    `[COLLECTION] /${i.commandName}: ${value === null ? 'no collection' : `unknown collection ${JSON.stringify(value)}`} (an outdated command?)`
+  );
+  return null;
 }

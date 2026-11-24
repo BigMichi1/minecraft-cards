@@ -211,6 +211,48 @@ describe('runCheck', () => {
     }
   });
 
+  test('the catalog sync runs before the first shop, and a failing one stops nothing', async () => {
+    const order: string[] = [];
+    const shop: ShopAdapter = {
+      id: 'blue-ocean',
+      collection: 'lego-minecraft-3',
+      fetchListings: async () => {
+        order.push('shop');
+        return { listings: [blue12] };
+      },
+    };
+    await runCheck(
+      depsWith([shop], {
+        syncCatalogs: async () => {
+          order.push('sync');
+        },
+      })
+    );
+    expect(order).toEqual(['sync', 'shop']);
+    const s = await runCheck(
+      depsWith([shop], {
+        syncCatalogs: async () => {
+          throw new Error('laststicker down');
+        },
+      })
+    );
+    expect(order).toEqual(['sync', 'shop', 'shop']);
+    expect(s.error).toBeUndefined();
+  });
+
+  test('no wanted cards: no catalog sync either', async () => {
+    userManager.clearList('u1', 'lego-minecraft-3');
+    let synced = 0;
+    await runCheck(
+      depsWith([], {
+        syncCatalogs: async () => {
+          synced++;
+        },
+      })
+    );
+    expect(synced).toBe(0);
+  });
+
   test('no wanted cards means no fetch but the run is recorded', async () => {
     userManager.clearList('u1', 'lego-minecraft-3');
     const s = await runCheck(depsWith([ok('blue-ocean', [blue12])]));

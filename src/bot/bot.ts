@@ -30,6 +30,7 @@ import {
 } from './matcher/embedder';
 import { createDiscordSender } from './notify/sender';
 import { createShopAdapters } from './shops/adapters';
+import { syncCatalogs } from './catalog/sync';
 import { errorMessage } from './utils/async';
 import { replyWithError } from './utils/interactionReply';
 import logger, { logError } from './utils/logger';
@@ -93,6 +94,8 @@ const { shutdown, isShuttingDown } = createShutdown({
 });
 
 const alertAdmin = (text: string) => dmAdmin(text);
+/** Throttled admin alerts outside a check run's own (catalog sync). */
+const runAlert = throttledAlert(alertAdmin, Date.now);
 const runDeps: RunDeps = {
   adapters,
   embedder,
@@ -107,6 +110,7 @@ const runDeps: RunDeps = {
   retryReports: () => retryUnsentReports(dmAdminListing),
   // A failing reference picture is tried again once a day, across runs.
   referenceFailures: new Map(),
+  syncCatalogs: () => syncCatalogs({ now: Date.now, alert: runAlert }),
 };
 const scheduler = createScheduler(() => runCheck(runDeps), config.checkIntervalMs);
 stopScheduler = () => scheduler.stop();

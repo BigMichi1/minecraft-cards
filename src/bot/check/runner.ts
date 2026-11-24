@@ -73,6 +73,11 @@ export interface RunDeps {
    * IMAGE_RETRY_MS. Without it every run tries again.
    */
   referenceFailures?: Map<string, number>;
+  /**
+   * Sync the catalogs that are due from laststicker (catalog/sync.ts), before the shops read
+   * the names; its own failures are alerted there. A rejection is logged and the run goes on.
+   */
+  syncCatalogs?: () => Promise<unknown>;
 }
 
 /** A picture that could not be loaded is tried again at most once per day. */
@@ -448,6 +453,11 @@ export async function runCheck(deps: RunDeps): Promise<RunSummary> {
   try {
     const wanted = userManager.allWantedIds();
     if (wanted.size > 0) {
+      try {
+        await deps.syncCatalogs?.();
+      } catch (error) {
+        logError('catalog sync failed', error);
+      }
       const stored: StoredListing[] = [];
       const fetched = new Map<string, Listing>();
       for (const adapter of deps.adapters) {

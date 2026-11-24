@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { COLLECTION_IDS, DEFAULT_COLLECTION, isCollectionId } from './ids';
+import { COLLECTION_IDS, LEGACY_COLLECTION, isCollectionId } from './ids';
 
 describe('isCollectionId', () => {
   test('accepts a registered collection id', () => {
@@ -13,9 +13,16 @@ describe('isCollectionId', () => {
   });
 });
 
-describe('DEFAULT_COLLECTION', () => {
+describe('LEGACY_COLLECTION', () => {
   test('is the collection all data before collections belongs to', () => {
-    expect(DEFAULT_COLLECTION).toBe('lego-minecraft-3');
-    expect(COLLECTION_IDS).toContain(DEFAULT_COLLECTION);
+    expect(LEGACY_COLLECTION).toBe('lego-minecraft-3');
+    expect(COLLECTION_IDS).toContain(LEGACY_COLLECTION);
+  });
+});
+
+describe('COLLECTION_IDS', () => {
+  test('are unique slugs starting with a letter (custom ids split on ":" and embed them unescaped)', () => {
+    expect(new Set(COLLECTION_IDS).size).toBe(COLLECTION_IDS.length);
+    for (const id of COLLECTION_IDS) expect(id).toMatch(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/);
   });
 });

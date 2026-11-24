@@ -6,7 +6,8 @@ import {
   type CardId,
   type CardType,
 } from '../cards/cardId';
-import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
+import { parseChecklist } from '../cards/starterCatalog';
+import { COLLECTIONS } from '../collections/index';
 import type { CollectionId } from '../collections/ids';
 import type { MissingReference } from '../matcher/identify';
 import { db } from './db';
@@ -95,18 +96,20 @@ function insertCards(collection: CollectionId, ids: CardId[]): void {
 }
 
 export const catalogManager = {
-  /** Insert the starter catalog when `lego-minecraft-3`, the collection it lists, has no card. */
+  /** Insert each collection's starter checklist (`starterChecklist`) when it has no card. */
   seedIfEmpty(): void {
-    const collection: CollectionId = 'lego-minecraft-3';
-    db.transaction(() => {
-      const row = db
-        .select({ n: count() })
-        .from(cards)
-        .where(eq(cards.collection, collection))
-        .get();
-      if ((row?.n ?? 0) > 0) return;
-      insertCards(collection, parseChecklist(STARTER_CHECKLIST).ids);
-    });
+    for (const { id: collection, starterChecklist } of COLLECTIONS) {
+      if (!starterChecklist) continue;
+      db.transaction(() => {
+        const row = db
+          .select({ n: count() })
+          .from(cards)
+          .where(eq(cards.collection, collection))
+          .get();
+        if ((row?.n ?? 0) > 0) return;
+        insertCards(collection, parseChecklist(starterChecklist).ids);
+      });
+    }
   },
 
   knownIds(collection: CollectionId): Set<CardId> {

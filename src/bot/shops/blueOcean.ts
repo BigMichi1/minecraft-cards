@@ -112,7 +112,7 @@ export function parseBlueOceanPage(html: string): {
   };
 }
 
-export function createBlueOceanAdapter(
+export function createBlueOceanFetcher(
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
 ): ShopFetcher {

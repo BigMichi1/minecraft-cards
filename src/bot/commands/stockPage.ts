@@ -1,6 +1,6 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { CardId } from '../cards/cardId';
-import { COLLECTION_IDS, DEFAULT_COLLECTION, type CollectionId } from '../collections/ids';
+import { COLLECTION_IDS, LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
 import type { RunSummary } from '../check/runner';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { SHOP_NAMES } from '../notify/messages';
@@ -84,7 +84,7 @@ export function stockCustomId(collection: CollectionId, page: number, filter: St
  * The collection, page and filter of a paging button, or null for anything this bot did not
  * build: the custom id comes back from Discord, so it is matched exactly (a registered
  * collection, page 1-9999, a known filter). A button sent before collections
- * (`stock:<page>:<filter>`) is one of DEFAULT_COLLECTION.
+ * (`stock:<page>:<filter>`) is one of LEGACY_COLLECTION.
  */
 export function parseStockCustomId(
   customId: string
@@ -92,7 +92,7 @@ export function parseStockCustomId(
   const match = CUSTOM_ID.exec(customId);
   if (!match) return null;
   return {
-    collection: (match[1] as CollectionId | undefined) ?? DEFAULT_COLLECTION,
+    collection: (match[1] as CollectionId | undefined) ?? LEGACY_COLLECTION,
     page: Number(match[2]),
     filter: match[3] as StockFilter,
   };

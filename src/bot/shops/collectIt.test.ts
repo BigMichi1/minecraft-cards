@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import * as cheerio from 'cheerio';
 import {
-  createCollectItAdapter,
+  createCollectItFetcher,
   parseCollectItPage,
   readArticleTotal,
   type CollectItPage,
@@ -71,7 +71,7 @@ function withNext(html: string, href: string): string {
 /** The adapter's rejection for these pages (fails the test when it resolves). */
 async function rejection(pages: Record<string, string>): Promise<Error> {
   const { fetchFn } = fakeFetch(pages);
-  const error = await createCollectItAdapter(fetchFn, { delayMs: 0 })
+  const error = await createCollectItFetcher(fetchFn, { delayMs: 0 })
     .fetchListings()
     .then(
       () => new Error('resolved'),
@@ -388,7 +388,7 @@ describe('readArticleTotal', () => {
   });
 });
 
-describe('createCollectItAdapter', () => {
+describe('createCollectItFetcher', () => {
   const twoPages = () => ({
     Einzelkarten: asPage(P1, 1, true, 55),
     _s2: asPage(P8, 2, false, 55),
@@ -397,7 +397,7 @@ describe('createCollectItAdapter', () => {
   test('follows the next-page link and stops on the page without one', async () => {
     const { fetchFn, calls } = fakeFetch(twoPages());
     const sleeps: number[] = [];
-    const adapter = createCollectItAdapter(fetchFn, {
+    const adapter = createCollectItFetcher(fetchFn, {
       sleep: async (ms) => {
         sleeps.push(ms);
       },
@@ -442,7 +442,7 @@ describe('createCollectItAdapter', () => {
 
   test('throws ShopLayoutError when page 1 is a bot wall', async () => {
     const { fetchFn } = fakeFetch({ Einzelkarten: '<html>Just a moment...</html>' });
-    const error = await createCollectItAdapter(fetchFn, { delayMs: 0 })
+    const error = await createCollectItFetcher(fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -454,7 +454,7 @@ describe('createCollectItAdapter', () => {
       Einzelkarten: asPage(P1, 1, true),
       _s2: '<html><body>Wartungsarbeiten</body></html>',
     });
-    const error = await createCollectItAdapter(fetchFn, { delayMs: 0 })
+    const error = await createCollectItFetcher(fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -512,7 +512,7 @@ describe('createCollectItAdapter', () => {
         Einzelkarten: asPage(P1, 1, true, 55),
         _s2: withCountText(asPage(P8, 2, false), null),
       });
-      const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
+      const { listings } = await createCollectItFetcher(fetchFn, { delayMs: 0 }).fetchListings();
       expect(listings).toHaveLength(55);
     });
 
@@ -564,7 +564,7 @@ describe('createCollectItAdapter', () => {
     const log = spyOn(logger, 'log');
     try {
       const { fetchFn } = fakeFetch({ Einzelkarten: '<html>Just a moment...</html>' });
-      await createCollectItAdapter(fetchFn, { delayMs: 0 })
+      await createCollectItFetcher(fetchFn, { delayMs: 0 })
         .fetchListings()
         .catch(() => undefined);
       expect(log.mock.calls.filter((c) => c[0] === 'error')).toEqual([]);
@@ -579,7 +579,7 @@ describe('createCollectItAdapter', () => {
       if (url.endsWith('_s2')) throw timeout;
       return new Response(asPage(P1, 1, true));
     };
-    const error = (await createCollectItAdapter(fetchFn, { delayMs: 0 })
+    const error = (await createCollectItFetcher(fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e)) as Error;
     expect(error.message).toBe('collect-it: page 2 failed: The operation timed out.');
@@ -591,14 +591,14 @@ describe('createCollectItAdapter', () => {
       Einzelkarten: asPage(P1, 1, true, 30),
       _s2: asPage(P1, 2, false, 30),
     });
-    const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
+    const { listings } = await createCollectItFetcher(fetchFn, { delayMs: 0 }).fetchListings();
     expect(listings).toHaveLength(30);
     expect(new Set(listings.map((l) => l.url)).size).toBe(30);
   });
 
   test('an HTTP error rejects', async () => {
     const { fetchFn } = fakeFetch({});
-    await expect(createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings()).rejects.toThrow(
+    await expect(createCollectItFetcher(fetchFn, { delayMs: 0 }).fetchListings()).rejects.toThrow(
       'HTTP 404'
     );
   });
@@ -618,7 +618,7 @@ describe('createCollectItAdapter', () => {
       const n = Number(/_s(\d+)$/.exec(url)?.[1] ?? '1');
       return new Response(asPage(P1, n, true));
     };
-    const error = await createCollectItAdapter(fetchFn, { delayMs: 0 })
+    const error = await createCollectItFetcher(fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -678,7 +678,7 @@ describe('createCollectItAdapter', () => {
       ),
       _s2: asPage(P8, 2, false, 55),
     });
-    const { listings } = await createCollectItAdapter(fetchFn, { delayMs: 0 }).fetchListings();
+    const { listings } = await createCollectItFetcher(fetchFn, { delayMs: 0 }).fetchListings();
     expect(calls).toEqual([BASE, `${BASE}_s2`]);
     expect(listings).toHaveLength(55);
   });

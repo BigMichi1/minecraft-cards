@@ -539,15 +539,16 @@ function toListing(item: EbayItem, url: string, title: string, ids: CardId[] | '
 /** Shop-controlled text in a log line, clipped. */
 const clip = (text: string) => (text.length > 200 ? `${text.slice(0, 200)}…` : text);
 
-export function createEbayAdapter(
+export function createEbayFetcher(
   opts: {
     clientId: string;
     clientSecret: string;
     fetchFn?: FetchFn;
     /**
-     * The catalog's card names (sammel-ente's), read once per fetch: a title without a series
-     * word counts only by a name beside its number (nameMatchedCardIds). Without it, such
-     * titles stay excluded.
+     * The card names (sammel-ente's) of the collection this fetcher is bound to
+     * (`shops/adapters.ts` binds it), read once per fetch: a title without a series word counts
+     * only by a name beside its number (nameMatchedCardIds). Without it, such titles stay
+     * excluded.
      */
     cardNames?: () => ReadonlyMap<CardId, string>;
   } & AdapterOptions

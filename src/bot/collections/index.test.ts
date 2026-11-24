@@ -7,8 +7,10 @@ describe('COLLECTIONS', () => {
     expect(COLLECTIONS.map((c) => c.id)).toEqual([...COLLECTION_IDS]);
   });
 
-  test('uses slug-shaped ids', () => {
-    for (const c of COLLECTIONS) expect(c.id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+  test('only lego-minecraft-3 seeds a starter checklist', () => {
+    expect(COLLECTIONS.filter((c) => c.starterChecklist).map((c) => c.id)).toEqual([
+      'lego-minecraft-3',
+    ]);
   });
 });
 

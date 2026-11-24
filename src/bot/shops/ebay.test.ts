@@ -3,7 +3,7 @@ import logger from '../utils/logger';
 import {
   CARD_NAME_WORDS,
   COUNT_WORDS,
-  createEbayAdapter,
+  createEbayFetcher,
   extractCardIdsFromTitle,
   isPictureCandidate,
   NAME_TITLE_WORDS,
@@ -895,10 +895,10 @@ function makeFetch(
 
 const noSleep = async () => {};
 
-describe('createEbayAdapter', () => {
+describe('createEbayFetcher', () => {
   test('maps listings, skips items without ids and caches the token', async () => {
     const fake = makeFetch();
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 'secret',
       fetchFn: fake.fetchFn,
@@ -968,7 +968,7 @@ describe('createEbayAdapter', () => {
       'lego minecraft karten serie 3',
     ]);
     const fake = makeFetch();
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1000,7 +1000,7 @@ describe('createEbayAdapter', () => {
             })
           ),
       });
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -1051,7 +1051,7 @@ describe('createEbayAdapter', () => {
           ),
       });
       let reads = 0;
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -1083,7 +1083,7 @@ describe('createEbayAdapter', () => {
 
   test('a failing catalog name read fails the fetch, so stored listings are kept', async () => {
     const fake = makeFetch();
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1105,7 +1105,7 @@ describe('createEbayAdapter', () => {
     }
     expect(names.size).toBeGreaterThan(20);
     const run = async (cardNames?: () => ReadonlyMap<CardId, string>) =>
-      createEbayAdapter({
+      createEbayFetcher({
         clientId: 'id',
         clientSecret: 's',
         fetchFn: makeFetch().fetchFn,
@@ -1121,7 +1121,7 @@ describe('createEbayAdapter', () => {
     const fake = makeFetch({
       searchBody: () => body(item({ title: 'LEGO Minecraft Karte 131 - Ghast' })),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1142,7 +1142,7 @@ describe('createEbayAdapter', () => {
           })
         ),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1188,7 +1188,7 @@ describe('createEbayAdapter', () => {
         }
         return new Response(answer(url));
       };
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 's',
         fetchFn,
@@ -1550,7 +1550,7 @@ describe('createEbayAdapter', () => {
           return new Response('', { status: 500 });
         return new Response(paged(450)(url));
       };
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 's',
         fetchFn,
@@ -1582,7 +1582,7 @@ describe('createEbayAdapter', () => {
           })
         ),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1605,7 +1605,7 @@ describe('createEbayAdapter', () => {
           })
         ),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1618,7 +1618,7 @@ describe('createEbayAdapter', () => {
 
   test('every search returning zero items is a layout error', async () => {
     const fake = makeFetch({ searchBody: () => JSON.stringify({ total: 0 }) });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1645,7 +1645,7 @@ describe('createEbayAdapter', () => {
           })
         ),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1664,7 +1664,7 @@ describe('createEbayAdapter', () => {
 
   test('a titled listing carries no picture id source', async () => {
     const fake = makeFetch({ searchBody: () => body(item({})) });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1679,7 +1679,7 @@ describe('createEbayAdapter', () => {
     const fake = makeFetch({
       searchBody: (n) => (n === 1 ? body(item({ title: 'LEGO Minecraft Booster' })) : body()),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1696,7 +1696,7 @@ describe('createEbayAdapter', () => {
 
   test('sends marketplace, auth and user agent headers', async () => {
     const fake = makeFetch();
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 'secret',
       fetchFn: fake.fetchFn,
@@ -1714,7 +1714,7 @@ describe('createEbayAdapter', () => {
 
   test('a token failure throws HttpError without leaking the secret', async () => {
     const fake = makeFetch({ tokenStatus: 401 });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 'topsecret',
       fetchFn: fake.fetchFn,
@@ -1735,7 +1735,7 @@ describe('createEbayAdapter', () => {
         access_token: 'v^1.1#leaked',
       }),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 'topsecret',
       fetchFn: fake.fetchFn,
@@ -1754,7 +1754,7 @@ describe('createEbayAdapter', () => {
       tokenStatus: 401,
       tokenBody: JSON.stringify({ error: 'invalid_client', error_description: `bad ${basic}` }),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 'topsecret',
       fetchFn: fake.fetchFn,
@@ -1771,7 +1771,7 @@ describe('createEbayAdapter', () => {
       tokenStatus: 401,
       tokenBody: JSON.stringify({ error: 'invalid_client' }),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: '',
       fetchFn: fake.fetchFn,
@@ -1788,7 +1788,7 @@ describe('createEbayAdapter', () => {
         tokenStatus: 503,
         tokenBody: JSON.stringify({ ...body, access_token: 'v^1.1#leaked' }),
       });
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 'topsecret',
         fetchFn: fake.fetchFn,
@@ -1808,7 +1808,7 @@ describe('createEbayAdapter', () => {
   test('failure bodies that are not JSON objects, or have odd fields, are not echoed', async () => {
     const failRaw = async (tokenBody: string) => {
       const fake = makeFetch({ tokenStatus: 503, tokenBody });
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 'topsecret',
         fetchFn: fake.fetchFn,
@@ -1841,7 +1841,7 @@ describe('createEbayAdapter', () => {
       searchBody: () =>
         JSON.stringify({ errors: [{ longMessage: `bad query ${'x'.repeat(500)}` }] }),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1856,7 +1856,7 @@ describe('createEbayAdapter', () => {
 
   test('an answer that is not JSON names the URL', async () => {
     const fake = makeFetch({ searchBody: () => '<html>maintenance</html>' });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1871,7 +1871,7 @@ describe('createEbayAdapter', () => {
     const fake = makeFetch({
       searchBody: () => JSON.stringify({ errors: [{ message: 'Invalid category' }] }),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1888,7 +1888,7 @@ describe('createEbayAdapter', () => {
       const fake = makeFetch({
         searchBody: () => JSON.stringify({ total, itemSummaries: [item({})] }),
       });
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -1907,7 +1907,7 @@ describe('createEbayAdapter', () => {
           item({ itemId: undefined, legacyItemId: undefined, itemWebUrl: undefined })
         ),
     });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 's',
       fetchFn: fake.fetchFn,
@@ -1931,7 +1931,7 @@ describe('createEbayAdapter', () => {
       const fake = makeFetch({
         tokenBody: JSON.stringify({ access_token: 't', expires_in: 7200 }),
       });
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -1951,7 +1951,7 @@ describe('createEbayAdapter', () => {
   describe('prices', () => {
     const priceOf = async (over: Record<string, unknown>) => {
       const fake = makeFetch({ searchBody: () => body(item(over)) });
-      const adapter = createEbayAdapter({
+      const adapter = createEbayFetcher({
         clientId: 'id',
         clientSecret: 's',
         fetchFn: fake.fetchFn,
@@ -1983,7 +1983,7 @@ describe('createEbayAdapter', () => {
 
   test('a search failure throws HttpError', async () => {
     const fake = makeFetch({ searchStatus: 500 });
-    const adapter = createEbayAdapter({
+    const adapter = createEbayFetcher({
       clientId: 'id',
       clientSecret: 'secret',
       fetchFn: fake.fetchFn,

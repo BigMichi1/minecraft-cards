@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import * as cheerio from 'cheerio';
-import { parseBlueOceanPage, createBlueOceanAdapter } from './blueOcean';
+import { parseBlueOceanPage, createBlueOceanFetcher } from './blueOcean';
 import { ShopLayoutError, type Listing } from './types';
 import logger from '../utils/logger';
 import { readFixture, fakeFetch } from '../../test/shopHelpers';
@@ -105,14 +105,14 @@ describe('parseBlueOceanPage', () => {
   });
 });
 
-describe('createBlueOceanAdapter', () => {
+describe('createBlueOceanFetcher', () => {
   const base =
     'https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/';
 
   test('throws ShopLayoutError when page 1 is not a shop page', async () => {
     const { fetchFn } = fakeFetch({ '?p=1': '<html>Just a moment...</html>' });
     await expect(
-      createBlueOceanAdapter(fetchFn, { delayMs: 0 }).fetchListings()
+      createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings()
     ).rejects.toBeInstanceOf(ShopLayoutError);
   });
 
@@ -123,7 +123,7 @@ describe('createBlueOceanAdapter', () => {
       '?p=3': readFixture('blue-ocean-p99.html'),
     });
     const sleeps: number[] = [];
-    const adapter = createBlueOceanAdapter(fetchFn, {
+    const adapter = createBlueOceanFetcher(fetchFn, {
       sleep: async (ms) => {
         sleeps.push(ms);
       },
@@ -141,7 +141,7 @@ describe('createBlueOceanAdapter', () => {
       '?p=1': readFixture('blue-ocean-p1.html'),
       '?p=2': '<html>Just a moment...</html>',
     });
-    const error = await createBlueOceanAdapter(fetchFn, { delayMs: 0 })
+    const error = await createBlueOceanFetcher(fetchFn, { delayMs: 0 })
       .fetchListings()
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
@@ -153,7 +153,7 @@ describe('createBlueOceanAdapter', () => {
     const { fetchFn, calls } = fakeFetch({ '?p=': readFixture('blue-ocean-p1.html') });
     let listings: Listing[];
     try {
-      ({ listings } = await createBlueOceanAdapter(fetchFn, { delayMs: 0 }).fetchListings());
+      ({ listings } = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings());
       expect(warn.mock.calls.some((c) => String(c[0]).includes('stopped after 60 pages'))).toBe(
         true
       );

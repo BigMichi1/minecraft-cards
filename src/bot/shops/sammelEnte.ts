@@ -83,7 +83,7 @@ export function parseSammelEntePage(html: string): {
   return { listings, lastPage, productCount: boxes.length, skippedNoId, skippedInvalid };
 }
 
-export function createSammelEnteAdapter(
+export function createSammelEnteFetcher(
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
 ): ShopFetcher {

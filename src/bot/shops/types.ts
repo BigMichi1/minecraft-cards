@@ -76,7 +76,10 @@ export interface FetchResult {
   truncated?: string[];
 }
 
-/** One shop's parser and fetch, before it is bound to a collection. */
+/**
+ * One shop's fetch, not yet bound to a collection (`shops/adapters.ts` binds it). The parsers
+ * still read series 3 rules, so only `lego-minecraft-3` is bound for now.
+ */
 export interface ShopFetcher {
   readonly id: ShopId;
   fetchListings(): Promise<FetchResult>;

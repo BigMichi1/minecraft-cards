@@ -297,7 +297,7 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
  * (PAGE_SIZE): both catch a dropped `rel="next"` and cards shifting between pages. The runner
  * then leaves the stored listings untouched, and the run is retried next hour.
  */
-export function createCollectItAdapter(
+export function createCollectItFetcher(
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
 ): ShopFetcher {

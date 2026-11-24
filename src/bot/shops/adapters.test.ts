@@ -1,6 +1,6 @@
 import { describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
-import { createShopAdapters } from './adapters';
+import { checkOneAdapterPerShop, createShopAdapters } from './adapters';
 import { SHOP_IDS } from './types';
 import type { CollectionId } from '../collections/ids';
 
@@ -29,6 +29,13 @@ describe('createShopAdapters', () => {
     );
     expect(value.map((a) => a.id)).toEqual([...SHOP_IDS]);
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(false);
+  });
+
+  test('a second adapter of one shop is refused (run summaries and alerts are keyed per shop)', () => {
+    const fetcher = { id: 'blue-ocean' as const, fetchListings: async () => ({ listings: [] }) };
+    const a = { ...fetcher, collection: 'lego-minecraft-3' as const };
+    expect(() => checkOneAdapterPerShop([a, { ...a }])).toThrow('two adapters for shop blue-ocean');
+    expect(checkOneAdapterPerShop([a])).toEqual([a]);
   });
 
   test('every adapter checks lego-minecraft-3, the only collection', () => {

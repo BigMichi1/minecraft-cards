@@ -198,9 +198,15 @@ export const runManager = {
    * The highest number of listings `shop` returned for `collection` in its successful runs that
    * started within the last SHOP_PEAK_WINDOW_MS (3 days) before `now`, however many runs that is;
    * undefined when there is none.
-   * Unreadable rows and entries are skipped with a warning, once per row.
+   * Unreadable rows and entries are skipped with a warning, once per row; `strict`: an unreadable
+   * row makes the peak unknown (undefined), as it may have held the peak.
    */
-  shopPeakListings(shop: ShopId, collection: CollectionId, now: number): number | undefined {
+  shopPeakListings(
+    shop: ShopId,
+    collection: CollectionId,
+    now: number,
+    { strict = false }: { readonly strict?: boolean } = {}
+  ): number | undefined {
     const rows = db
       .select({ id: runs.id, summary: runs.summary }) // id keys the once-per-row warning
       .from(runs)
@@ -209,7 +215,10 @@ export const runManager = {
     let peak: number | undefined;
     for (const row of rows) {
       const summary = parseSummary(row.summary, row.id);
-      if (!summary) continue;
+      if (!summary) {
+        if (strict) return undefined;
+        continue;
+      }
       const entry = shopEntry(summary, collection, shop);
       if (entry === undefined || entry.error !== undefined) continue;
       peak = Math.max(peak ?? entry.listings, entry.listings);

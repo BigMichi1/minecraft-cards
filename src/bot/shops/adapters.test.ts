@@ -71,6 +71,26 @@ describe('createShopAdapters', () => {
     expect(only!.collections).toEqual(['lego-minecraft-1']);
   });
 
+  test('two collections sharing a blue-ocean product code, category path or picture part are refused', () => {
+    const one = legoMinecraft1.shops['blue-ocean']!;
+    const other = { ...legoMinecraft1, id: 'lego-minecraft-2' as const };
+    for (const [field, shared] of [
+      ['productCode', { productCode: one.productCode }],
+      ['categoryPath', { productCode: 'x1', categoryPath: one.categoryPath }],
+      ['picture', { productCode: 'x1', picture: one.picture }],
+    ] as const) {
+      const collections = [legoMinecraft1, { ...other, shops: { 'blue-ocean': shared } }];
+      expect(() => createShopAdapters(null, undefined, { collections })).toThrow(
+        `lego-minecraft-2: blue-ocean ${field} "${String(shared[field as keyof typeof shared])}" is also lego-minecraft-1's`
+      );
+    }
+  });
+
+  test('without a collection on blue-ocean there is no blue-ocean adapter', () => {
+    const off = { ...legoMinecraft1, shops: {} };
+    expect(createShopAdapters(null, undefined, { collections: [off] })).toEqual([]);
+  });
+
   test('a second adapter of one shop and collection is refused', () => {
     const fetcher = { id: 'blue-ocean' as const, fetchListings: async () => ({ listings: [] }) };
     const a = { ...fetcher, collection: 'lego-minecraft-3' as const };
@@ -145,19 +165,28 @@ describe('createShopAdapters', () => {
     expect(() => createShopAdapters(null, undefined, { collections: [noCode] })).toThrow(
       'lego-minecraft-1: blue-ocean settings without a product code'
     );
-    for (const productCode of ['70.351', '70+351']) {
+    for (const productCode of ['70.351', '70+351', '2DD00088']) {
       const bad = { ...legoMinecraft1, shops: { 'blue-ocean': { productCode } } };
       expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
-        'lego-minecraft-1: the blue-ocean product code must be letters and digits'
+        'lego-minecraft-1: the blue-ocean product code must be lowercase letters and digits'
       );
     }
-    for (const empty of [{ picture: '' }, { categoryPath: '' }]) {
+    for (const empty of [{ picture: '' }, { categoryPath: '' }, { categoryPath: 'lego/serie-1' }]) {
       const bad = {
         ...legoMinecraft1,
         shops: { 'blue-ocean': { productCode: '702351', ...empty } },
       };
       expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
-        'lego-minecraft-1: blue-ocean settings with an empty picture or category path'
+        'lego-minecraft-1: blue-ocean settings with an empty picture or an empty or multi-segment category path'
+      );
+    }
+    for (const excludes of [/TCC 2/g, /TCC 2/y]) {
+      const bad = {
+        ...legoMinecraft1,
+        shops: { 'blue-ocean': { productCode: '702351', excludes } },
+      };
+      expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+        'the blue-ocean title must not use the g or y flag'
       );
     }
     for (const title of [/TCC 1/g, /TCC 1/y]) {

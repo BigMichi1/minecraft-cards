@@ -127,10 +127,13 @@ const ALERT_PRUNE_MARGIN_MS = 24 * 60 * 60 * 1000;
 /** A shop returning fewer than this share of its recent peak count alerts the admin. */
 const DROP_ALERT_SHARE = 0.5;
 /**
- * A shared run's collection it found nothing of is a shop error of that collection (its listings
- * kept) only when its recent peak (`SHOP_PEAK_WINDOW_MS`) reached this many listings: a series
- * with fewer, such as blue-ocean's last series 3 singles, has sold out, and its listings are
- * marked gone. Without a recent successful run it stays a shop error.
+ * A collection a shared run found nothing of (`emptyCollections`) is a shop error of that
+ * collection, its listings kept. Only one the fetcher says may have sold out (`mayHaveSoldOut`,
+ * blue-ocean: it drops sold-out singles) whose recent peak (`SHOP_PEAK_WINDOW_MS`) stayed below
+ * this many listings has sold out, such as blue-ocean's last series 3 singles: it is stored
+ * empty, its listings are marked gone, and the admin is told (`shop-soldout`). Without a recent
+ * successful run, with an unreadable run in the window, or when the counts cannot be read, it
+ * stays a shop error.
  */
 const EMPTY_COLLECTION_FLOOR = 5;
 
@@ -607,13 +610,23 @@ function toShopListing(source: Listing, l: StoredListing): Listing {
     : { ...base, idSource: 'title', cardIds: [...l.cardIds] };
 }
 
-/** The baseline for the drop check; a failed lookup is logged and only skips that check. */
-function recentPeak(shop: ShopId, collection: CollectionId, now: number): number | undefined {
+/**
+ * The recent peak, the baseline for the drop and the sold-out checks; undefined when there is none
+ * or a lookup fails (logged, naming `outcome`: what the check does without it). `strict`: also
+ * undefined when a run row in the window is unreadable (it may have held the peak).
+ */
+function recentPeak(
+  shop: ShopId,
+  collection: CollectionId,
+  now: number,
+  outcome: string,
+  strict = false
+): number | undefined {
   try {
-    return runManager.shopPeakListings(shop, collection, now);
+    return runManager.shopPeakListings(shop, collection, now, { strict });
   } catch (error) {
     logError(
-      `shop ${shop} (${collection}): reading the recent listing counts failed, drop check skipped`,
+      `shop ${shop} (${collection}): reading the recent listing counts failed, ${outcome}`,
       error
     );
     return undefined;
@@ -636,12 +649,14 @@ function runCounts(result: FetchResult): Partial<ShopSummary> {
  * stored per collection: each listing in the collection it names (an admin-mapped one where the
  * admin put it), and every covered collection is stored, so its gone listings are marked
  * unavailable as for a shop of one collection. A failed fetch, or a failure placing its
- * listings, is alerted once under the shop alone (`shop-error:ebay`) and touches none of its
- * collections; cut searches, unloaded card lists and admin mappings outside the covered
- * collections are alerted once too (`shop-truncated:ebay`, `shop-names:ebay:<collections>`,
- * `shop-outside:ebay`) and the run goes on. A collection the run found nothing of
- * (`emptyCollections`) is not stored, and it and storing fail per collection
- * (`shop-error:ebay:<collection>`, as do the drop and foreign alerts).
+ * listings, is alerted once under the shop alone (`shop-error:<shop>`) and touches none of its
+ * collections; admin mappings outside the covered collections (`shop-outside:<shop>`), and on
+ * eBay cut searches and unloaded card lists (`shop-truncated:ebay`,
+ * `shop-names:ebay:<collections>`), are alerted once too and the run goes on. A collection the
+ * run found nothing of (`emptyCollections`) is not stored, a shop error of that collection,
+ * unless it may have sold out and its recent peak stayed below EMPTY_COLLECTION_FLOOR (stored
+ * empty, `shop-soldout:<shop>:<collection>`); storing fails per collection
+ * (`shop-error:<shop>:<collection>`, as do the drop and foreign alerts).
  */
 async function checkShop(
   deps: RunDeps,
@@ -702,11 +717,21 @@ async function checkShop(
     );
   }
   const empty = new Set(result.emptyCollections ?? []);
+  const mayHaveSoldOut = new Set(result.mayHaveSoldOut ?? []);
+  const strays = [...empty, ...mayHaveSoldOut].filter((c) => !covered.includes(c));
+  if (strays.length > 0) {
+    logger.warn(
+      `shop ${adapter.id}: empty collection(s) ${[...new Set(strays)].join(', ')} reported outside the run's collections, ignored`
+    );
+  }
   for (const collection of covered) {
-    const peak = empty.has(collection) ? recentPeak(adapter.id, collection, deps.now()) : undefined;
-    if (empty.has(collection) && (peak === undefined || peak >= EMPTY_COLLECTION_FLOOR)) {
-      // Nothing of it found after a healthy run: a query, API or layout problem there, not
-      // every card sold.
+    const soldOutPossible = empty.has(collection) && mayHaveSoldOut.has(collection);
+    const peak = soldOutPossible
+      ? recentPeak(adapter.id, collection, deps.now(), 'kept as a shop error', true)
+      : undefined;
+    const soldOut = soldOutPossible && peak !== undefined && peak < EMPTY_COLLECTION_FLOOR;
+    if (empty.has(collection) && !soldOut) {
+      // Nothing of it found: a query, API or layout problem there, not every card sold.
       const message =
         adapter.id === 'ebay'
           ? `all searches of ${collectionName(collection)} returned no usable items`
@@ -728,9 +753,12 @@ async function checkShop(
       );
       continue;
     }
-    if (empty.has(collection)) {
-      logger.warn(
-        `shop ${adapter.id}: nothing of ${collectionName(collection)} found, at most ${peak} listing(s) recently: read as sold out`
+    if (soldOut) {
+      const message = `no card of ${collectionName(collection)} on any page, at most ${peak} listing(s) in the last ${formatWindow(SHOP_PEAK_WINDOW_MS)}: read as sold out, its listings are marked gone`;
+      logger.warn(`shop ${adapter.id}: ${message}`);
+      await alert(
+        `shop-soldout:${adapter.id}:${collection}`,
+        `Shop ${adapter.id} (${collectionName(collection)}): ${message}. If the shop still sells them, check its URL and title forms (docs/shops.md).`
       );
     }
     const found = placement
@@ -747,7 +775,8 @@ async function checkShop(
       summary,
       stored,
       fetched,
-      placement?.seenUrls
+      placement?.seenUrls,
+      soldOut
     );
   }
 }
@@ -766,11 +795,12 @@ interface SharedPlacement {
 }
 
 /**
- * Where each listing of a shared run is stored: the collection it names (`Listing.collection`,
- * from its title or URL), or, for a listing the admin mapped, the collection they put it in (kept
- * fresh there, whatever it names now). A listing whose collection the run does not cover (an
- * admin mapping into a collection without that shop's settings) is left where it is, neither refreshed nor marked gone, and
- * named in `outsideLabels`; a listing that names no collection falls back to the adapter's, logged.
+ * Where each listing of a shared run is stored: the collection it names (`Listing.collection`, from
+ * its title or URL), or, for a listing the admin mapped, the collection they put it in (kept fresh
+ * there, whatever it names now). A listing whose collection the run does not cover (an admin
+ * mapping into a collection without that shop's settings) is left where it is, neither refreshed
+ * nor marked gone, and named in `outsideLabels`; a listing that names no collection falls back to
+ * the adapter's, logged.
  */
 function placeShared(
   adapter: ShopAdapter,
@@ -813,13 +843,17 @@ async function storeShopResult(
   summary: RunSummary,
   stored: StoredListing[],
   fetched: Map<string, Listing>,
-  seenUrls?: ReadonlySet<string>
+  seenUrls?: ReadonlySet<string>,
+  soldOut = false
 ): Promise<void> {
   const key = `${adapter.id}:${collection}`;
   const shop = `${adapter.id} (${collectionName(collection)})`;
   const record = (entry: ShopSummary) => setShopEntry(summary, collection, adapter.id, entry);
   try {
-    const peak = recentPeak(adapter.id, collection, deps.now());
+    // Read as sold out, the drop is the point: the sold-out alert already said so.
+    const peak = soldOut
+      ? undefined
+      : recentPeak(adapter.id, collection, deps.now(), 'drop check skipped');
     const ours = listingManager.upsertFromRun(adapter.id, collection, found, deps.now(), {
       moveFromOtherCollections: shared,
       ...(seenUrls ? { seenUrls } : {}),
@@ -830,8 +864,8 @@ async function storeShopResult(
     const ownUrls = new Set(ours.map((l) => l.url));
     const foreign = found.filter((l) => !ownUrls.has(l.url)).map((l) => l.url);
     // A shared run (eBay, blue-ocean) moves listings between its collections and stores an
-    // admin-mapped one where it is, so a foreign listing there is a listing of another shop, or a mapping
-    // made during the run.
+    // admin-mapped one where it is, so a foreign listing there is a listing of another shop, or a
+    // mapping made during the run.
     if (foreign.length > 0) {
       const why = shared
         ? 'stored by another shop or mapped during this run'
@@ -896,8 +930,9 @@ async function storeShopResult(
     }
     record({
       listings: own.length,
-      // A shared run's skipped and cut counts are the whole run's: filed once, under the
-      // adapter's `collection` (series 3 for eBay and blue-ocean), not under each collection it covers.
+      // A shared run's skipped and cut counts are the whole run's: filed once, under the adapter's
+      // `collection` (series 3 when covered, see `sharedAdapters`), not under each collection it
+      // covers.
       ...(collection === adapter.collection ? runCounts(result) : {}),
     });
   } catch (error) {

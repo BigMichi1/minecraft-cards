@@ -55,7 +55,7 @@ async function loadListings(): Promise<{ sammel: Listing[]; blue: Listing[] }> {
   if (pagesArg === '1') {
     return {
       sammel: parseSammelEntePage(await fetchText(SAMMEL_ENTE_P1), null).listings,
-      blue: parseBlueOceanPage(await fetchText(BLUE_OCEAN_P1), SERIES_3).listings,
+      blue: [...parseBlueOceanPage(await fetchText(BLUE_OCEAN_P1), SERIES_3).listings],
     };
   }
   if (pagesArg !== 'all') throw new Error(`--pages takes 1 or all, got "${pagesArg}"`);

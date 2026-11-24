@@ -58,9 +58,18 @@ export interface EbayCollectionSettings {
  * collection contradicts that placement (docs/shops.md).
  */
 export interface BlueOceanSettings {
-  /** The category path segment of a product URL (`trading-card-collection-serie-1`). */
+  /**
+   * The category path segment of a product URL (`trading-card-collection-serie-1`). Present also
+   * means the collection numbers its singles in the title: the card id is the title's
+   * `Nummer NNN` (which must equal the URL's number) and the picture starts with it
+   * (`250_lego_…`); absent (series 3), the id is the root URL's suffix and the picture names it
+   * as `P<id>`. One segment, no `/`.
+   */
   readonly categoryPath?: string;
-  /** The product code before a root URL's card number (`702351` in `…-702351-09`). */
+  /**
+   * The product code before a root URL's card number (`702351` in `…-702351-09`): lowercase
+   * letters and digits, as the URLs spell it.
+   */
   readonly productCode: string;
   /**
    * A part of the picture file name naming the series (`_tcc-01`, series 3 `tcg3_.p`), compared
@@ -69,9 +78,16 @@ export interface BlueOceanSettings {
   readonly picture?: string;
   /**
    * A title of the collection must match this (series 1 `TCC 1`, series 3 `On Fire`; series 2
-   * titles name no series). No `g` or `y` flag (refused at start).
+   * titles name no series), and a product at another collection's URL whose title matches it is
+   * excluded. No `g` or `y` flag (refused at start).
    */
   readonly title?: RegExp;
+  /**
+   * A title naming the collection that its own titles need not carry (series 2 `TCC 2`,
+   * `Boom-Bastic`): only a product at another collection's URL whose title matches it is
+   * excluded. No `g` or `y` flag.
+   */
+  readonly excludes?: RegExp;
 }
 
 /** A collection's settings per shop; a collection lists only the shops that sell it. */

@@ -156,6 +156,20 @@ describe('runManager', () => {
     }
   });
 
+  test('shopPeakListings strict: an unreadable row in the window makes the peak unknown', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      runManager.record(summary);
+      db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: '{broken' }).run();
+      expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBe(3);
+      expect(
+        runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW, { strict: true })
+      ).toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   test('a summary of an older version without the newer optional fields still reads', () => {
     runManager.record(summary);
     expect(runManager.last()).toEqual(summary);

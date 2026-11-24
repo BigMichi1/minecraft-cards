@@ -436,7 +436,7 @@ describe('runCheck', () => {
       expect(listingManager.getByUrl(s1.url)!.available).toBe(true);
     });
 
-    test('an empty collection with fewer than 5 recent listings sold out: its listings are marked gone', async () => {
+    describe('a collection a shared run found nothing of', () => {
       const card = (n: string, collection: CollectionId): Listing => ({
         ...blue12,
         url: `https://www.blue-ocean.de/p/${collection}/${n}`,
@@ -448,21 +448,132 @@ describe('runCheck', () => {
         collections: ['lego-minecraft-1', 'lego-minecraft-3'],
         fetchListings: async () => ({ listings: items, ...more }),
       });
-      const last = card('3', 'lego-minecraft-3');
-      const s1 = card('1', 'lego-minecraft-1');
-      await runCheck(depsWith([walk([s1, last])]));
-      clock += 60 * 60 * 1000;
-      const warn = spyOn(logger, 'warn');
-      let s: RunSummary;
-      try {
-        s = await runCheck(depsWith([walk([s1], { emptyCollections: ['lego-minecraft-3'] })]));
-        expect(warn.mock.calls.some((c) => String(c[0]).includes('read as sold out'))).toBe(true);
-      } finally {
-        warn.mockRestore();
-      }
-      expect(listingManager.getByUrl(last.url)!.available).toBe(false);
-      expect(s.shops['blue-ocean']).toEqual({ listings: 0 });
-      expect(runManager.lastAlertAt('shop-error:blue-ocean:lego-minecraft-3')).toBeUndefined();
+      const cards = (n: number, collection: CollectionId) =>
+        Array.from({ length: n }, (_, k) => card(String(k + 1), collection));
+      const s1 = card('100', 'lego-minecraft-1');
+      const soldOut = (c: CollectionId) => ({ emptyCollections: [c], mayHaveSoldOut: [c] });
+
+      test('with fewer than 5 recent listings, it sold out: marked gone, one sold-out alert, no drop alert', async () => {
+        const last = cards(4, 'lego-minecraft-3');
+        await runCheck(depsWith([walk([s1, ...last])]));
+        clock += 60 * 60 * 1000;
+        const warn = spyOn(logger, 'warn');
+        let s: RunSummary;
+        try {
+          s = await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
+          expect(warn.mock.calls.some((c) => String(c[0]).includes('read as sold out'))).toBe(true);
+        } finally {
+          warn.mockRestore();
+        }
+        for (const l of last) expect(listingManager.getByUrl(l.url)!.available).toBe(false);
+        expect(s.shops['blue-ocean']).toEqual({ listings: 0 });
+        expect(runManager.lastAlertAt('shop-error:blue-ocean:lego-minecraft-3')).toBeUndefined();
+        expect(runManager.lastAlertAt('shop-drop:blue-ocean:lego-minecraft-3')).toBeUndefined();
+        expect(runManager.lastAlertAt('shop-soldout:blue-ocean:lego-minecraft-3')).toBeDefined();
+        expect(alerts.filter((a) => a.includes('read as sold out'))).toHaveLength(1);
+      });
+
+      test("another collection than the adapter's sells out the same way, without the run counts", async () => {
+        const last = card('1', 'lego-minecraft-1');
+        const s3 = card('3', 'lego-minecraft-3');
+        await runCheck(depsWith([walk([last, s3])]));
+        clock += 60 * 60 * 1000;
+        const s = await runCheck(
+          depsWith([walk([s3], { ...soldOut('lego-minecraft-1'), skippedNoId: 2 })])
+        );
+        expect(listingManager.getByUrl(last.url)!.available).toBe(false);
+        expect(s.collections?.['lego-minecraft-1']?.['blue-ocean']).toEqual({ listings: 0 });
+        expect(s.shops['blue-ocean']).toEqual({ listings: 1, skippedNoId: 2 });
+      });
+
+      test('with 5 recent listings, or not marked as maybe sold out, it stays a shop error', async () => {
+        const five = cards(5, 'lego-minecraft-3');
+        await runCheck(depsWith([walk([s1, ...five])]));
+        clock += 60 * 60 * 1000;
+        await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
+        expect(listingManager.getByUrl(five[0]!.url)!.available).toBe(true);
+        expect(runManager.lastAlertAt('shop-error:blue-ocean:lego-minecraft-3')).toBeDefined();
+
+        const one = card('1', 'lego-minecraft-1');
+        await runCheck(depsWith([walk([one, ...five])]));
+        clock += 60 * 60 * 1000;
+        await runCheck(depsWith([walk(five, { emptyCollections: ['lego-minecraft-1'] })]));
+        expect(listingManager.getByUrl(one.url)!.available).toBe(true);
+        expect(runManager.lastAlertAt('shop-error:blue-ocean:lego-minecraft-1')).toBeDefined();
+      });
+
+      test('an eBay collection with few listings and empty searches keeps them (eBay never says sold out)', async () => {
+        await runCheck(
+          depsWith([shared([item('1', 'lego-minecraft-1'), item('3', 'lego-minecraft-3')])])
+        );
+        clock += 60 * 60 * 1000;
+        const s = await runCheck(
+          depsWith([
+            shared([item('3', 'lego-minecraft-3')], { emptyCollections: ['lego-minecraft-1'] }),
+          ])
+        );
+        expect(listingManager.getByUrl('https://www.ebay.de/itm/1')!.available).toBe(true);
+        expect(s.collections?.['lego-minecraft-1']?.ebay?.error).toContain(
+          'returned no usable items'
+        );
+      });
+
+      test('a failing peak lookup keeps it a shop error, its listings kept', async () => {
+        const last = card('3', 'lego-minecraft-3');
+        await runCheck(depsWith([walk([s1, last])]));
+        clock += 60 * 60 * 1000;
+        const peak = spyOn(runManager, 'shopPeakListings').mockImplementation(() => {
+          throw new Error('database is locked');
+        });
+        const logged = spyOn(logger, 'log').mockImplementation(() => logger);
+        let s: RunSummary;
+        try {
+          s = await runCheck(depsWith([walk([s1], soldOut('lego-minecraft-3'))]));
+          expect(logged.mock.calls.some((c) => String(c[1]).includes('kept as a shop error'))).toBe(
+            true
+          );
+        } finally {
+          peak.mockRestore();
+          logged.mockRestore();
+        }
+        expect(listingManager.getByUrl(last.url)!.available).toBe(true);
+        expect(s.shops['blue-ocean']?.error).toContain('on any page');
+        expect(runManager.lastAlertAt('shop-error:blue-ocean:lego-minecraft-3')).toBeDefined();
+      });
+
+      test('an admin-mapped listing placed in an empty collection kept as a shop error is not stored', async () => {
+        const mapped = card('7', 'lego-minecraft-3');
+        const five = cards(5, 'lego-minecraft-1');
+        await runCheck(depsWith([walk([...five, mapped])]));
+        listingManager.overrideCards(
+          mapped.url,
+          { collection: 'lego-minecraft-1', ids: ids('7') },
+          clock
+        );
+        const before = listingManager.getByUrl(mapped.url)!.lastSeenAt;
+        clock += 60 * 60 * 1000;
+        await runCheck(
+          depsWith([walk([card('3', 'lego-minecraft-3'), mapped], soldOut('lego-minecraft-1'))])
+        );
+        expect(listingManager.getByUrl(mapped.url)).toMatchObject({
+          collection: 'lego-minecraft-1',
+          lastSeenAt: before,
+          available: true,
+        });
+        expect(listingManager.getByUrl(five[0]!.url)!.available).toBe(true);
+      });
+
+      test('empty collections outside the run are warned about and ignored', async () => {
+        const warn = spyOn(logger, 'warn');
+        try {
+          await runCheck(depsWith([walk([s1], { emptyCollections: ['lego-minecraft-2'] })]));
+          expect(
+            warn.mock.calls.some((c) => String(c[0]).includes("outside the run's collections"))
+          ).toBe(true);
+        } finally {
+          warn.mockRestore();
+        }
+      });
     });
 
     test('an admin-mapped listing in a collection the run does not cover is left alone, with no foreign alert', async () => {

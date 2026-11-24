@@ -72,6 +72,7 @@ describe('parseBlueOceanPage', () => {
       skippedNoId: 0,
       skippedExcluded: 0,
       skippedInvalid: 0,
+      unreadable: new Set(),
     });
   });
 
@@ -213,6 +214,16 @@ describe('parseBlueOceanPage across collections', () => {
       ),
       box(`${S2}/nummer-012-i-steve`, 'Nummer 012 I Steve', 'https://x.test/a/LMC_TCG3_.P12.jpg'),
       box(
+        `${S1}/nummer-012-i-steve-i-lego-minecraft-tcc-1`,
+        'Nummer 012 I Steve I LEGO Minecraft TCC 1 Boom-Bastic',
+        'https://x.test/012_lego_minecraft_tcc-01_de.jpg'
+      ),
+      box(
+        `${S1}/nummer-012-i-steve-i-lego-minecraft-tcc-1`,
+        'Nummer 012 I Steve I LEGO Minecraft TCC 1 / TCC 2',
+        'https://x.test/012_lego_minecraft_tcc-01_de.jpg'
+      ),
+      box(
         '/nr.-12-steve-lego-minecraft-tcc-on-fire-2dd00088-12',
         'Nr. 12 Steve LEGO Minecraft TCC 1 "On Fire"',
         'https://x.test/a/TCG3_.P12.jpg'
@@ -257,6 +268,44 @@ describe('parseBlueOceanPage across collections', () => {
       ' aria-label="Preis auf Anfrage"'
     );
     expect(parseBlueOceanPage(noPrice).listings[0]?.price).toBeNull();
+  });
+
+  test('a card picture or URL number without a readable card is counted, naming its collection', () => {
+    const warn = spyOn(logger, 'warn');
+    try {
+      // A root URL of a changed form (a duplicate slug) with a series 1 single's picture.
+      const changed = parseBlueOceanPage(
+        box(
+          '/nummer-012-i-steve-i-lego-minecraft-tcc-1-702351-12-1',
+          'Nummer 012 I Steve I LEGO Minecraft TCC 1',
+          'https://x.test/012_lego_minecraft_tcc-01_de.jpg'
+        )
+      );
+      expect(changed).toMatchObject({ listings: [], skippedNoId: 1 });
+      expect([...changed.unreadable]).toEqual(['lego-minecraft-1']);
+      // A root URL with a card number, but a title without `Nummer`.
+      const retitled = parseBlueOceanPage(
+        box('/nr-12-i-steve-702351-12', 'Nr. 12 I Steve I LEGO Minecraft TCC 1', 'x.jpg')
+      );
+      expect(retitled).toMatchObject({ listings: [], skippedNoId: 1 });
+      expect([...retitled.unreadable]).toEqual(['lego-minecraft-1']);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('no known URL form'))).toBe(true);
+      expect(warn.mock.calls.some((c) => String(c[0]).includes('no `Nummer` card number'))).toBe(
+        true
+      );
+    } finally {
+      warn.mockRestore();
+    }
+    // A pack picture names the series but no card number: ignored.
+    const pack = parseBlueOceanPage(
+      box(
+        '/lego-minecraft-boom-bastic-spezial-blister-2dd00037',
+        'LEGO Minecraft "Boom-Bastic" Spezial-Blister',
+        'https://x.test/LEGO_MineCraft_TCC-02_Blister.png'
+      )
+    );
+    expect(pack).toMatchObject({ listings: [], skippedNoId: 0, skippedExcluded: 0 });
+    expect(pack.unreadable.size).toBe(0);
   });
 
   test('a pack in a series category is no card and not counted', () => {
@@ -349,7 +398,7 @@ describe('createBlueOceanFetcher', () => {
     expect(result.emptyCollections).toBeUndefined();
   });
 
-  test('a walk without series 2 cards reports it in emptyCollections', async () => {
+  test('a walk with series 3 cards only reports series 1 and 2 as empty, maybe sold out', async () => {
     const { fetchFn } = fakeFetch({
       '?p=1': readFixture('blue-ocean-p1.html'),
       '?p=2': readFixture('blue-ocean-p99.html'),
@@ -357,6 +406,29 @@ describe('createBlueOceanFetcher', () => {
     const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
     expect(result.listings).toHaveLength(19);
     expect(result.emptyCollections).toEqual(['lego-minecraft-1', 'lego-minecraft-2']);
+    expect(result.mayHaveSoldOut).toEqual(['lego-minecraft-1', 'lego-minecraft-2']);
+  });
+
+  test('a walk without series 2 cards but with an unreadable series 2 product is no sell-out', async () => {
+    const page = (body: string) => `<div class="cms-page">${body}</div>`;
+    const { fetchFn } = fakeFetch({
+      '?p=1': readFixture('blue-ocean-tcc-p2.html').replace(
+        /trading-card-collection-boom-bastic/g,
+        'trading-card-collection-gone'
+      ),
+      '?p=2': page(
+        box(
+          '/lego/lego-minecraft/trading-card-collection-boom-bastic/1/nummer-012-i-steve',
+          'Nummer 013 I Steve',
+          'x.jpg'
+        )
+      ),
+      '?p=3': readFixture('blue-ocean-p1.html'),
+      '?p=4': readFixture('blue-ocean-p99.html'),
+    });
+    const result = await createBlueOceanFetcher(fetchFn, { delayMs: 0 }).fetchListings();
+    expect(result.emptyCollections).toEqual(['lego-minecraft-2']);
+    expect(result.mayHaveSoldOut).toBeUndefined();
   });
 
   test('a failing page request rejects the walk', async () => {

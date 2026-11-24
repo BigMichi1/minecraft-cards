@@ -21,6 +21,7 @@ describe('legoMinecraft2', () => {
           categoryPath: 'trading-card-collection-boom-bastic',
           productCode: '00702502',
           picture: '_tcc-02',
+          excludes: /\bTCC\s*2\b|\bBoom[-\s]?Bastic\b/i,
         },
         ebay: {
           queries: ['lego minecraft karten serie 2', 'lego minecraft boom bastic karte'],

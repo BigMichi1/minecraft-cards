@@ -23,6 +23,7 @@ export const legoMinecraft2: CollectionDefinition<'lego-minecraft-2'> = {
       categoryPath: 'trading-card-collection-boom-bastic',
       productCode: '00702502',
       picture: '_tcc-02',
+      excludes: /\bTCC\s*2\b|\bBoom[-\s]?Bastic\b/i,
     },
     // Mostly category lots ("Sammelkarten Serie 2\"NETHER\""), a few "Boom-Bastic" singles.
     ebay: {

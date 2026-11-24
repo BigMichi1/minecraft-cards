@@ -466,14 +466,16 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
 - Each product is placed by its URL: the category path (`trading-card-collection-serie-1`,
   `trading-card-collection-boom-bastic`) or the product code before the card number of a root
   URL (`…-702351-09`, `…-00702502-09`, series 3 `…-2dd00088-16`). Stickers (`stickerserie-1`,
-  `00702506`) and packs are no cards and not counted. A title or picture contradicting the
+  `00702506`) and packs are no cards, ignored (in the product count only). A title or picture contradicting the
   placement (another series' title marker or picture part `_tcc-0N`, or a missing own marker)
   is skipped and counted (`skippedExcluded`). Series 1 and 2 ids are the title's `Nummer NNN`,
   which must equal the URL's number (else `skippedNoId`); series 3's stay the URL suffix.
 - `FetchResult.emptySearches` is now `emptyCollections`: a shared run's collections it found
   nothing of (eBay: searches without a usable item; blue-ocean: no card in the whole walk), a
-  shop error of that collection whose listings stay untouched, unless its recent peak was below
-  5 listings (`EMPTY_COLLECTION_FLOOR`): then it sold out and is stored empty.
+  shop error of that collection whose listings stay untouched, unless blue-ocean says it may have
+  sold out (`mayHaveSoldOut`: no product of it seen but unreadable) and its recent peak was below
+  5 listings (`EMPTY_COLLECTION_FLOOR`; no recent successful run keeps it an error): then it sold
+  out, is stored empty and the admin is told (`shop-soldout`). eBay never reports a sell-out.
 
 ## Left to the builder
 

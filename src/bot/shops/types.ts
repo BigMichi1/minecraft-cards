@@ -37,8 +37,9 @@ interface ListingFields {
   /** blue-ocean only: the card number in the URL and in the image file name disagree. */
   idConflict: boolean;
   /**
-   * eBay only: the collection the title names (one run serves every collection); other shops'
-   * listings belong to their adapter's collection.
+   * Shared runs (eBay, blue-ocean) only: the collection the listing names, eBay's from its title,
+   * blue-ocean's from its URL (one run serves every collection); other shops' listings belong to
+   * their adapter's collection.
    */
   collection?: CollectionId;
 }
@@ -89,15 +90,23 @@ export interface FetchResult {
   /**
    * A shared run's collections (a subset of the adapter's `collections`) it found nothing of:
    * eBay's whose own searches all returned no usable item, blue-ocean's with no card on any page
-   * of the walk. The runner stores nothing for them this run (a shop error of that collection),
-   * so their listings are not marked gone.
+   * of the walk. Each is a shop error of that collection (nothing stored, its listings kept),
+   * unless it is also in `mayHaveSoldOut` and its recent peak was below the runner's
+   * EMPTY_COLLECTION_FLOOR: then it sold out, is stored empty and its listings are marked gone.
    */
   emptyCollections?: readonly CollectionId[];
+  /**
+   * blue-ocean only: the `emptyCollections` whose emptiness may be a sell-out (the shop drops
+   * sold-out singles, and no product of them was seen but unreadable). eBay never sets it: empty
+   * searches are a query or API problem.
+   */
+  mayHaveSoldOut?: readonly CollectionId[];
 }
 
 /**
  * One shop's fetch, not yet bound to its collection (`shops/adapters.ts` binds one per
- * (collection, shop) the definition lists; eBay's one fetch covers every collection on eBay).
+ * (collection, shop) the definition lists; eBay's and blue-ocean's one fetch each covers every
+ * collection with that shop's settings).
  */
 export interface ShopFetcher {
   readonly id: ShopId;
@@ -105,16 +114,17 @@ export interface ShopFetcher {
 }
 
 /**
- * A shop checked for one collection: its listings are stored in `collection`. eBay's one run
- * covers several (`collections`, a shared run): each listing is stored in the collection it
- * names (`Listing.collection`), and the run's skipped counts are filed under `collection`, one
- * of them (checkAdapters).
+ * A shop checked for one collection: its listings are stored in `collection`. A shared run (eBay,
+ * blue-ocean) covers several (`collections`, a shared run): each listing is stored in the
+ * collection it names (`Listing.collection`), and the run's skipped counts are filed under
+ * `collection`, one of them (checkAdapters).
  */
 export interface ShopAdapter extends ShopFetcher {
   readonly collection: CollectionId;
   /**
-   * Present means a shared run (eBay), even with one collection: keys by the shop alone, moves
-   * between collections. The collections it covers, none twice, `collection` among them.
+   * Present means a shared run (eBay, blue-ocean), even with one collection: keys by the shop
+   * alone, moves between collections. The collections it covers, none twice, `collection` among
+   * them.
    */
   readonly collections?: readonly CollectionId[];
 }

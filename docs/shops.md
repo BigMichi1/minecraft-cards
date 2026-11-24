@@ -38,16 +38,22 @@ changes or a new one is suggested.
   root URL (#1 to 9: `/nummer-001-i-steve-i-lego-minecraft-tcc-1-702351-01`,
   `/nummer-001-i-alex-00702502-01`; series 3 `…-tcc-on-fire-2dd00088-16`). Stickers
   (`stickerserie-1`, `…-00702506-NN`, pictures `…_sticker2025.jpg`) and packs (no `Nummer`
-  title, or no product code with a number) are no cards and not counted. A title or picture
+  title and no card number in the URL) are no cards: ignored, counted only as products. A title or picture
   naming another series than the URL's (series 1 titles end `I LEGO Minecraft TCC 1`, series 3
   ones name "On Fire", series 2 titles name no series; pictures `250_lego_minecraft_tcc-01_de.jpg`
   and `249_lego_minecraft_tcc-02.jpg`), or a series 1 or 3 title without its own marker, is
   skipped and counted (`skippedExcluded`). Series 1 and 2 ids are the title's `Nummer NNN`
   (`Nummer 266 I Never trust this chef`), which must equal the URL's number (else
-  `skippedNoId`); a picture number other than the id is an id conflict. A collection without a
-  card in the whole walk is a shop error of that collection (`emptyCollections`), its listings
-  untouched, unless it had fewer than 5 listings at its recent peak (3 days): then it sold out
-  there (series 3 had 3 singles left on 2026-11-24) and its listings are marked gone.
+  `skippedNoId`); a picture number other than the id is an id conflict. A product whose URL has a card number but whose title has no `Nummer`, and a single's picture
+  (series part and card number) at a URL of no known form, count as `skippedNoId` too. Series 2
+  titles name no series, but `TCC 2` or `Boom-Bastic` in a title at another series' URL excludes
+  it. A collection without a card in the whole walk is a shop error of that collection
+  (`emptyCollections`), its listings untouched. blue-ocean drops sold-out singles (731 of 733
+  products were in stock), so when no product of the collection was seen but unreadable and it
+  had fewer than 5 listings at its recent peak (3 days), it sold out there (series 3 had 3
+  singles left on 2026-11-24): its listings are marked gone, with a throttled sold-out alert. No
+  recent successful run, an unreadable run row or a failed lookup keep it a shop error. eBay's
+  empty searches are never read as a sell-out.
 
 ## eBay details
 

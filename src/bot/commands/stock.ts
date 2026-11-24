@@ -10,7 +10,7 @@ import { replyWithError } from '../utils/interactionReply';
 import logger, { logError } from '../utils/logger';
 import type { CollectionId } from '../collections/ids';
 import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
-import { needsLastSuccess } from './shopCell';
+import { enabledFor, needsLastSuccess, type EnabledShops } from './shopCell';
 import {
   buildStockPage,
   parseStockCustomId,
@@ -22,7 +22,8 @@ import {
 /** What `/stock` needs from the bot's wiring. */
 export interface StockContext {
   /** The shops this process checks (one per adapter built in bot.ts). */
-  enabledShops: readonly ShopId[];
+  /** The shops checked per collection; any other shop is not enabled there. */
+  enabledShops: EnabledShops;
 }
 
 export const data = new SlashCommandBuilder()
@@ -52,9 +53,10 @@ function page(
       ? userManager.getList(userId, collection)
       : [...catalogManager.knownIds(collection)].sort(compareCardIds);
   const latest = runManager.latestReadable();
+  const enabled = enabledFor(ctx.enabledShops, collection);
   const lastSuccess: Partial<Record<ShopId, number | null>> = {};
   for (const shop of SHOP_IDS) {
-    if (needsLastSuccess(latest.summary, collection, shop, ctx.enabledShops)) {
+    if (needsLastSuccess(latest.summary, collection, shop, enabled)) {
       lastSuccess[shop] = runManager.lastSuccess(shop, collection, now) ?? null;
     }
   }
@@ -64,7 +66,7 @@ function page(
     filter,
     page: pageNo,
     latest,
-    enabledShops: ctx.enabledShops,
+    enabledShops: enabled,
     lastSuccess,
     listings: listingManager.listingsForCards(collection, cards),
     now,

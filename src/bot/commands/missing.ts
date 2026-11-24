@@ -10,6 +10,7 @@ import type { CardId } from '../cards/cardId';
 import type { CollectionId } from '../collections/ids';
 import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
 import { buildStatusReply, needsLastSuccess, type StatusReply } from './missingStatus';
+import { enabledFor, type EnabledShops } from './shopCell';
 import { joinWithinLimit } from '../utils/messageLimit';
 import { replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
@@ -85,7 +86,8 @@ function describeChange(change: ListChange): string {
 /** What `/missing` needs from the bot's wiring. */
 export interface MissingContext {
   /** The shops this process checks (one per adapter built in bot.ts). */
-  enabledShops: readonly ShopId[];
+  /** The shops checked per collection; any other shop is not enabled there. */
+  enabledShops: EnabledShops;
 }
 
 /** Gather what `/missing status` shows (all reads) and format it. */
@@ -97,12 +99,13 @@ function status(
 ): StatusReply {
   const cards = userManager.getList(userId, collection);
   const latest = runManager.latestReadable();
+  const enabled = enabledFor(ctx.enabledShops, collection);
   // Only enabled shops whose latest check failed or did not run need their last success; before
   // the first readable run nothing is shown per shop, so nothing is looked up. null records
   // "looked up, none in the window", so the formatter can tell it from "not looked up".
   const lastSuccess: Partial<Record<ShopId, number | null>> = {};
   for (const shop of SHOP_IDS) {
-    if (needsLastSuccess(latest.summary, collection, shop, ctx.enabledShops)) {
+    if (needsLastSuccess(latest.summary, collection, shop, enabled)) {
       lastSuccess[shop] = runManager.lastSuccess(shop, collection, now) ?? null;
     }
   }
@@ -115,7 +118,7 @@ function status(
     collection,
     cards,
     latest,
-    enabledShops: ctx.enabledShops,
+    enabledShops: enabled,
     lastSuccess,
     listings: listingManager.listingsForCards(collection, cards),
     names,

@@ -11,6 +11,7 @@ import {
   shopCells,
   type CellContext,
   type ListingState,
+  enabledFor,
 } from './shopCell';
 
 const ALL: readonly ShopId[] = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay'];
@@ -228,5 +229,13 @@ describe('shopCells', () => {
     const l = listing('ebay', [cid('12'), cid('12')]);
     const c = shopCells(ctx({ listings: [l] }))(cid('12'), 'ebay');
     expect(c.kind === 'listed' && c.offers).toEqual([l]);
+  });
+});
+
+describe('enabledFor', () => {
+  test('the shops checked for the collection, none for one nothing checks', () => {
+    const enabled = new Map([['lego-minecraft-2' as const, ['sammel-ente'] as const]]);
+    expect(enabledFor(enabled, 'lego-minecraft-2')).toEqual(['sammel-ente']);
+    expect(enabledFor(enabled, 'lego-minecraft-1')).toEqual([]);
   });
 });

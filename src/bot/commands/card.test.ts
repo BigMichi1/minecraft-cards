@@ -37,7 +37,11 @@ const okDownload: DownloadFn = async (url) => {
 };
 
 function ctx(over: Partial<CardContext> = {}): CardContext {
-  return { enabledShops: ['sammel-ente', 'blue-ocean'], download: okDownload, ...over };
+  return {
+    enabledShops: new Map([['lego-minecraft-3', ['sammel-ente', 'blue-ocean']]]),
+    download: okDownload,
+    ...over,
+  };
 }
 
 function command(
@@ -234,7 +238,9 @@ describe('/card', () => {
   test('without a download function it uses the bounded picture download', async () => {
     // No reference, so nothing is fetched: only the default wiring is exercised.
     setReference(null);
-    await execute(command('12'), { enabledShops: ['sammel-ente'] });
+    await execute(command('12'), {
+      enabledShops: new Map([['lego-minecraft-3', ['sammel-ente']]]),
+    });
     expect(embed().title).toBe('#12 Squid');
   });
 

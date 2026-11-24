@@ -1,9 +1,11 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
+import type { EnabledShops } from './shopCell';
 import { MessageFlags } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { db, initializeDatabase } from '../database/db';
 import { cards, listingCards, listings, runs, users, wantedCards } from '../database/schema/index';
 import { listingManager } from '../database/listingManager';
+import { userManager } from '../database/userManager';
 import { runManager } from '../database/runManager';
 import { cid } from '../../test/cardIds';
 import { setCatalogCards } from '../../test/catalog';
@@ -14,9 +16,11 @@ import { UNKNOWN_COLLECTION } from './collectionOption';
 
 let replies: Array<{ content?: string; flags?: unknown; embeds?: unknown[] }> = [];
 
-const ALL_SHOPS = { enabledShops: ['sammel-ente', 'blue-ocean', 'ebay'] } as const;
+const ALL_SHOPS: { enabledShops: EnabledShops } = {
+  enabledShops: new Map([['lego-minecraft-3', ['sammel-ente', 'blue-ocean', 'ebay']]]),
+};
 const execute = (i: ChatInputCommandInteraction) =>
-  executeWith(i, { enabledShops: ['sammel-ente', 'blue-ocean'] });
+  executeWith(i, { enabledShops: new Map([['lego-minecraft-3', ['sammel-ente', 'blue-ocean']]]) });
 
 function fakeInteraction(
   userId: string,
@@ -202,6 +206,41 @@ describe('/missing', () => {
     await execute(fakeInteraction('u1', 'add', '9999, 9999, abc, 9999'));
     expect(lastReply().content).toBe('Nothing changed. Unknown or invalid: abc, 9999');
   });
+  test('a shop the collection does not use is "not enabled" there', async () => {
+    catalogManager.syncCollection(
+      'lego-minecraft-2',
+      [
+        {
+          cardId: cid('12'),
+          name: 'X',
+          kind: 'Oberwelt Karte',
+          variant: 'Basis Karte',
+          puzzle: false,
+          pictureUrl: null,
+        },
+      ],
+      1
+    );
+    userManager.setList('u1', 'lego-minecraft-2', '12');
+    runManager.record({
+      startedAt: 5,
+      finishedAt: 6,
+      shops: { 'collect-it': { listings: 235 } },
+      collections: { 'lego-minecraft-2': { 'sammel-ente': { listings: 297 } } },
+      notified: 0,
+      dmFailures: 0,
+    });
+    const ctx: { enabledShops: EnabledShops } = {
+      enabledShops: new Map([
+        ['lego-minecraft-2', ['sammel-ente']],
+        ['lego-minecraft-3', ['sammel-ente', 'collect-it']],
+      ]),
+    };
+    await executeWith(fakeInteraction('u1', 'status', undefined, 'lego-minecraft-2'), ctx);
+    expect(lastReply().content).toContain('✅ sammel-ente: 297 listings');
+    expect(lastReply().content).toContain('⚪ collect-it: not enabled');
+  });
+
   test('status shows the last check and each card with its shop state, ephemeral', async () => {
     const T = 1_800_000_000_000;
     await execute(fakeInteraction('u1', 'set', '12'));

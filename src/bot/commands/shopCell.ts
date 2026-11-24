@@ -9,6 +9,14 @@ import { shopEntry, type LatestRun } from '../database/runManager';
 import type { CollectionId } from '../collections/ids';
 import type { ShopId } from '../shops/types';
 
+/** The shops this process checks, per collection (from the adapters). */
+export type EnabledShops = ReadonlyMap<CollectionId, readonly ShopId[]>;
+
+/** The shops checked for `collection`; none for a collection nothing checks. */
+export function enabledFor(enabled: EnabledShops, collection: CollectionId): readonly ShopId[] {
+  return enabled.get(collection) ?? [];
+}
+
 /** What the cells of every card are computed from; gathered by the command, read without I/O. */
 export interface CellContext {
   /** The collection the cards are of: its shops' results are read from the run. */

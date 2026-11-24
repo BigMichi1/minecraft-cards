@@ -564,6 +564,54 @@ describe('runCheck', () => {
     }
   });
 
+  test("a new shop picture of a card whose scan is missing re-matches it at the run's time", async () => {
+    setCatalogCards('lego-minecraft-3', [
+      { cardId: cid('12'), scanUrl: 'https://www.laststicker.com/i/cards/12125/12.jpg' },
+    ]);
+    // Recorded at the run's clock, far from Date.now(): the run must judge by its own clock.
+    catalogManager.markScanMissing('lego-minecraft-3', cid('12'), clock);
+    const rematch = spyOn(listingManager, 'rematchMismatches');
+    try {
+      await runCheck(
+        depsWith([
+          ok('sammel-ente', [
+            {
+              ...blue12,
+              shop: 'sammel-ente',
+              url: 'https://shop-sammel-ente.de/12',
+              imageUrl: 'https://ente/12.jpg',
+            },
+          ]),
+        ])
+      );
+      expect(rematch).toHaveBeenCalledWith('lego-minecraft-3', ids('12'));
+    } finally {
+      rematch.mockRestore();
+    }
+  });
+
+  test('a failing re-match after many new shop pictures names ten and counts the rest', async () => {
+    const twelve = Array.from({ length: 12 }, (_, i) => String(i + 1));
+    const enteListings: Listing[] = twelve.map((id) => ({
+      ...blue12,
+      shop: 'sammel-ente',
+      url: `https://shop-sammel-ente.de/${id}`,
+      cardIds: [cid(id)],
+      imageUrl: `https://ente/${id}.jpg`,
+    }));
+    const rematch = spyOn(listingManager, 'rematchMismatches').mockImplementation(() => {
+      throw new Error('db locked');
+    });
+    try {
+      await runCheck(depsWith([ok('sammel-ente', enteListings)]));
+    } finally {
+      rematch.mockRestore();
+    }
+    expect(
+      alerts.find((a) => a.includes('could not compare the mismatches of 12 card(s)'))
+    ).toContain('#10 … and 2 more');
+  });
+
   test("only the collection's fallback shop writes shop pictures", async () => {
     await runCheck(depsWith([ok('blue-ocean', [blue12])]));
     expect(chosenReference('lego-minecraft-3', cid('12'))).toBeNull();
@@ -1396,6 +1444,35 @@ describe('runCheck', () => {
         expect((await run(shopsAt(5))).notified).toBe(0);
         expect(listingManager.getByUrl(blue12.url)!.matchStatus).toBe('confirmed');
       });
+    });
+
+    test('known twins: a #59 picture closest to XXL1 is no mismatch, and is sent', async () => {
+      catalogManager.applyImport({
+        collection: 'lego-minecraft-3',
+        ids: ids('12', '45', '59', '77', '160', 'XXL1'),
+      });
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('160'), puzzle: true }]);
+      // #59 and XXL1 score 0.82 apart: below TWIN_SIMILARITY, twins only by knownTwins.
+      angles['https://ente/59.jpg'] = 80;
+      angles['https://ente/XXL1.jpg'] = 115;
+      angles['https://img/59-120.jpg'] = 120;
+      userManager.setList('u1', 'lego-minecraft-3', '59');
+      const listing59: Listing = {
+        ...blue12,
+        url: 'https://www.blue-ocean.de/p/59',
+        cardIds: [cid('59')],
+        imageUrl: 'https://img/59-120.jpg',
+      };
+      const r = await run([
+        ok('sammel-ente', [
+          ...references,
+          reference('59', 'Charged Creeper'),
+          reference('XXL1', 'Charged Creeper'),
+        ]),
+        ok('blue-ocean', [listing59]),
+      ]);
+      expect(listingManager.getByUrl(listing59.url)!.matchStatus).toBe('unconfirmed');
+      expect(r.notified).toBe(1);
     });
 
     test("rule 3: an undecided picture falls back to today's comparison", async () => {

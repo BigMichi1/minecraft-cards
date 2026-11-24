@@ -442,6 +442,28 @@ describe('catalogManager', () => {
       });
     });
 
+    test('updateShopPictures judges the reference at the given time', () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [{ cardId: cid('12'), scanUrl: scan('12') }]);
+      catalogManager.markScanMissing('lego-minecraft-3', cid('12'), 1000);
+      // Within the window the shop picture is the reference: a new one changes it.
+      expect(
+        catalogManager.updateShopPictures(
+          'lego-minecraft-3',
+          [{ cardId: cid('12'), imageUrl: 'https://se/a.jpg' }],
+          1001
+        )
+      ).toEqual(ids('12'));
+      // After it the scan is: a new shop picture changes nothing.
+      expect(
+        catalogManager.updateShopPictures(
+          'lego-minecraft-3',
+          [{ cardId: cid('12'), imageUrl: 'https://se/b.jpg' }],
+          1000 + SCAN_RETRY_MS + 1
+        )
+      ).toEqual([]);
+    });
+
     test('updateShopPictures returns only cards whose chosen reference changed', () => {
       catalogManager.seedIfEmpty();
       setCatalogCards('lego-minecraft-3', [

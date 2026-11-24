@@ -4,7 +4,7 @@ import type { StoredListing } from '../database/listingManager';
 import { formatPrice, kleinanzeigenSearchUrl, SHOP_NAMES, validUrl } from '../notify/messages';
 import { SHOP_IDS, type ShopId } from '../shops/types';
 import { clipText } from '../utils/messageLimit';
-import { pictureBacked, shopCells, type CellContext, type ShopCell } from './shopCell';
+import { heldBack, pictureBacked, shopCells, type CellContext, type ShopCell } from './shopCell';
 
 /** Everything `/card` shows; gathered by the command, formatted here without I/O. */
 export interface CardInput extends CellContext {
@@ -57,7 +57,7 @@ function notes(cell: ShopCell & { kind: 'listed' }): string {
   const parts: string[] = [];
   if (cell.stale) parts.push('older than the last check');
   if (l.cardIds.length > 1) parts.push('bundle');
-  else if (!pictureBacked(l) && l.matchStatus !== 'mismatch') parts.push('picture unconfirmed');
+  else if (!pictureBacked(l) && !heldBack(l)) parts.push('picture unconfirmed');
   return parts.map((p) => ` · ${p}`).join('');
 }
 

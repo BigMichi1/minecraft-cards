@@ -32,6 +32,8 @@ describe('listingState', () => {
     ['ended', { format: 'auction' as const, auctionEndsAt: now - 1, onHold: true }],
     ['paused', { onHold: true, matchStatus: 'mismatch' as const }],
     ['held_back', { matchStatus: 'mismatch' as const }],
+    // An old mismatch waiting for its re-match is held back from DMs too.
+    ['held_back', { matchStatus: 'pending' as const, rematchFrom: 'mismatch' as const }],
     ['in_stock', { format: 'auction' as const, auctionEndsAt: now + 1 }],
   ])('%p', (state, over) => {
     expect(listingState(listing('ebay', ids('12'), over), now)).toBe(state);

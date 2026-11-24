@@ -384,10 +384,10 @@ function isGone(error: unknown): boolean {
  * Embed every usable reference of `catalog`, at most `concurrency` at once. The catalog's gaps
  * stay `missing`; a reference that cannot be loaded joins them as `image_unavailable`, also when
  * the model fails on that one picture while it embeds others; only a model failing on every
- * reference is `model_unavailable`. A reference with a `fallbackUrl` (a laststicker scan) that
- * answers 404 or 410 is reported through `onScanMissing` and its fallback loaded instead; any
- * other failure of it never falls back (a scan that exists but did not load this time must not
- * be replaced). Any other error (the cache's database, a bug) is rethrown.
+ * reference is `model_unavailable`. A laststicker scan that answers 404 or 410 is reported
+ * through `onScanMissing` and its `fallbackUrl` loaded instead; without one the card is
+ * `no_picture` (no reference, not retried this run). Any other failure of a scan never falls
+ * back (a scan that exists but did not load this time must not be replaced). Any other error (the cache's database, a bug) is rethrown.
  */
 export async function loadReferenceSet(
   catalog: ReferenceCatalog,
@@ -395,16 +395,21 @@ export async function loadReferenceSet(
   options: LoadReferenceOptions = {}
 ): Promise<LoadedReferenceSet> {
   const results: (
-    (ReferenceVector & { url: string }) | { failed: Unavailable; detail: string } | null
+    | (ReferenceVector & { url: string })
+    | { failed: Unavailable | 'no_picture'; detail: string }
+    | null
   )[] = catalog.usable.map(() => null);
+  /** The vector and its URL, or (a scan laststicker does not have, no fallback) why none. */
   const embedWithFallback = async (
     card: ReferenceCatalog['usable'][number]
-  ): Promise<{ vector: Float32Array; url: string }> => {
+  ): Promise<{ vector: Float32Array; url: string } | { noScan: string }> => {
     try {
       return { vector: await embedder.embed(card.referenceImageUrl), url: card.referenceImageUrl };
     } catch (error) {
-      if (card.fallbackUrl === null || !isGone(error)) throw error;
+      if (card.source !== 'laststicker' || !isGone(error)) throw error;
       options.onScanMissing?.(card.cardId);
+      // No scan and no usable shop picture: no reference at all, as before the scan existed.
+      if (card.fallbackUrl === null) return { noScan: errorMessage(error) };
       return { vector: await embedder.embed(card.fallbackUrl), url: card.fallbackUrl };
     }
   };
@@ -418,8 +423,11 @@ export async function loadReferenceSet(
         continue;
       }
       try {
-        const { vector, url } = await embedWithFallback(card);
-        results[i] = { cardId: card.cardId, vector, puzzle: card.puzzle, url };
+        const loaded = await embedWithFallback(card);
+        results[i] =
+          'noScan' in loaded
+            ? { failed: 'no_picture', detail: loaded.noScan }
+            : { cardId: card.cardId, vector: loaded.vector, puzzle: card.puzzle, url: loaded.url };
       } catch (error) {
         results[i] = { failed: unavailableStatus(error), detail: errorMessage(error) };
       }

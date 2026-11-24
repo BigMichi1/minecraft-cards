@@ -281,9 +281,15 @@ const asCurrent = (status: string): string => (status === 'reference' ? 'confirm
 
 /**
  * A listing waiting for its re-match (rematchFrom) was compared: count it unless the result is
- * retried anyway (image or model unavailable), and clear its rematchFrom.
+ * retried anyway (image or model unavailable), and clear its rematchFrom. A listing that stays a
+ * mismatch is marked noted: its note went out before the switch.
  */
-function countRematch(tally: RematchTally, l: StoredListing, result: MatchResult): void {
+function countRematch(
+  deps: RunDeps,
+  tally: RematchTally,
+  l: StoredListing,
+  result: MatchResult
+): void {
   if (result.status === 'image_unavailable' || result.status === 'model_unavailable') return;
   const from = asCurrent(l.rematchFrom!);
   tally.compared++;
@@ -294,8 +300,11 @@ function countRematch(tally: RematchTally, l: StoredListing, result: MatchResult
       tally.changes.push(`${card} ${l.shop} ${from}→${result.status} ${l.url}`);
     }
     if (result.status === 'mismatch') tally.mismatches.push(l.id);
+    listingManager.finishRematch(l.id, null);
+    return;
   }
-  listingManager.finishRematch(l.id, null);
+  // Still the same mismatch: its note went out before the switch.
+  listingManager.finishRematch(l.id, result.status === 'mismatch' ? deps.now() : null);
 }
 
 /**
@@ -409,7 +418,7 @@ async function matchPending(
       );
       listingManager.setMatch(l.id, result, deps.now());
       countPicture(counts, result);
-      if (l.rematchFrom !== null) countRematch(rematch, l, result);
+      if (l.rematchFrom !== null) countRematch(deps, rematch, l, result);
     } catch (error) {
       // One listing's failure (the embedding cache's database, a bug) must not stop every DM:
       // the listing stays as it was (pending or retryable) and is tried again next run.

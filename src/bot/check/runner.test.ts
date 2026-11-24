@@ -1044,6 +1044,29 @@ describe('runCheck', () => {
         expect(mismatchNotes()).toHaveLength(2);
       });
 
+      test('a listing that stays a mismatch gets no new note', async () => {
+        await run(shopsAt(60));
+        expect(mismatchNotes()).toHaveLength(1);
+        resetAsMigration('mismatch');
+        clock += DAY_AND_MORE;
+        const r = await run(shopsAt(60));
+        expect(r.rematch).toEqual({ compared: 1, changed: 0, changes: [] });
+        expect(mismatchNotes()).toHaveLength(1);
+        expect(summaries()).toEqual([]);
+      });
+
+      test('an old mismatch that cannot be compared yet is not notified', async () => {
+        userManager.setList('u2', 'lego-minecraft-3', '12');
+        await run(shopsAt(60));
+        resetAsMigration('mismatch');
+        const r = await run(shopsAt(60), { embedder: null });
+        expect(listingManager.getByUrl(blue12.url)).toMatchObject({
+          matchStatus: 'model_unavailable',
+          rematchFrom: 'mismatch',
+        });
+        expect(r.notified).toBe(0);
+      });
+
       test('an unchanged re-match sends no summary; reference counts as confirmed', async () => {
         await run(shopsAt(5));
         resetAsMigration('reference');

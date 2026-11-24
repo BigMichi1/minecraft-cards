@@ -612,10 +612,23 @@ describe('loadReferenceSet', () => {
       }
     });
 
-    test('a 404 without fallbackUrl stays image_unavailable', async () => {
+    test('a 404 scan without fallbackUrl is no_picture (not retried) and reported', async () => {
       const missingScans: string[] = [];
       const set = await loadReferenceSet(
         { usable: [card('XXL1', scan)], missing: [] },
+        failing(httpFailure(404)),
+        { onScanMissing: (id) => missingScans.push(id) }
+      );
+      expect(set.missing).toEqual([
+        { cardId: cid('XXL1'), reason: 'no_picture', detail: `HTTP 404 for ${scan}` },
+      ]);
+      expect(missingScans).toEqual(['XXL1']);
+    });
+
+    test('a 404 of a shop or admin picture stays image_unavailable and is no missing scan', async () => {
+      const missingScans: string[] = [];
+      const set = await loadReferenceSet(
+        { usable: [{ ...card('XXL1', scan), source: 'shop' as const }], missing: [] },
         failing(httpFailure(404)),
         { onScanMissing: (id) => missingScans.push(id) }
       );

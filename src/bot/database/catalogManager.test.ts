@@ -356,6 +356,23 @@ describe('catalogManager', () => {
       });
     });
 
+    test('a placeholder or shared shop picture is no fallback', () => {
+      catalogManager.seedIfEmpty();
+      setCatalogCards('lego-minecraft-3', [
+        { cardId: cid('LE10'), scanUrl: scan('le10'), imageUrl: 'https://se/same.jpg?ts=1' },
+        { cardId: cid('LE11'), scanUrl: scan('le11'), imageUrl: 'https://se/same.jpg?ts=2' },
+        { cardId: cid('LE12'), scanUrl: scan('le12'), imageUrl: 'https://se/mnc3_leer.jpg' },
+        { cardId: cid('LE13'), scanUrl: scan('le13'), imageUrl: 'https://se/le13.jpg' },
+      ]);
+      const fallbackOf = (id: string) =>
+        catalogManager.referenceCatalog('lego-minecraft-3').usable.find((c) => c.cardId === id)
+          ?.fallbackUrl;
+      expect(fallbackOf('LE10')).toBeNull();
+      expect(fallbackOf('LE11')).toBeNull();
+      expect(fallbackOf('LE12')).toBeNull();
+      expect(fallbackOf('LE13')).toBe('https://se/le13.jpg');
+    });
+
     test('a missing scan without a shop picture is no_picture', () => {
       catalogManager.seedIfEmpty();
       setCatalogCards('lego-minecraft-3', [{ cardId: cid('1'), scanUrl: scan('1') }]);

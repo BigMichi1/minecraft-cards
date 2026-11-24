@@ -433,7 +433,8 @@ export const listingManager = {
   },
 
   /**
-   * Available, not on hold, not a `mismatch` (the picture shows another card), not an ended
+   * Available, not on hold, not a `mismatch` (the picture shows another card; also one from
+   * before the reference switch not compared again yet, `rematchFrom`), not an ended
    * auction, seen since `seenSince`, sharing a card with the user's list, and not yet notified
    * for this availability period.
    */
@@ -448,6 +449,8 @@ export const listingManager = {
             eq(listings.available, true),
             eq(listings.onHold, false),
             ne(listings.matchStatus, 'mismatch'),
+            // A mismatch before the reference switch stays held back until it is compared again.
+            or(isNull(listings.rematchFrom), ne(listings.rematchFrom, 'mismatch')),
             options.excludeIds?.length
               ? notInArray(listings.id, [...options.excludeIds])
               : undefined,

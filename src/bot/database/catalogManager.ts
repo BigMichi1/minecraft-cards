@@ -338,12 +338,20 @@ export const catalogManager = {
       .all()
       .map((r) => ({ cardId: r.cardId, puzzleSeen: r.puzzleSeen, chosen: chooseReference(r, now) }))
       .sort((a, b) => compareCardIds(a.cardId, b.cardId));
+    // A picture counts as shared when several cards show it as their reference or fallback.
     const uses = new Map<string, number>();
+    const count = (url: string) => {
+      const key = pictureKey(url);
+      uses.set(key, (uses.get(key) ?? 0) + 1);
+    };
     for (const r of rows) {
       if (r.chosen === null) continue;
-      const key = pictureKey(r.chosen.url);
-      uses.set(key, (uses.get(key) ?? 0) + 1);
+      count(r.chosen.url);
+      if (r.chosen.fallbackUrl !== null) count(r.chosen.fallbackUrl);
     }
+    /** A picture that tells its card apart: no placeholder, not shown for several cards. */
+    const distinct = (url: string) =>
+      !PLACEHOLDER_FILE.test(pictureKey(url)) && (uses.get(pictureKey(url)) ?? 0) <= 1;
     const usable: ReferenceCard[] = [];
     const missing: MissingReference[] = [];
     for (const { cardId, chosen, puzzleSeen } of rows) {
@@ -358,7 +366,9 @@ export const catalogManager = {
           cardId,
           referenceImageUrl: chosen.url,
           source: chosen.source,
-          fallbackUrl: chosen.fallbackUrl,
+          // The placeholder and shared rules hold for the fallback too.
+          fallbackUrl:
+            chosen.fallbackUrl !== null && distinct(chosen.fallbackUrl) ? chosen.fallbackUrl : null,
           puzzle: puzzleSeen,
         });
       }

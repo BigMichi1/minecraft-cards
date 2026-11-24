@@ -1,0 +1,661 @@
+{
+ "href": "https://api.ebay.com/buy/browse/v1/item_summary/search",
+ "total": 40,
+ "limit": 200,
+ "offset": 0,
+ "itemSummaries": [
+  {
+   "itemId": "v1|120000000001|0",
+   "legacyItemId": "120000000001",
+   "title": "LEGO Minecraft Serie 1 Trading Card 68 - Yeti - Skin Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000001",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.49",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000002|0",
+   "legacyItemId": "120000000002",
+   "title": "LEGO Minecraft Serie 1 Trading Card 27 - Comic Netherit Ritter - Skin Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000002",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-1/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000003|0",
+   "legacyItemId": "120000000003",
+   "title": "LEGO Minecraft Serie 1 Trading Card 57 - Comic Fuchs-Skin - Skin Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000003",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-2/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000004|0",
+   "legacyItemId": "120000000004",
+   "title": "LEGO Minecraft Serie 1 Trading Card 136 - Stampfender Verwüster - Mob Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000004",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-3/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000005|0",
+   "legacyItemId": "120000000005",
+   "title": "LEGO Minecraft Serie 1 Trading Card 92 - Neon Zombie - Mob Karte - Neon",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000005",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-4/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.39",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000006|0",
+   "legacyItemId": "120000000006",
+   "title": "LEGO Minecraft Serie 1 Trading Card 86 - Neon Enderman - Mob Karte - Neon",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000006",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-5/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000007|0",
+   "legacyItemId": "120000000007",
+   "title": "LEGO Minecraft Serie 1 Trading Card 222 - Kugelfische - Tierkarte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000007",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-6/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000008|0",
+   "legacyItemId": "120000000008",
+   "title": "LEGO Minecraft Serie 1 Trading Card 239 - Hühner - Tierkarte - Holo",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000008",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-7/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.39",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000009|0",
+   "legacyItemId": "120000000009",
+   "title": "LEGO Minecraft Serie 1 Trading Card 227 - Gefärbte Katze - Tierkarte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000009",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-8/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.49",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000010|0",
+   "legacyItemId": "120000000010",
+   "title": "LEGO Minecraft Serie 1 Trading Card 185 - Umzingelt - Comic Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000010",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-9/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000011|0",
+   "legacyItemId": "120000000011",
+   "title": "LEGO Minecraft Serie 1 Trading Card 202 - Hast du was gehört? - Comic Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000011",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-10/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000012|0",
+   "legacyItemId": "120000000012",
+   "title": "LEGO Minecraft Serie 1 Trading Card 194 - Schwerer Schatz - Comic Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000012",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-11/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000013|0",
+   "legacyItemId": "120000000013",
+   "title": "LEGO Minecraft Serie 1 Sammelkarten - 1 Packung mit 6 Karten (OVP)",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000013",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-12/s-l225.jpg"
+   },
+   "price": {
+    "value": "3.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000014|0",
+   "legacyItemId": "120000000014",
+   "title": "LEGO Minecraft Serie 1 Trading Cards -  1 Mini Tin Box (zufällige Auswahl)",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000014",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-13/s-l225.jpg"
+   },
+   "price": {
+    "value": "16.49",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000015|0",
+   "legacyItemId": "120000000015",
+   "title": "Lego Minecraft Sammelkarten Serie 1 + limitierte Karten zum aussuchen",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000015",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-14/s-l225.jpg"
+   },
+   "price": {
+    "value": "80.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000016|0",
+   "legacyItemId": "120000000016",
+   "title": "Lego Minecraft Sammelkarten Serie 1 + limitierte Karten zum aussuchen",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000016",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-15/s-l225.jpg"
+   },
+   "price": {
+    "value": "250.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000017|0",
+   "legacyItemId": "120000000017",
+   "title": "Lego Minecraft Sammelkarten Serie 2\"KUNSTKARTEN\"",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000017",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-16/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.59",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000018|0",
+   "legacyItemId": "120000000018",
+   "title": "Lego Minecraft Sammelkarten Serie 2\"OBERWELT\"",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000018",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-17/s-l225.jpg"
+   },
+   "price": {
+    "value": "2.19",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000019|0",
+   "legacyItemId": "120000000019",
+   "title": "Lego Minecraft Sammelkarten Serie 2\"COMIC-KARTEN\"",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000019",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-18/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.69",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000020|0",
+   "legacyItemId": "120000000020",
+   "title": "Lego Minecraft Sammelkarten Serie 2\"NETHER\"",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000020",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-19/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.59",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000021|0",
+   "legacyItemId": "120000000021",
+   "title": "Lego Minecraft Serie 1-2 Trading Card Boom Bastic limitiert Goldkarten aussuchen",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000021",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-20/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.99",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ],
+   "itemGroupType": "SELLER_DEFINED_VARIATIONS"
+  },
+  {
+   "itemId": "v1|120000000022|0",
+   "legacyItemId": "120000000022",
+   "title": "LEGO Minecraft Boom Bastic One Fire Serie 3 98 Verschiedene Karten Neu",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000022",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-21/s-l225.jpg"
+   },
+   "price": {
+    "value": "25.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000023|0",
+   "legacyItemId": "120000000023",
+   "title": "Blue Ocean LEGO Minecraft 2025 Sammelkarte 216 Trading Cards Boom-Bastic TNT",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000023",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-22/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000024|0",
+   "legacyItemId": "120000000024",
+   "title": "LEGO MINECRAFT TNT BOOM Serie 2 ULTRA RARE CREEPER 12 Karte Trading Card",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000024",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-23/s-l225.jpg"
+   },
+   "price": {
+    "value": "24.90",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000025|0",
+   "legacyItemId": "120000000025",
+   "title": "Lego Minecraft Sammelkarten Serie 2OBERWELT\"",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000025",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-24/s-l225.jpg"
+   },
+   "price": {
+    "value": "2.19",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000026|0",
+   "legacyItemId": "120000000026",
+   "title": "Lego Minecraft Sammelkarten Serie 2 \"CRAFTING-KARTEN\"",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000026",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-25/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.69",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000027|0",
+   "legacyItemId": "120000000027",
+   "title": "Lego Minecraft Sammelkarten Serie 1 + Serie 2 + limitierte Karten -zum aussuchen",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000027",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-26/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.99",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ],
+   "itemGroupType": "SELLER_DEFINED_VARIATIONS"
+  },
+  {
+   "itemId": "v1|120000000028|0",
+   "legacyItemId": "120000000028",
+   "title": "Lego Minecraft Sammelkarten wie abgebildet",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000028",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-27/s-l225.jpg"
+   },
+   "price": {
+    "value": "2.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000029|0",
+   "legacyItemId": "120000000029",
+   "title": "Lego Minecraft Sammelkarten wie abgebildet",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000029",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-28/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000030|0",
+   "legacyItemId": "120000000030",
+   "title": "LEGO Minecraft 50 Minifiguren + viel Zubehör",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000030",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-29/s-l225.jpg"
+   },
+   "price": {
+    "value": "79.99",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000031|0",
+   "legacyItemId": "120000000031",
+   "title": "LEGO Minecraft Sammelkarte / Trading Card Nr. 242",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000031",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-30/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.49",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000032|0",
+   "legacyItemId": "120000000032",
+   "title": "LEGO Minecraft Serie 1 Trading Cards Sammelkarten 151-254 + Limitierte Karten",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000032",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-31/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ],
+   "itemGroupType": "SELLER_DEFINED_VARIATIONS"
+  },
+  {
+   "itemId": "v1|120000000033|0",
+   "legacyItemId": "120000000033",
+   "title": "LEGO Minecraft Serie 3 Trading Cards Einzelkarten 1 - 228 zum aussuchen choose",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000033",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-32/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ],
+   "itemGroupType": "SELLER_DEFINED_VARIATIONS"
+  },
+  {
+   "itemId": "v1|120000000034|0",
+   "legacyItemId": "120000000034",
+   "title": "LEGO Minecraft Serie 1 Trading Card 62 - Neon Ninja - Skin Karte - Neon",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000034",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-33/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.39",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000035|0",
+   "legacyItemId": "120000000035",
+   "title": "LEGO Minecraft Serie 1 Trading Card 119 - Plünderer - Mob Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000035",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-34/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000036|0",
+   "legacyItemId": "120000000036",
+   "title": "Lego Minecraft Karten Serie 1 Term Enderdrache Und Enderman",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000036",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-35/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE",
+    "BEST_OFFER"
+   ]
+  },
+  {
+   "itemId": "v1|120000000037|0",
+   "legacyItemId": "120000000037",
+   "title": "LEGO Minecraft Serie 1 Trading Card 65 - Taucher - Skin Karte",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000037",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-36/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.00",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000038|0",
+   "legacyItemId": "120000000038",
+   "title": "LEGO Minecraft Serie 1 Trading Card 58 - Neon Pirat - Skin Karte - Neon",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000038",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-37/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.39",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000039|0",
+   "legacyItemId": "120000000039",
+   "title": "LEGO Minecraft Serie 1 Trading Card 115 - Neon Spinnenreiter - Mob Karte - Neon",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000039",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-38/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.39",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|120000000040|0",
+   "legacyItemId": "120000000040",
+   "title": "LEGO Minecraft Serie 1 Trading Card 86 - Neon Enderman - Mob Karte - Neon",
+   "itemWebUrl": "https://www.ebay.de/itm/120000000040",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/s12-39/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.39",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  }
+ ]
+}

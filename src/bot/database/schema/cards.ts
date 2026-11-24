@@ -10,15 +10,18 @@ export const cards = sqliteTable(
     type: text({ enum: CARD_TYPES }).notNull(),
     name: text(),
     referenceImageUrl: text(),
-    /** laststicker's section (`Characterkarten`, `Puzzlekarten`, ...); null before a sync. */
+    /** laststicker's section (`Characterkarten`, `Puzzlekarten`, ...); null before a sync and for manual cards. */
     kind: text(),
-    /** laststicker's type (`Basis Karte`, `Lava Karte`, ...); null before a sync. */
+    /** laststicker's type (`Basis Karte`, `Lava Karte`, ...); null before a sync and for manual cards. */
     variant: text(),
     /** `manual` cards are the admin's: the laststicker sync never changes them. */
     source: text({ enum: CARD_SOURCES }).notNull().default('laststicker'),
-    /** The card's laststicker scan (404 when laststicker has none); the reference from PR 2b. */
+    /** The card's laststicker scan (404 when laststicker has none); not the reference picture yet. */
     laststickerImageUrl: text(),
-    /** A manual card: when the admin was told laststicker lists it too; null while not told. */
+    /**
+     * A manual card laststicker lists too: when the admin's alert about it was delivered; null
+     * while not (the sync reports it again). Cleared only by releaseManual.
+     */
     listedNotedAt: integer(),
     /**
      * A puzzle card (laststicker's section `Puzzlekarten`, or once "Puzzlekarte" in a

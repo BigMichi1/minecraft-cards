@@ -5,8 +5,9 @@ import { db } from '../bot/database/db';
 import { cards } from '../bot/database/schema/index';
 
 /**
- * Set names, reference pictures and puzzle flags of stored catalog cards directly, as a sync
- * and a sammel-ente run would. Fields left out stay as they are; unknown ids are skipped.
+ * Set names and puzzle flags of stored catalog cards directly, as a laststicker sync would, and
+ * reference pictures as a sammel-ente run would (also on manual cards, which that run skips).
+ * Fields left out stay as they are; unknown ids are skipped.
  */
 export function setCatalogCards(
   collection: CollectionId,

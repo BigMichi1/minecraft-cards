@@ -181,7 +181,10 @@ export const catalogManager = {
     );
   },
 
-  /** The name (sammel-ente's) of every named card of the collection, for the eBay title check by name. */
+  /**
+   * The catalog name (laststicker's, or the admin's for a manual card) of every named card of the
+   * collection, for the eBay title check by name.
+   */
   cardNames(collection: CollectionId): Map<CardId, string> {
     const names = new Map<CardId, string>();
     const rows = db

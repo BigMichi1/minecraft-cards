@@ -198,9 +198,10 @@ not the `notify-pictures` alert.
 
 **Puzzle cards** come from data: the rows laststicker lists under the section `Puzzlekarten`
 (the catalog sync sets `cards.puzzle_seen`, never cleared, so a rename cannot drop the mark).
-Before laststicker, sammel-ente's names said so ("#154 Puzzlekarte Oberwelt 1"); migration 0006
-marked every stored name with "Puzzlekarte", since laststicker names them by picture and piece
-("The Overworld 1"). On 2026-11-18 and 2026-11-24 that gave the same 36 cards (#154–#189), the
+A row with a piece marker (`<div class="pz">`) counts too, should the section be renamed. Before
+laststicker, sammel-ente's names said so ("#154 Puzzlekarte Oberwelt 1"); migration 0006 set
+`puzzle_seen` on every card whose stored name contained "Puzzlekarte", since laststicker names
+them by picture and piece ("The Overworld 1"). On 2026-11-18 and 2026-11-24 that gave the same 36 cards (#154–#189), the
 set of collect-it's "Puzzlekarte" titles too.
 
 **Counts.** Each run counts the picture decisions (`decided`) and, per reason, the ones that

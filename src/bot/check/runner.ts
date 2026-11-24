@@ -74,8 +74,9 @@ export interface RunDeps {
    */
   referenceFailures?: Map<string, number>;
   /**
-   * Sync the catalogs that are due from laststicker (catalog/sync.ts), before the shops read
-   * the names; its own failures are alerted there. A rejection is logged and the run goes on.
+   * Sync the catalogs that are due from laststicker (catalog/sync.ts), first in every run (also
+   * without wanted cards), before the shops read the names; its own failures are alerted there.
+   * A rejection is logged and the run goes on.
    */
   syncCatalogs?: () => Promise<unknown>;
 }

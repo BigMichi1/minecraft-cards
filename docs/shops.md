@@ -105,8 +105,9 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   (`Serie 1 Trading Card 3 - Comic Steve - Skin Karte`, numbers up to 254), and every series 3
   single in the probe named its series.
 - **No series word, but the catalog name** (`nameMatchedCardIds`): a title without any series
-  word still gives a card when the name of that number in the eBay adapter's collection
-  (sammel-ente's, read at the start of each eBay fetch) stands right beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
+  word still gives a card when the name of that number in the eBay adapter's collection (the
+  catalog name, synced from laststicker, read at the start of each eBay fetch) stands right
+  beside it: `LEGO Minecraft Karte 131 - Ghast` is #131,
   because series 3 #131 is "Ghast".
   - The number comes from the title forms above, a plain `N - Name`, or `LE`/`XXL` with any
     spacing (`LE 19 - Creeper` is LE19). The name follows it (spaces and at most one `-`, `–`,
@@ -119,9 +120,9 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     `OVP`, `Nr`, `No`, `2026`, `Charakterkarte`) may be left; `Comickarte 3 - Steve` gives
     nothing. Puzzle cards carry laststicker's English names ("The Overworld 1"), so a German
     `Puzzlekarte Oberwelt 1` title no longer matches by name; they are never identified by
-    picture alone anyway. The catalog names come from laststicker since collections PR 2a; on
-    2026-11-24 they equalled sammel-ente's, and all 43 titles of the eBay fixture read the same
-    with them. Any other word gives nothing: another
+    picture alone anyway. The catalog names come from laststicker; on 2026-11-24 they equalled
+    sammel-ente's apart from the 36 puzzle cards, and all 43 titles of the eBay fixture read the
+    same with them. Any other word gives nothing: another
     series (`Comic Karte 3 - Steve`, series 1 card 3 is "Comic Steve"; `Staffel 2`, `S1`),
     another card's longer name (`Gold Ghast Karte 131`, `Karte 131 - Ghast (Gold)`: LE21 is
     "Gold Ghast"), a second card without its number (`Karte 3 - Steve / Alex`), another product
@@ -221,14 +222,14 @@ gesehen` on a page with a next page and `Du hast alle 235 Artikel gesehen` on th
 
 ## Not used
 
-| Shop                                                                                                   | Sells singles                               | Why not used                                                                                                 |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| [Kleinanzeigen](https://www.kleinanzeigen.de/s-lego-minecraft-karten/k0)                               | yes (private sellers)                       | No API, blocks bots, and its terms forbid scraping. Every alert carries a Kleinanzeigen search link instead. |
-| [stickerpoint.de](https://www.stickerpoint.de/blue-ocean-lego-minecraft-trading-cards-c-107_250.html)  | no, only packs, blisters, displays, bundles | Nothing to match against a missing card.                                                                     |
-| [stick-it-now.de](https://www.stick-it-now.de/)                                                        | no Minecraft at all                         | Old Panini / Topps stock only.                                                                               |
-| [Sammel-Ente trading and buying](https://sammel-ente.de/tausch-und-ankauf)                             | trade or purchase by e-mail                 | Not a shop page; handled by e-mail.                                                                          |
-| [mytradingcards.online](https://mytradingcards.online/marktplatz)                                      | private trades                              | A swap marketplace between collectors, not a shop; contact details are exchanged directly.                   |
-| [Tauschgnom](https://www.tauschgnom.de/)                                                               | private trades                              | Swap board with old LEGO listings only.                                                                      |
-| [laststicker.com](https://www.laststicker.com/cards/blue_ocean_lego_minecraft_on_fire/)                | no (checklist and trading)                  | Behind a Cloudflare bot check. Used by hand as the official checklist for `/admin catalog import`.           |
-| otto.de, Rossmann, Saturn / MediaMarkt                                                                 | no, only boosters / packs                   | Packs only.                                                                                                  |
-| [BrickReport](https://www.brickreport.io/sets/tradingcard-18-minecraft-trading-cards-series-3-on-fire) | no                                          | Card database, not a shop.                                                                                   |
+| Shop                                                                                                   | Sells singles                               | Why not used                                                                                                             |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [Kleinanzeigen](https://www.kleinanzeigen.de/s-lego-minecraft-karten/k0)                               | yes (private sellers)                       | No API, blocks bots, and its terms forbid scraping. Every alert carries a Kleinanzeigen search link instead.             |
+| [stickerpoint.de](https://www.stickerpoint.de/blue-ocean-lego-minecraft-trading-cards-c-107_250.html)  | no, only packs, blisters, displays, bundles | Nothing to match against a missing card.                                                                                 |
+| [stick-it-now.de](https://www.stick-it-now.de/)                                                        | no Minecraft at all                         | Old Panini / Topps stock only.                                                                                           |
+| [Sammel-Ente trading and buying](https://sammel-ente.de/tausch-und-ankauf)                             | trade or purchase by e-mail                 | Not a shop page; handled by e-mail.                                                                                      |
+| [mytradingcards.online](https://mytradingcards.online/marktplatz)                                      | private trades                              | A swap marketplace between collectors, not a shop; contact details are exchanged directly.                               |
+| [Tauschgnom](https://www.tauschgnom.de/)                                                               | private trades                              | Swap board with old LEGO listings only.                                                                                  |
+| [laststicker.com](https://www.laststicker.com/de/cards/blue_ocean_lego_minecraft_on_fire/)             | catalog only (once a day)                   | The catalog source: `/de/cards/<set>/` is fetched once a day (`catalog/laststicker.ts`), never `/cards/<set>/checklist`. |
+| otto.de, Rossmann, Saturn / MediaMarkt                                                                 | no, only boosters / packs                   | Packs only.                                                                                                              |
+| [BrickReport](https://www.brickreport.io/sets/tradingcard-18-minecraft-trading-cards-series-3-on-fire) | no                                          | Card database, not a shop.                                                                                               |

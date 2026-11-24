@@ -24,16 +24,6 @@ describe('parseListingId', () => {
   });
 });
 
-describe('imageFingerprint', () => {
-  test('is short, stable and tells picture URLs apart', () => {
-    const a = imageFingerprint('https://img/a.jpg');
-    expect(a).toBe(imageFingerprint('https://img/a.jpg'));
-    expect(a).not.toBe(imageFingerprint('https://img/b.jpg'));
-    expect(imageFingerprint(null)).not.toBe(a);
-    expect(a).toMatch(/^[0-9a-z]{1,13}$/);
-  });
-});
-
 describe('Right ids', () => {
   test('round trip', () => {
     expect(encodeRightId(7)).toBe('right:7');
@@ -68,6 +58,19 @@ describe('Confirm ids', () => {
       cardIds: [cid('12'), cid('LE8')],
       image: imageFingerprint(listing.imageUrl),
     });
+  });
+
+  test('card ids are read canonically and kept as written, repeats included', () => {
+    const image = imageFingerprint(listing.imageUrl);
+    expect(decodeConfirmId(`admin-confirm:5:012,le8:${image}`)?.cardIds).toEqual([
+      cid('12'),
+      cid('LE8'),
+    ]);
+    // confirmCards compares sets, so a repeat cannot confirm other cards.
+    expect(decodeConfirmId(`admin-confirm:5:12,12:${image}`)?.cardIds).toEqual([
+      cid('12'),
+      cid('12'),
+    ]);
   });
 
   test('no cards gives no id', () => {

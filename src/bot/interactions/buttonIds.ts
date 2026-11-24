@@ -4,6 +4,10 @@
  * `admin-dismiss:<listing>` (the admin's buttons). The router routes by the prefixes below.
  */
 import { normalizeCardId, type CardId } from '../cards/cardId';
+import type { ConfirmTarget } from '../database/listingManager';
+import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
+
+export { imageFingerprint, type ImageFingerprint };
 
 /** Discord's limit for a component's customId. */
 export const MAX_CUSTOM_ID = 100;
@@ -12,22 +16,7 @@ export const RIGHT_PREFIX = 'right:';
 export const CONFIRM_PREFIX = 'admin-confirm:';
 export const DISMISS_PREFIX = 'admin-dismiss:';
 
-declare const imageFingerprintBrand: unique symbol;
-/** A picture URL's fingerprint, as `imageFingerprint` computes it or a decoded customId holds. */
-export type ImageFingerprint = string & { readonly [imageFingerprintBrand]: true };
-
 const FINGERPRINT = /^[0-9a-z]{1,13}$/;
-
-/**
- * A short fingerprint of a listing's picture URL (base 36, at most 13 characters), small enough
- * for a customId, so Confirm can tell that the picture URL changed after the DM. It covers the URL
- * only, not the picture's content, and `null` and `''` give the same value. It is stable within
- * one Bun version; `Bun.hash` may change with a Bun upgrade, which makes buttons sent before it
- * refuse as changed (safe: the admin looks again).
- */
-export function imageFingerprint(imageUrl: string | null): ImageFingerprint {
-  return BigInt.asUintN(64, BigInt(Bun.hash(imageUrl ?? ''))).toString(36) as ImageFingerprint;
-}
 
 /** A listing id of 1 to 15 digits, as the button ids carry it; null otherwise. */
 export function parseListingId(value: string | undefined): number | null {
@@ -58,11 +47,7 @@ export function decodeDismissId(customId: string): number | null {
 }
 
 /** What a Confirm button names: the listing, its cards and its picture as the admin saw them. */
-export interface ConfirmId {
-  listingId: number;
-  cardIds: CardId[];
-  image: ImageFingerprint;
-}
+export type ConfirmId = ConfirmTarget;
 
 /** The Confirm id of `listing`; null when it has no cards or the id would pass 100 characters. */
 export function encodeConfirmId(listing: {

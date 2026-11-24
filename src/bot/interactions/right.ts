@@ -46,6 +46,18 @@ function buildRightMessage(listing: StoredListing, i: ButtonInteraction): Messag
   };
 }
 
+/**
+ * The deferred answer to the user. Its failure (an expired interaction) is only logged: what
+ * happened with the admin DM and the throttle stands either way.
+ */
+async function tell(i: ButtonInteraction, content: string, outcome: string): Promise<void> {
+  try {
+    await i.editReply({ content });
+  } catch (err) {
+    logError(`[RIGHT] ${outcome}, but the user of ${i.customId} could not be told`, err, 'warn');
+  }
+}
+
 export async function handleRightButton(i: ButtonInteraction, deps: RightDeps): Promise<void> {
   try {
     const listingId = decodeRightId(i.customId);
@@ -75,7 +87,11 @@ export async function handleRightButton(i: ButtonInteraction, deps: RightDeps): 
     const key = `confirm-request:${listing.id}`;
     const previous = runManager.lastAlertAt(key);
     if (!runManager.shouldAlert(key, (deps.now ?? Date.now)(), REQUEST_EVERY_MS)) {
-      await i.editReply({ content: 'Thanks — the admin already has this one.' });
+      await tell(
+        i,
+        'Thanks — someone already asked the admin about this listing today.',
+        'request throttled'
+      );
       return;
     }
     try {
@@ -91,12 +107,14 @@ export async function handleRightButton(i: ButtonInteraction, deps: RightDeps): 
           releaseErr
         );
       }
-      await i.editReply({
-        content: 'The admin could not be reached just now. Please try again later.',
-      });
+      await tell(
+        i,
+        'The admin could not be reached just now. Please try again later.',
+        'admin not reached'
+      );
       return;
     }
-    await i.editReply({ content: 'Thanks — the admin has been notified.' });
+    await tell(i, 'Thanks — the admin has been notified.', 'admin notified');
   } catch (err) {
     logError(`[RIGHT] button ${i.customId} failed`, err);
     await replyWithError(i, 'Confirm failed', 'Something went wrong. Please try again later.');

@@ -60,10 +60,21 @@ export function withPictures(send: AdminDm, download: DownloadFn = defaultDownlo
       await send(attached);
     } catch (error) {
       if (!isPayloadRejection(error)) throw error;
-      logError('Admin DM with pictures rejected, resending without them', error, 'warn');
+      logError(
+        `Admin DM "${embedTitle(message)}" with pictures rejected, resending without them`,
+        error,
+        'warn'
+      );
       await send(message);
     }
   };
+}
+
+/** The first embed's title, which names the listing, for log lines about a DM. */
+function embedTitle(message: MessageCreateOptions): string {
+  const [first] = message.embeds ?? [];
+  const json = first && 'toJSON' in first ? first.toJSON() : first;
+  return clipText(json?.title ?? 'untitled', 200);
 }
 
 /**
@@ -140,16 +151,27 @@ export async function rejectInvalidButton(i: ButtonInteraction, tag: string): Pr
 
 /**
  * Mark the admin's DM as handled: status line appended, buttons removed. When the DM cannot be
- * updated, the action already took effect, so the admin is told that instead of a failure.
+ * updated, the action already took effect, so the admin is told that instead of a failure; when
+ * that notice cannot be delivered either, it is only logged. Never throws.
  */
 async function markHandled(i: ButtonInteraction, status: string, done: string): Promise<void> {
   const room = DISCORD_MESSAGE_LIMIT - status.length - 1;
   const content = [clipText(i.message.content, room), status].filter(Boolean).join('\n');
   try {
     await i.update({ content, components: [] });
+    return;
   } catch (err) {
     logError(`[ADMIN ACTION] ${done}, but the DM ${i.customId} could not be updated`, err, 'warn');
+  }
+  try {
     await i.reply(ephemeral(`${done}; this message could not be updated.`));
+  } catch (err) {
+    // An expired interaction fails both ways; the action stands, so this is no failure of it.
+    logError(
+      `[ADMIN ACTION] ${done} (${i.customId}), but the admin could not be told`,
+      err,
+      'warn'
+    );
   }
 }
 
@@ -165,7 +187,7 @@ export async function handleAdminConfirm(i: ButtonInteraction, deps: AdminDeps):
       return;
     }
     const now = (deps.now ?? Date.now)();
-    const result = listingManager.confirmCards(parsed.listingId, parsed, now);
+    const result = listingManager.confirmCards(parsed, now);
     if (result.kind === 'gone') {
       await i.reply(ephemeral(NO_LISTING));
       return;

@@ -158,8 +158,8 @@ export function buildAdminReportMessage(
   const ids = listing.cardIds.join(',');
   const row = adminActionRow(listing, { dismiss: true });
   return {
-    // The commands stay beside the buttons: mapping the listing to other cards has no button,
-    // and `/admin clear` keeps working where the buttons cannot (an old DM, a long id).
+    // The commands stay beside the buttons: mapping to other cards has no button, `/admin map`
+    // stands in for a Confirm left out for a long id, and both work from an old DM without buttons.
     content: truncate(
       `Fix with \`/admin map url:${listing.url} cards:${ids}\` or dismiss with \`/admin clear url:${listing.url}\`.`,
       2000

@@ -7,6 +7,7 @@ import { adminAlerts, cards, listingCards, listings, reports } from '../database
 import { catalogManager } from '../database/catalogManager';
 import { listingManager, type StoredListing } from '../database/listingManager';
 import { runManager } from '../database/runManager';
+import logger from '../utils/logger';
 import * as adminActions from './adminActions';
 import { encodeConfirmId, imageFingerprint } from './buttonIds';
 import { handleRightButton } from './right';
@@ -113,7 +114,7 @@ describe('Right button', () => {
 
     now += DAY - 1;
     await handleRightButton(fakeButton(`right:${l.id}`), deps);
-    expect(lastText()).toBe('Thanks — the admin already has this one.');
+    expect(lastText()).toBe('Thanks — someone already asked the admin about this listing today.');
     expect(spy.calls).toHaveLength(1);
 
     now += 1;
@@ -134,8 +135,7 @@ describe('Right button', () => {
   test('a listing the admin already confirmed sends nothing', async () => {
     const l = makeListing();
     listingManager.confirmCards(
-      l.id,
-      { cardIds: [cid('LE22')], image: imageFingerprint(l.imageUrl) },
+      { listingId: l.id, cardIds: [cid('LE22')], image: imageFingerprint(l.imageUrl) },
       2000
     );
     const spy = adminSpy();
@@ -221,13 +221,38 @@ describe('Right button', () => {
     expect(runManager.lastAlertAt(`confirm-request:${l.id}`)).toBeUndefined();
   });
 
-  test('a failure after the deferral still answers the user', async () => {
+  test('a user who cannot be told after the admin was notified is only logged', async () => {
     const l = makeListing();
-    await handleRightButton(fakeButton(`right:${l.id}`, { failEdit: true }), {
-      notifyAdmin: adminSpy(),
+    const spy = adminSpy();
+    const log = spyOn(logger, 'log');
+    try {
+      await handleRightButton(fakeButton(`right:${l.id}`, { failEdit: true }), {
+        notifyAdmin: spy,
+      });
+      expect(spy.calls).toHaveLength(1);
+      expect(log.mock.calls.some((c) => c[0] === 'error')).toBe(false);
+      expect(
+        log.mock.calls.some(
+          (c) => c[0] === 'warn' && String(c[1]).includes('admin notified, but the user')
+        )
+      ).toBe(true);
+    } finally {
+      log.mockRestore();
+    }
+    expect(runManager.lastAlertAt(`confirm-request:${l.id}`)).toBeDefined();
+  });
+
+  test('a throttle that cannot be freed still tells the user the admin was not reached', async () => {
+    const l = makeListing();
+    const release = spyOn(runManager, 'releaseAlert').mockImplementation(() => {
+      throw new Error('database is locked');
     });
-    const last = replies[replies.length - 1];
-    expect(last.embeds[0].toJSON().title).toBe('Confirm failed');
+    try {
+      await handleRightButton(fakeButton(`right:${l.id}`), { notifyAdmin: adminSpy(true) });
+    } finally {
+      release.mockRestore();
+    }
+    expect(lastText()).toBe('The admin could not be reached just now. Please try again later.');
   });
 
   test('neither holds the listing nor files a report', async () => {

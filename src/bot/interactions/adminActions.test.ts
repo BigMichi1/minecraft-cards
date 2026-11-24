@@ -215,7 +215,17 @@ describe('admin actions', () => {
     test('after the picture changed names the picture', async () => {
       const l = makeListing();
       const stale = `admin-confirm:${l.id}:12:${imageFingerprint('https://img/old.jpg')}`;
-      await handleAdminConfirm(fakeButton(stale), { adminId: ADMIN });
+      const info = spyOn(logger, 'info');
+      try {
+        await handleAdminConfirm(fakeButton(stale), { adminId: ADMIN });
+        expect(
+          info.mock.calls.some((c) =>
+            String(c[0]).includes(`Confirm of listing ${l.id} refused: picture changed`)
+          )
+        ).toBe(true);
+      } finally {
+        info.mockRestore();
+      }
       expect(replies).toEqual([ephemeralText(STALE_REPLIES.picture)]);
     });
 
@@ -279,6 +289,30 @@ describe('admin actions', () => {
       };
       await handleAdminConfirm(i, { adminId: ADMIN });
       expect(replies).toEqual([ephemeralText('Confirmed; this message could not be updated.')]);
+      expect(listingManager.getById(l.id)!.manualOverride).toBe(true);
+    });
+
+    test('when neither the DM nor a notice can be delivered, the confirmation stands quietly', async () => {
+      const l = makeListing();
+      const i = fakeButton(confirmId(l));
+      i.update = async () => {
+        throw new Error('Unknown interaction');
+      };
+      (i as any).reply = async () => {
+        throw new Error('Unknown interaction');
+      };
+      const log = spyOn(logger, 'log');
+      try {
+        await handleAdminConfirm(i, { adminId: ADMIN });
+        expect(log.mock.calls.some((c) => c[0] === 'error')).toBe(false);
+        expect(
+          log.mock.calls.some(
+            (c) => c[0] === 'warn' && String(c[1]).includes('the admin could not be told')
+          )
+        ).toBe(true);
+      } finally {
+        log.mockRestore();
+      }
       expect(listingManager.getById(l.id)!.manualOverride).toBe(true);
     });
 
@@ -412,6 +446,36 @@ describe('admin actions', () => {
       }, download);
       await expect(send(message())).rejects.toBe(error);
       expect(calls).toBe(1);
+    });
+
+    test('the reference thumbnail is attached too', async () => {
+      const sent: MessageCreateOptions[] = [];
+      const withRef: MessageCreateOptions = {
+        embeds: [new EmbedBuilder().setTitle('t').setImage(PICTURE).setThumbnail(REFERENCE)],
+      };
+      await withPictures(async (m) => void sent.push(m), download)(withRef);
+      expect((sent[0]!.files as any[]).map((f) => f.name).sort()).toEqual([
+        'picture-1.jpg',
+        'reference-1.jpg',
+      ]);
+    });
+
+    test('the resend warning names the DM', async () => {
+      let calls = 0;
+      const log = spyOn(logger, 'log');
+      try {
+        await withPictures(async () => {
+          calls++;
+          if (calls === 1) throw apiError(413, 40005);
+        }, download)({
+          embeds: [new EmbedBuilder().setTitle('👍 listing 42').setImage(PICTURE)],
+        });
+        expect(
+          log.mock.calls.some((c) => c[0] === 'warn' && String(c[1]).includes('👍 listing 42'))
+        ).toBe(true);
+      } finally {
+        log.mockRestore();
+      }
     });
 
     test('a DM without attached pictures is sent once as it is', async () => {

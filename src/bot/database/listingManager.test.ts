@@ -12,7 +12,7 @@ import {
 } from './schema/index';
 import { catalogManager } from './catalogManager';
 import { listingManager } from './listingManager';
-import { imageFingerprint } from '../interactions/buttonIds';
+import { imageFingerprint } from '../matcher/imageFingerprint';
 import { userManager } from './userManager';
 import type { Listing } from '../shops/types';
 import { cid, ids } from '../../test/cardIds';
@@ -392,7 +392,7 @@ describe('listingManager', () => {
   describe('confirmCards', () => {
     const IMAGE = imageFingerprint(blue12.imageUrl);
     const confirm = (id: number, cards: string[], now = 3000, image = IMAGE) =>
-      listingManager.confirmCards(id, { cardIds: cards.map(cid), image }, now);
+      listingManager.confirmCards({ listingId: id, cardIds: cards.map(cid), image }, now);
 
     function unconfirmed12() {
       listingManager.upsertFromRun('blue-ocean', [blue12], 1000);
@@ -431,6 +431,30 @@ describe('listingManager', () => {
       listingManager.recordNotified('u1', l.id, l.availableSince!);
       confirm(l.id, ['12']);
       expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
+    });
+
+    test('confirming a held listing sends the held-back alert exactly once', () => {
+      userManager.setList('u1', '12');
+      const l = unconfirmed12();
+      listingManager.setOnHold(l.id);
+      expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
+      confirm(l.id, ['12']);
+      const pending = listingManager.pendingNotifications().get('u1')!;
+      expect(pending.map((p) => p.listing.id)).toEqual([l.id]);
+      listingManager.recordNotified('u1', l.id, pending[0]!.availableSince);
+      confirm(l.id, ['12'], 4000);
+      expect(listingManager.pendingNotifications().get('u1')).toBeUndefined();
+    });
+
+    test('a listing without a picture URL is confirmed by the fingerprint of none', () => {
+      listingManager.upsertFromRun('blue-ocean', [{ ...blue12, imageUrl: null }], 1000);
+      const l = listingManager.getByUrl(blue12.url)!;
+      listingManager.setMatch(
+        l.id,
+        { status: 'unconfirmed', similarity: null, picture: null },
+        1500
+      );
+      expect(confirm(l.id, ['12'], 3000, imageFingerprint(null)).kind).toBe('confirmed');
     });
 
     test('refuses when the cards changed, writing nothing', () => {

@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
-import { imageFingerprint, type ConfirmId } from '../interactions/buttonIds';
+import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
 import { isConfirmable, type MatchResult, type MatchStatus } from '../matcher/matchStatus';
 import type {
   IdSource,
@@ -54,6 +54,13 @@ export type PendingNotifications = Map<string, PendingNotification[]>;
 
 /** Why a confirmation was not written: see `confirmCards`. */
 export type StaleReason = 'cards' | 'picture' | 'status';
+
+/** What the admin confirms: the listing, its cards and its picture as the admin saw them. */
+export interface ConfirmTarget {
+  readonly listingId: number;
+  readonly cardIds: readonly CardId[];
+  readonly image: ImageFingerprint;
+}
 
 export type ConfirmResult =
   | { kind: 'confirmed'; listing: StoredListing }
@@ -477,15 +484,12 @@ export const listingManager = {
    * when the listing is gone or stale since the button was sent:
    * - `cards`: its cards no longer equal the confirmed ones (e.g. a rescrape changed them);
    * - `picture`: its picture URL no longer has the fingerprint the admin saw;
-   * - `status`: it is not confirmable (`isConfirmable`: a `mismatch`, or `pending` a comparison).
+   * - `status`: it is not confirmable (`isConfirmable`): a `mismatch`, or `pending`, a comparison
+   *   being due.
    */
-  confirmCards(
-    listingId: number,
-    expected: Omit<ConfirmId, 'listingId'>,
-    now: number
-  ): ConfirmResult {
+  confirmCards(expected: ConfirmTarget, now: number): ConfirmResult {
     return db.transaction((tx): ConfirmResult => {
-      const row = tx.select().from(listings).where(eq(listings.id, listingId)).get();
+      const row = tx.select().from(listings).where(eq(listings.id, expected.listingId)).get();
       if (!row) return { kind: 'gone' };
       const current = new Set(cardIdsOf(tx, [row.id]).get(row.id) ?? []);
       const wanted = new Set(expected.cardIds);
@@ -508,7 +512,9 @@ export const listingManager = {
         .run();
       resolveReports(tx, row.id, now);
       const listing = byUrl(tx, row.url);
-      return listing ? { kind: 'confirmed', listing } : { kind: 'gone' };
+      // Throwing rolls the write back: a confirmation is never kept while reported as not done.
+      if (!listing) throw new Error(`listing ${row.id} vanished while being confirmed`);
+      return { kind: 'confirmed', listing };
     });
   },
 

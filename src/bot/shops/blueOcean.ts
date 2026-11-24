@@ -3,7 +3,7 @@ import { normalizeCardId, type CardId } from '../cards/cardId';
 import { sleep as realSleep } from '../utils/async';
 import { fetchText } from '../utils/http';
 import logger, { logError } from '../utils/logger';
-import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopAdapter } from './types';
+import type { AdapterOptions, FetchFn, FetchResult, Listing, ShopFetcher } from './types';
 import { ShopLayoutError } from './types';
 
 const ORIGIN = 'https://www.blue-ocean.de';
@@ -115,7 +115,7 @@ export function parseBlueOceanPage(html: string): {
 export function createBlueOceanAdapter(
   fetchFn?: FetchFn,
   options: AdapterOptions = {}
-): ShopAdapter {
+): ShopFetcher {
   const sleep = options.sleep ?? realSleep;
   const delayMs = options.delayMs ?? PAGE_DELAY_MS;
   return {

@@ -1,5 +1,6 @@
 import { and, eq, gte, inArray, isNull, lt, ne, notInArray, or } from 'drizzle-orm';
 import { compareCardIds, type CardId } from '../cards/cardId';
+import type { CollectionId } from '../collections/ids';
 import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
 import { isConfirmable, type MatchResult, type MatchStatus } from '../matcher/matchStatus';
 import type {
@@ -16,6 +17,8 @@ import { userManager } from './userManager';
 
 export type StoredListing = {
   id: number;
+  /** The collection its `cardIds` and `pictureCardId` belong to. */
+  collection: CollectionId;
   shop: ShopId;
   url: string;
   title: string;
@@ -91,6 +94,7 @@ function auctionEnded(auctionEndsAt: number | null, now: number): boolean {
 function toStored(row: ListingRow, cardIds: CardId[]): StoredListing {
   return {
     id: row.id,
+    collection: row.collection,
     shop: row.shop,
     url: row.url,
     title: row.title,
@@ -167,11 +171,17 @@ function byUrl(tx: Tx, url: string): StoredListing | undefined {
 
 export const listingManager = {
   /**
-   * Insert or update by url; listings of `shop` missing from `found` become unavailable (eBay:
-   * once unseen for EBAY_MISSING_GRACE_MS). Ended auctions are unavailable. Call only after a
-   * successful fetch.
+   * Insert or update by url; listings of `shop` in `collection` missing from `found` become
+   * unavailable (eBay: once unseen for EBAY_MISSING_GRACE_MS). Ended auctions are unavailable.
+   * A URL already stored under another collection belongs to that one (the first to claim it):
+   * it is left as it is and not returned. Call only after a successful fetch.
    */
-  upsertFromRun(shop: ShopId, found: ShopListing[], now: number): StoredListing[] {
+  upsertFromRun(
+    shop: ShopId,
+    collection: CollectionId,
+    found: ShopListing[],
+    now: number
+  ): StoredListing[] {
     return db.transaction((tx) => {
       const ids: number[] = [];
       for (const scraped of found) {
@@ -179,6 +189,7 @@ export const listingManager = {
           ? { ...scraped, available: false }
           : scraped;
         const existing = tx.select().from(listings).where(eq(listings.url, item.url)).get();
+        if (existing && existing.collection !== collection) continue;
         const fields = {
           title: item.title,
           imageUrl: item.imageUrl,
@@ -196,6 +207,7 @@ export const listingManager = {
             .insert(listings)
             .values({
               ...fields,
+              collection,
               shop: item.shop,
               url: item.url,
               availableSince: item.available ? now : null,
@@ -259,6 +271,7 @@ export const listingManager = {
         .where(
           and(
             eq(listings.shop, shop),
+            eq(listings.collection, collection),
             eq(listings.available, true),
             ids.length > 0 ? notInArray(listings.id, ids) : undefined,
             shop === 'ebay'
@@ -338,17 +351,19 @@ export const listingManager = {
   },
 
   /**
-   * After the reference pictures of `cardIds` changed: compare again (back to `pending`) every
-   * mismatch whose title card or picture card is one of them, and every title naming no card
-   * whose picture decided nothing (a fuller reference set may decide it now).
+   * After the reference pictures of the collection's `cardIds` changed: compare again (back to
+   * `pending`) every mismatch of the collection whose title card or picture card is one of them,
+   * and every title of it naming no card whose picture decided nothing (a fuller reference set
+   * may decide it now).
    */
-  rematchMismatches(cardIds: CardId[]): void {
+  rematchMismatches(collection: CollectionId, cardIds: CardId[]): void {
     if (cardIds.length === 0) return;
     db.transaction((tx) => {
       tx.update(listings)
         .set({ matchStatus: 'pending', similarity: null, matchCheckedAt: null })
         .where(
           and(
+            eq(listings.collection, collection),
             eq(listings.idSource, 'picture'),
             eq(listings.matchStatus, 'unconfirmed'),
             eq(listings.manualOverride, false)
@@ -370,6 +385,7 @@ export const listingManager = {
         })
         .where(
           and(
+            eq(listings.collection, collection),
             eq(listings.matchStatus, 'mismatch'),
             eq(listings.manualOverride, false),
             or(
@@ -412,7 +428,10 @@ export const listingManager = {
       for (const listing of load(tx, rows)) {
         const { availableSince } = listing;
         if (availableSince === null || auctionEnded(listing.auctionEndsAt, now)) continue;
-        for (const [discordId, cardIds] of userManager.usersWanting(listing.cardIds)) {
+        for (const [discordId, cardIds] of userManager.usersWanting(
+          listing.collection,
+          listing.cardIds
+        )) {
           const done = tx
             .select()
             .from(notifications)
@@ -453,16 +472,23 @@ export const listingManager = {
   },
 
   /**
-   * Manual card mapping: survives rescrapes, counts as confirmed by the admin, lifts the hold,
-   * resolves reports, re-opens notification for the new cards.
+   * Manual card mapping: puts the listing in `collection` with `cardIds`; survives rescrapes,
+   * counts as confirmed by the admin, lifts the hold, resolves reports, re-opens notification
+   * for the new cards.
    */
-  overrideCards(url: string, cardIds: CardId[], now: number): StoredListing | undefined {
+  overrideCards(
+    url: string,
+    collection: CollectionId,
+    cardIds: CardId[],
+    now: number
+  ): StoredListing | undefined {
     return db.transaction((tx) => {
       const row = tx.select().from(listings).where(eq(listings.url, url)).get();
       if (!row) return undefined;
       writeCards(tx, row.id, cardIds);
       tx.update(listings)
         .set({
+          collection,
           manualOverride: true,
           matchStatus: 'confirmed',
           similarity: null,
@@ -528,8 +554,8 @@ export const listingManager = {
     });
   },
 
-  /** Every stored listing (any shop, available or not) that carries one of `cardIds`. */
-  listingsForCards(cardIds: CardId[]): StoredListing[] {
+  /** Every stored listing of the collection (any shop, available or not) carrying one of `cardIds`. */
+  listingsForCards(collection: CollectionId, cardIds: CardId[]): StoredListing[] {
     if (cardIds.length === 0) return [];
     return db.transaction((tx) => {
       const ids = tx
@@ -541,7 +567,12 @@ export const listingManager = {
       if (ids.length === 0) return [];
       return load(
         tx,
-        tx.select().from(listings).where(inArray(listings.id, ids)).orderBy(listings.id).all()
+        tx
+          .select()
+          .from(listings)
+          .where(and(eq(listings.collection, collection), inArray(listings.id, ids)))
+          .orderBy(listings.id)
+          .all()
       );
     });
   },

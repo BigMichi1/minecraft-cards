@@ -10,7 +10,7 @@ import {
   type FetchResult,
   type Listing,
   type Money,
-  type ShopAdapter,
+  type ShopFetcher,
 } from './types';
 
 const TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
@@ -551,7 +551,7 @@ export function createEbayAdapter(
      */
     cardNames?: () => ReadonlyMap<CardId, string>;
   } & AdapterOptions
-): ShopAdapter {
+): ShopFetcher {
   const fetchFn = opts.fetchFn ?? fetch;
   const sleep = opts.sleep ?? realSleep;
   const delayMs = opts.delayMs ?? PAGE_DELAY_MS;

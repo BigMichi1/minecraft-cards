@@ -1,4 +1,5 @@
 import type { CardId } from '../cards/cardId';
+import type { CollectionId } from '../collections/ids';
 
 export const SHOP_IDS = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay'] as const;
 export type ShopId = (typeof SHOP_IDS)[number];
@@ -75,9 +76,15 @@ export interface FetchResult {
   truncated?: string[];
 }
 
-export interface ShopAdapter {
+/** One shop's parser and fetch, before it is bound to a collection. */
+export interface ShopFetcher {
   readonly id: ShopId;
   fetchListings(): Promise<FetchResult>;
+}
+
+/** A shop checked for one collection: its listings are stored in `collection`. */
+export interface ShopAdapter extends ShopFetcher {
+  readonly collection: CollectionId;
 }
 
 /**

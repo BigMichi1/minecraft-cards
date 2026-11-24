@@ -1,5 +1,6 @@
 import type { CardId } from '../bot/cards/cardId';
 import type { RunSummary } from '../bot/check/runner';
+import type { CollectionId } from '../bot/collections/ids';
 import type { StoredListing } from '../bot/database/listingManager';
 import type { ShopId } from '../bot/shops/types';
 
@@ -8,7 +9,10 @@ export const T = 1_800_000_000_000;
 
 let nextId = 1;
 
-/** A stored, in-stock, picture-backed listing seen at T, priced 0,55 €; `over` changes any field. */
+/**
+ * A stored, in-stock, picture-backed `lego-minecraft-3` listing seen at T, priced 0,55 €; `over`
+ * changes any field.
+ */
 export function storedListing(
   shop: ShopId,
   cards: CardId[],
@@ -17,6 +21,7 @@ export function storedListing(
   const id = nextId++;
   return {
     id,
+    collection: 'lego-minecraft-3' satisfies CollectionId,
     shop,
     url: `https://example.com/${id}`,
     title: 't',

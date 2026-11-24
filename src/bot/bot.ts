@@ -60,7 +60,9 @@ try {
   logError(`Image model ${config.imageModel} could not be loaded`, error);
 }
 
-const adapters = createShopAdapters(config.ebay, () => catalogManager.cardNames());
+const adapters = createShopAdapters(config.ebay, (collection) =>
+  catalogManager.cardNames(collection)
+);
 
 /** The shops this process checks; `/missing status`, `/stock` and `/card` show the others as not enabled. */
 const enabledShops = adapters.map((a) => a.id);

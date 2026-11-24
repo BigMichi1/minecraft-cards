@@ -92,7 +92,7 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   after `je`, `2x`, `2 x` or a unit word (`Stück 5 - …`).
 
 - **Extending `CARD_NAME_WORDS`**: when a real `NAME N Karte` title is missed because its name
-  word is not in the list, take the word from that card's name in the catalog (the sammel-ente
+  word is not in the list, take the word from that card's name in the catalog (laststicker's
   name, as `/missing status` shows it), never a pack, count or variant word. Add it to
   `CARD_NAME_WORDS` in `src/bot/shops/ebay.ts` and to the equality test in `ebay.test.ts`, and
   add the real title to `src/test/fixtures/ebay-search.json` (without seller data) with its
@@ -117,7 +117,11 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
     and only punctuation and the allowed words (`NAME_TITLE_WORDS`: `LEGO`, `Minecraft`,
     `Karte`, `Card`, `Trading`, `TCC`, `TCG`, `Einzelkarte`, `Ultra`, `Rare`, `Common`, `Neu`,
     `OVP`, `Nr`, `No`, `2026`, `Charakterkarte`) may be left; `Comickarte 3 - Steve` gives
-    nothing, and a puzzle card's name carries its `Puzzlekarte` itself. Any other word gives nothing: another
+    nothing. Puzzle cards carry laststicker's English names ("The Overworld 1"), so a German
+    `Puzzlekarte Oberwelt 1` title no longer matches by name; they are never identified by
+    picture alone anyway. The catalog names come from laststicker since collections PR 2a; on
+    2026-11-24 they equalled sammel-ente's, and all 43 titles of the eBay fixture read the same
+    with them. Any other word gives nothing: another
     series (`Comic Karte 3 - Steve`, series 1 card 3 is "Comic Steve"; `Staffel 2`, `S1`),
     another card's longer name (`Gold Ghast Karte 131`, `Karte 131 - Ghast (Gold)`: LE21 is
     "Gold Ghast"), a second card without its number (`Karte 3 - Steve / Alex`), another product

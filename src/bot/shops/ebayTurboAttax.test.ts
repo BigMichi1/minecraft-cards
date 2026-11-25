@@ -26,8 +26,8 @@ describe('readTurboAttaxCardIds', () => {
     ],
     // Another driver's race number is a card number.
     ['Topps Turbo Attax 2026 Lewis Hamilton #4 Ferrari', ['4']],
-    // A race number counts only right beside its driver: in a lot it is a card.
-    ['Turbo Attax 2026 Lot Alonso Sainz #14 #163', ['14', '163']],
+    // A lot naming a driver loses his race number, whatever stands between (unsure: logged).
+    ['Turbo Attax 2026 Lot Alonso Sainz #14 #163', ['163']],
   ])('%s', (title, expected) => {
     expect(readTurboAttaxCardIds(title)).toEqual(ids(...expected));
   });
@@ -56,6 +56,14 @@ describe('readTurboAttaxCardIds', () => {
     'Topps Turbo Attax 2026 Max Verstappen #1 Red Bull',
     'Topps Turbo Attax 2026 Lando Norris No 4 McLaren',
     'Topps Turbo Attax 2026 Nico Hülkenberg #27 Audi',
+    // The driver anywhere in the title: first names, teams and separators between change nothing.
+    'Topps Turbo Attax 2026 #44 Lewis Hamilton Ferrari',
+    'Topps Turbo Attax 2026 Max Verstappen Red Bull #1',
+    'Topps Turbo Attax 2026 F1 I Lewis Hamilton I #44',
+    'Topps Turbo Attax 2026 Lewis Hamilton l #44 l Ferrari',
+    'Topps Turbo Attax 2026 Verstappen / #1',
+    'Topps Turbo Attax 2026 Nico Huelkenberg #27',
+    'Topps Turbo Attax 2026 Kimi Raeikkoenen #7',
     // Legends race too.
     'Topps Turbo Attax 2026 Michael Schumacher #1 Legend',
     'Topps Turbo Attax 2026 Nigel Mansell #5 Legend',

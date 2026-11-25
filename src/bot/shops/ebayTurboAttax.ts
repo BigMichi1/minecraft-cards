@@ -46,8 +46,9 @@ const RANGE_PATTERN = new RegExp(
 
 /**
  * Race numbers by surname: the 2026 drivers (and the numbers they raced with before) and the
- * legends of the set. Sellers write "Lewis Hamilton #44"; a number right beside its driver is
- * no card number, unless the catalog names that driver on that card ("Lando Norris #4").
+ * legends of the set, also as German spellings write them ("Huelkenberg"). Sellers write
+ * "Lewis Hamilton #44": a number that is the race number of a driver the title names is no card
+ * number, unless the catalog names that driver on that card ("Lando Norris #4").
  */
 const RACE_NUMBERS: Readonly<Record<string, readonly number[]>> = {
   albon: [23],
@@ -61,9 +62,11 @@ const RACE_NUMBERS: Readonly<Record<string, readonly number[]>> = {
   colapinto: [43],
   gasly: [10],
   hadjar: [6],
+  haekkinen: [1],
   hakkinen: [1],
   hamilton: [44],
   hill: [0, 1, 5],
+  huelkenberg: [27],
   hulkenberg: [27],
   lawson: [30, 40],
   leclerc: [16],
@@ -74,6 +77,7 @@ const RACE_NUMBERS: Readonly<Record<string, readonly number[]>> = {
   perez: [11],
   piastri: [81],
   prost: [1, 2],
+  raeikkoenen: [7],
   raikkonen: [7],
   rosberg: [1, 6],
   russell: [63],
@@ -88,27 +92,21 @@ const RACE_NUMBERS: Readonly<Record<string, readonly number[]>> = {
 /** Lowercase letters without accents ("Hülkenberg" as "hulkenberg"). */
 const plain = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
-// The word right before a number, past separators ("Hamilton #44", "Hamilton | #44"), and the
-// word right after it ("#44 Hamilton").
-const WORD_BEFORE = /([a-z]+)[\s|·•:,()\-–—]*$/;
-const WORD_AFTER = /^[\s|·•:,()\-–—]*([a-z]+)/;
-
 /**
- * The driver whose race number `n` stands right beside it in `title` (the number spanning
- * `start` to `end`), or null.
+ * The drivers a title names (anywhere: sellers put first names, teams and `I`/`l` separators
+ * between a driver and his number) whose race number is `n`.
  */
-function racingDriver(title: string, start: number, end: number, n: number): string | null {
-  const before = WORD_BEFORE.exec(plain(title.slice(0, start)).replace(/#\s*$/, ''))?.[1];
-  const after = WORD_AFTER.exec(plain(title.slice(end)))?.[1];
-  for (const word of [before, after]) {
-    if (word !== undefined && RACE_NUMBERS[word]?.includes(n)) return word;
-  }
-  return null;
+function racingDrivers(title: string, n: number): string[] {
+  const words = new Set(plain(title).match(/[a-z]+/g) ?? []);
+  return Object.entries(RACE_NUMBERS)
+    .filter(([name, numbers]) => words.has(name) && numbers.includes(n))
+    .map(([name]) => name);
 }
 
 /**
- * Card ids a Turbo Attax title names: `#N`, `Nr./No. N` (unless N is the race number of the
- * driver right beside it, and the catalog `names` do not name that driver on card N), a
+ * Card ids a Turbo Attax title names: `#N`, `Nr./No. N` (unless N is the race number of a
+ * driver the title names and the catalog `names` do not name that driver on card N; a lot
+ * naming Alonso loses its #14 then), a
  * prefixed number (`LE4`, `BG 2`, `#GG1`) and, in a relic's title, a relic code (`MR-VER`,
  * `MRSTE`), sorted and each once. Every number left out is logged at debug with its reason. The
  * caller has placed the title in Turbo Attax and excluded pick lists, ranges and parallels
@@ -134,9 +132,10 @@ export function readTurboAttaxCardIds(
   for (const m of title.matchAll(NUMBER_PATTERN)) {
     const n = Number(m[1]);
     const id = normalizeCardIdIn(TURBO_ATTAX_CARD_IDS, m[1] ?? '');
-    const driver = racingDriver(title, m.index, m.index + m[0].length, n);
-    if (driver !== null && !(id !== null && plain(names.get(id) ?? '').includes(driver))) {
-      dropped(`#${n}`, `the race number of ${driver}`);
+    const cardName = plain(id === null ? '' : (names.get(id) ?? ''));
+    const racing = racingDrivers(title, n).filter((driver) => !cardName.includes(driver));
+    if (racing.length > 0) {
+      dropped(`#${n}`, `the race number of ${racing.join(', ')}`);
       continue;
     }
     add(m[1] ?? '');

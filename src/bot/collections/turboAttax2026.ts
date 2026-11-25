@@ -31,10 +31,10 @@ export const turboAttax2026: CollectionDefinition<'turbo-attax-2026'> = {
         /^(?=.*\bTurbo\s*Attax\b)(?=.*(?<!\d)2026(?!\d))(?!.*(?<!\d)(?:19|20)(?!26)\d\d(?!\d))/i,
       // Parallels and other cards than the checklist's (spec "Non-goals"): any digit/digit
       // (numbered prints "03/99", "#269 /94", also "2/38"), Refractor, SuperFractor, Pink,
-      // Rainbow, Green, Silver, Orange, Blue, Purple, Bronze, Printing Plate, autographs, and Gold
+      // Rainbow, Green, Silver, Orange, Blue, Purple, Bronze, Printing Plate, autographs (also "Auto": a car card so titled is missed), and Gold
       // or Golden, but not the checklist sections "F1 Gold" and "Black Gold".
       excludes:
-        /\b(?:pink|parallel|variante|refractor|superfractor|rainbow|green|silver|orange|blue|purple|bronze|golden|autogramm|autograph|signed|printing\s*plate)\b|\bgold\b(?<!\b(?:F1®?|Black)[\s-]+gold)|\d\s*\/\s*\d/i,
+        /\b(?:pink|parallel|variante|refractor|superfractor|rainbow|green|silver|orange|blue|purple|bronze|golden|autogramm|autograph|auto|signed|printing\s*plate)\b|\bgold\b(?<!\b(?:F1®?|Black)[\s-]+gold)|\d\s*\/\s*\d/i,
     },
   },
 };

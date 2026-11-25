@@ -58,6 +58,8 @@ describe('turboAttax2026', () => {
       'Bronze #12',
       'Holo Autogramm 80',
       'Signed Auto #12',
+      // "Auto" is the usual short form of an autograph; a car card so titled is missed.
+      'Charles Leclerc Auto #LE6',
       '#12 Autograph',
       'Printing Plate #12',
     ]) {
@@ -72,7 +74,6 @@ describe('turboAttax2026', () => {
       'Kimi Antonelli #231 Turbo Attax Legacy Hologramm',
       'Max Verstappen 100 Club Foil Karte #295',
       'Aston Martin Aramco #45',
-      'Turbo Attax 2026 Auto Ferrari #190',
       'Silverstone Exclusive',
     ]) {
       expect({ title, parallel: parallel.test(title) }).toEqual({ title, parallel: false });

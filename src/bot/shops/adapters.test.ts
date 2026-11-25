@@ -201,6 +201,22 @@ describe('createShopAdapters', () => {
     }
   });
 
+  test('a series label of no readable kind is refused at start', () => {
+    const at = (shop: 'sammel-ente' | 'collect-it', series: string) => () =>
+      createShopAdapters(null, undefined, {
+        collections: [
+          { ...legoMinecraft1, shops: { [shop]: { ...legoMinecraft1.shops[shop]!, series } } },
+        ],
+      });
+    expect(at('collect-it', 'Series 1')).toThrow(
+      'lego-minecraft-1: the collect-it series label must be "Serie N" or a year'
+    );
+    expect(at('collect-it', '2026')).not.toThrow();
+    expect(at('sammel-ente', '2026')).toThrow(
+      'lego-minecraft-1: the sammel-ente series label must be "Serie N"'
+    );
+  });
+
   test('a malformed card id rule or Kleinanzeigen words are refused at start', () => {
     const at = (over: object) => () =>
       createShopAdapters(null, undefined, { collections: [{ ...legoMinecraft1, ...over }] });

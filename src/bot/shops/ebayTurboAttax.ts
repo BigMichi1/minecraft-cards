@@ -4,6 +4,7 @@ import {
   TURBO_ATTAX_CARD_IDS,
   type CardId,
 } from '../cards/cardId';
+import logger from '../utils/logger';
 import { LETTER, NOT_A_COUNT, NOT_AFTER_COUNT } from './ebayTitleWords';
 
 /**
@@ -44,62 +45,101 @@ const RANGE_PATTERN = new RegExp(
 );
 
 /**
- * The race numbers of the 2026 drivers (and the ones they raced with before), by surname: sellers
- * write "Lewis Hamilton #44", and a number beside its driver is no card number.
+ * Race numbers by surname: the 2026 drivers (and the numbers they raced with before) and the
+ * legends of the set. Sellers write "Lewis Hamilton #44"; a number right beside its driver is
+ * no card number, unless the catalog names that driver on that card ("Lando Norris #4").
  */
 const RACE_NUMBERS: Readonly<Record<string, readonly number[]>> = {
   albon: [23],
   alonso: [14],
   antonelli: [12],
+  barrichello: [11],
   bearman: [38, 50, 87],
   bortoleto: [5],
   bottas: [77],
+  button: [1, 22],
   colapinto: [43],
   gasly: [10],
   hadjar: [6],
+  hakkinen: [1],
   hamilton: [44],
+  hill: [0, 1, 5],
   hulkenberg: [27],
   lawson: [30, 40],
   leclerc: [16],
   lindblad: [41],
+  mansell: [2, 5],
   norris: [1, 4],
   ocon: [31],
   perez: [11],
   piastri: [81],
+  prost: [1, 2],
+  raikkonen: [7],
+  rosberg: [1, 6],
   russell: [63],
   sainz: [55],
+  schumacher: [1, 3, 5],
   stroll: [18],
   verstappen: [1, 3, 33],
+  vettel: [1, 5],
+  webber: [2],
 };
 
 /** Lowercase letters without accents ("Hülkenberg" as "hulkenberg"). */
 const plain = (text: string) => text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
 
-/** The race numbers of every driver a title names. */
-function raceNumbersIn(title: string): Set<number> {
-  const words = new Set(plain(title).match(/[a-z]+/g) ?? []);
-  return new Set(Object.entries(RACE_NUMBERS).flatMap(([name, n]) => (words.has(name) ? n : [])));
+// The word right before a number, past separators ("Hamilton #44", "Hamilton | #44"), and the
+// word right after it ("#44 Hamilton").
+const WORD_BEFORE = /([a-z]+)[\s|·•:,()\-–—]*$/;
+const WORD_AFTER = /^[\s|·•:,()\-–—]*([a-z]+)/;
+
+/**
+ * The driver whose race number `n` stands right beside it in `title` (the number spanning
+ * `start` to `end`), or null.
+ */
+function racingDriver(title: string, start: number, end: number, n: number): string | null {
+  const before = WORD_BEFORE.exec(plain(title.slice(0, start)).replace(/#\s*$/, ''))?.[1];
+  const after = WORD_AFTER.exec(plain(title.slice(end)))?.[1];
+  for (const word of [before, after]) {
+    if (word !== undefined && RACE_NUMBERS[word]?.includes(n)) return word;
+  }
+  return null;
 }
 
 /**
- * Card ids a Turbo Attax title names: `#N`, `Nr./No. N` (unless N is the race number of a driver
- * the title names), a prefixed number (`LE4`, `BG 2`, `#GG1`) and, in a relic's title, a relic
- * code (`MR-VER`, `MRSTE`), sorted and each once. The caller has placed the title in Turbo Attax
- * and excluded pick lists, ranges and parallels (titleExclusion).
+ * Card ids a Turbo Attax title names: `#N`, `Nr./No. N` (unless N is the race number of the
+ * driver right beside it, and the catalog `names` do not name that driver on card N), a
+ * prefixed number (`LE4`, `BG 2`, `#GG1`) and, in a relic's title, a relic code (`MR-VER`,
+ * `MRSTE`), sorted and each once. Every number left out is logged at debug with its reason. The
+ * caller has placed the title in Turbo Attax and excluded pick lists, ranges and parallels
+ * (titleExclusion).
  */
-export function readTurboAttaxCardIds(title: string): CardId[] {
+export function readTurboAttaxCardIds(
+  title: string,
+  names: ReadonlyMap<CardId, string> = new Map()
+): CardId[] {
   const ids = new Set<CardId>();
   const add = (raw: string) => {
     const id = normalizeCardIdIn(TURBO_ATTAX_CARD_IDS, raw);
     if (id) ids.add(id);
   };
+  const dropped = (what: string, why: string) =>
+    logger.debug(`eBay Turbo Attax: "${title.slice(0, 200)}": ${what} left out (${why})`);
   for (const m of title.matchAll(PREFIXED_PATTERN)) add(`${m[1]}${m[2]}`);
-  if (RELIC_WORD.test(title)) {
-    for (const m of title.matchAll(RELIC_PATTERN)) add(`${m[1]}-${m[2]}`);
+  const relicWord = RELIC_WORD.test(title);
+  for (const m of title.matchAll(RELIC_PATTERN)) {
+    if (relicWord) add(`${m[1]}-${m[2]}`);
+    else dropped(`${m[1]}-${m[2]}`, 'no relic word in the title');
   }
-  const raceNumbers = raceNumbersIn(title);
   for (const m of title.matchAll(NUMBER_PATTERN)) {
-    if (!raceNumbers.has(Number(m[1]))) add(m[1] ?? '');
+    const n = Number(m[1]);
+    const id = normalizeCardIdIn(TURBO_ATTAX_CARD_IDS, m[1] ?? '');
+    const driver = racingDriver(title, m.index, m.index + m[0].length, n);
+    if (driver !== null && !(id !== null && plain(names.get(id) ?? '').includes(driver))) {
+      dropped(`#${n}`, `the race number of ${driver}`);
+      continue;
+    }
+    add(m[1] ?? '');
   }
   return [...ids].sort(compareCardIds);
 }

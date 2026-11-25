@@ -905,6 +905,14 @@ describe('Turbo Attax 2026', () => {
     ).rejects.toThrow(/unreadable product box.*no series label/);
   });
 
+  test('another series is read before the card id: a foreign id form is excluded, not unreadable', () => {
+    const $ = cheerio.load(readFixture('collect-it-serie-1-p1.html'));
+    $('.c-product-box-content-title').first().text('GG8 - Michael Schumacher - Serie 3');
+    const page = parseCollectItPage($.html(), 'Serie 1', MINECRAFT_CARD_IDS);
+    expect(page.excluded).toHaveLength(1);
+    expect(page.skippedNoId).toBe(0);
+  });
+
   test('a first title part that is no card id form is no card id, also when the rule would read it', () => {
     const $ = cheerio.load(readFixture('collect-it-serie-1-p1.html'));
     $('.c-product-box-content-title').first().text('#1 - Steve - Skin Karte - Serie 1');

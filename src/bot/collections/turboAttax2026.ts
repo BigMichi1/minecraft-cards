@@ -34,7 +34,7 @@ export const turboAttax2026: CollectionDefinition<'turbo-attax-2026'> = {
       // Rainbow, Green, Silver, Orange, Blue, Purple, Bronze, Printing Plate, autographs, and Gold
       // or Golden, but not the checklist sections "F1 Gold" and "Black Gold".
       excludes:
-        /\b(?:pink|parallel|variante|refractor|superfractor|rainbow|green|silver|orange|blue|purple|bronze|golden|autogramm|autograph|signed|auto|printing\s*plate)\b|\bgold\b(?<!\b(?:F1®?|Black)[\s-]+gold)|\d\s*\/\s*\d/i,
+        /\b(?:pink|parallel|variante|refractor|superfractor|rainbow|green|silver|orange|blue|purple|bronze|golden|autogramm|autograph|signed|printing\s*plate)\b|\bgold\b(?<!\b(?:F1®?|Black)[\s-]+gold)|\d\s*\/\s*\d/i,
     },
   },
 };

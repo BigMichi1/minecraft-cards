@@ -47,7 +47,10 @@ changes or a new one is suggested.
   relic's title (`Relic`, `Relikt`) `MR-VER`, `MRSTE`; lots give all their ids (`#157 #163 #174`).
   Never read: bare numbers (`Ferrari 8 Karten`, `237 - Carlos Sainz`), `Karte N`/`Card N`
   (`Trading Card 2026`), unknown prefixes (`KA5`), a prefix glued to a word (`LE 24h`), and a
-  `#N`/`No N` that is the race number of a driver the title names (`Lewis Hamilton #44`).
+  `#N`/`No N` that is the race number of the driver right beside it (`Lewis Hamilton #44`; the
+  2026 grid and the set's legends, `RACE_NUMBERS`), unless the catalog names that driver on that
+  card (`Lando Norris #4` is card #4). Each number left out is logged at debug with its reason.
+  `Auto` is no parallel word: German sellers call the F1 car cards so.
   Excluded: another year (`Miami GP 2023`), pick lists, ranges in either order and any joiner
   (`#1 - 264`, `(1-288)`, `GG1-GG8`, `#1 to #264`, `1~150`) and parallels (any digit/digit such as
   `03/99`, `#269 /94` or `2/38`; `Refractor`, `SuperFractor`, `Pink`, `Rainbow`, `Green`,

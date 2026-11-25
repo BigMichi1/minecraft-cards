@@ -64,6 +64,13 @@ function checkSettings(definition: CollectionDefinition): void {
   for (const shop of ['sammel-ente', 'collect-it'] as const) {
     const settings = definition.shops[shop];
     if (!settings) continue;
+    // collect-it titles end with `Serie N` or a year; sammel-ente's name `Serie N` before their pipe.
+    const label = shop === 'collect-it' ? /^(?:Serie \d+|(?:19|20)\d{2})$/ : /^Serie \d+$/;
+    if (!label.test(settings.series)) {
+      throw new Error(
+        `${definition.id}: the ${shop} series label must be "Serie N"${shop === 'collect-it' ? ' or a year' : ''}`
+      );
+    }
     const host = new URL(settings.category).hostname;
     if (host !== SHOP_HOSTS[shop]) {
       throw new Error(`${definition.id}: ${shop} category is on ${host}, not ${SHOP_HOSTS[shop]}`);

@@ -106,7 +106,7 @@
    `F1 Gold … #345` and `BG 1 … (Black Gold)` still give their ids. Test: the fixture table in `ebayTurboAttax.test.ts`.
 
 3. **Series 3's name check is untouched by the new collection.** A Turbo Attax catalog not synced yet does not stop it, and does not raise `shop-names:ebay:…`. Test: an `ebay.test.ts` case.
-4. **The cap of 30 pages.**
+4. **The cap of 30 pages** (built as a per-collection `maxPages`, Turbo Attax 40).
    - Minecraft searches end where they did.
    - A 4782-result search is read whole and not reported as truncated.
    - A search above 6000 is still cut and alerted.

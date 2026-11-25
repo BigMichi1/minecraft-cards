@@ -67,7 +67,13 @@ describe('turboAttax2026', () => {
       'F1 Gold Max Verstappen #345',
       'F1® Gold #344',
       'BG 1 (Black Gold)',
+      'Black-Gold BG1',
       'Oracle Red Bull #19',
+      'Kimi Antonelli #231 Turbo Attax Legacy Hologramm',
+      'Max Verstappen 100 Club Foil Karte #295',
+      'Aston Martin Aramco #45',
+      'Turbo Attax 2026 Auto Ferrari #190',
+      'Silverstone Exclusive',
     ]) {
       expect({ title, parallel: parallel.test(title) }).toEqual({ title, parallel: false });
     }

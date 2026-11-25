@@ -1,3 +1,4 @@
+import type { CardId } from '../cards/cardId';
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { ButtonStyle } from 'discord.js';
 import type { MessageCreateOptions } from 'discord.js';
@@ -97,6 +98,8 @@ describe('notification messages', () => {
     );
     // A collection this build does not define has no search words: no search.
     expect(kleinanzeigenSearchUrl('other-set' as CollectionId, cid('12'))).toBeNull();
+    // A URL validUrl refuses (over 512 characters) gives no search either.
+    expect(kleinanzeigenSearchUrl('lego-minecraft-3', 'X'.repeat(600) as CardId)).toBeNull();
   });
 
   test('up to 5 listings get one message each, buttons in the same message, no markers', () => {

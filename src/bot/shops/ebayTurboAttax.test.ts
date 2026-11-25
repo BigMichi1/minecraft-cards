@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { ids } from '../../test/cardIds';
+import { describe, expect, spyOn, test } from 'bun:test';
+import logger from '../utils/logger';
+import { cid, ids } from '../../test/cardIds';
 import { hasTurboAttaxRange, readTurboAttaxCardIds } from './ebayTurboAttax';
 
 describe('readTurboAttaxCardIds', () => {
@@ -23,6 +24,10 @@ describe('readTurboAttaxCardIds', () => {
       'Topps F1 Turbo Attax 2026 Driver Core 3x Karten Lot Alonso Sainz #157 #163 #174',
       ['157', '163', '174'],
     ],
+    // Another driver's race number is a card number.
+    ['Topps Turbo Attax 2026 Lewis Hamilton #4 Ferrari', ['4']],
+    // A race number counts only right beside its driver: in a lot it is a card.
+    ['Turbo Attax 2026 Lot Alonso Sainz #14 #163', ['14', '163']],
   ])('%s', (title, expected) => {
     expect(readTurboAttaxCardIds(title)).toEqual(ids(...expected));
   });
@@ -51,8 +56,41 @@ describe('readTurboAttaxCardIds', () => {
     'Topps Turbo Attax 2026 Max Verstappen #1 Red Bull',
     'Topps Turbo Attax 2026 Lando Norris No 4 McLaren',
     'Topps Turbo Attax 2026 Nico Hülkenberg #27 Audi',
+    // Legends race too.
+    'Topps Turbo Attax 2026 Michael Schumacher #1 Legend',
+    'Topps Turbo Attax 2026 Nigel Mansell #5 Legend',
+    // Without the catalog the driver's own card cannot be told from his race number.
+    'Topps Turbo Attax 2026 Lando Norris #4',
   ])('%s gives nothing', (title) => {
     expect(readTurboAttaxCardIds(title)).toEqual([]);
+  });
+});
+
+describe("the catalog keeps a driver's own card", () => {
+  const names = new Map([
+    [cid('4'), 'Lando Norris'],
+    [cid('12'), 'George Russell / Kimi Antonelli'],
+    [cid('44'), 'Carlos Sainz'],
+  ]);
+  test.each([
+    ['Topps Turbo Attax 2026 Lando Norris #4', ['4']],
+    ['Topps Turbo Attax 2026 Kimi Antonelli #12', ['12']],
+    ['Topps Turbo Attax 2026 Lewis Hamilton #44 Ferrari', []],
+  ])('%s', (title, expected) => {
+    expect(readTurboAttaxCardIds(title, names)).toEqual(ids(...expected));
+  });
+
+  test('every dropped number is logged with its reason', () => {
+    const debug = spyOn(logger, 'debug');
+    try {
+      readTurboAttaxCardIds('Topps Turbo Attax 2026 Lewis Hamilton #44 Ferrari', names);
+      readTurboAttaxCardIds('Turbo Attax 2026 Patch MR-VER Verstappen');
+      const lines = debug.mock.calls.map((c) => String(c[0]));
+      expect(lines.some((l) => l.includes('#44') && l.includes('race number'))).toBe(true);
+      expect(lines.some((l) => l.includes('MR-VER') && l.includes('no relic word'))).toBe(true);
+    } finally {
+      debug.mockRestore();
+    }
   });
 });
 

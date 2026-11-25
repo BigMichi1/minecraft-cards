@@ -334,17 +334,22 @@ export function titleExclusion(
   return null;
 }
 
-/** The title forms of `collection` read its card ids (EbayCollectionSettings.idForms). */
-function readIdsIn(
+/**
+ * The title forms of `collection` read its card ids (EbayCollectionSettings.idForms); Turbo
+ * Attax's take the collection's catalog `names` (a driver's own card beside his race number).
+ * Throws for a collection without eBay settings: no title is read with another one's forms.
+ */
+export function readIdsIn(
   title: string,
   collection: CollectionId,
-  collections: readonly EbayCollection[]
+  collections: readonly EbayCollection[],
+  names: ReadonlyMap<CardId, string> = new Map()
 ): CardId[] {
   const settings = collections.find((c) => c.id === collection);
   // Placed titles name a known collection, and the default (series 3) is always known.
   if (!settings) throw new Error(`eBay: no settings of ${collection} to read a title with`);
   const forms = settings.idForms;
-  return forms === 'turbo-attax' ? readTurboAttaxCardIds(title) : readCardIds(title);
+  return forms === 'turbo-attax' ? readTurboAttaxCardIds(title, names) : readCardIds(title);
 }
 
 /**
@@ -1006,7 +1011,7 @@ export function createEbayFetcher(
             continue;
           }
           // Placed and not excluded above: the title forms read its numbers.
-          const cardIds = readIdsIn(title, collection, known);
+          const cardIds = readIdsIn(title, collection, known, namesOf(collection));
           // isPictureCandidate is series 3's only (it needs a title naming series 3).
           if (cardIds.length === 0 && isPictureCandidate(title, known)) {
             // No card id, but one single card: passed on without ids for the picture to decide.

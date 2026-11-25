@@ -14,6 +14,7 @@ import {
   titleExclusion,
   EBAY_QUERIES,
   MAX_PAGES_PER_QUERY,
+  readIdsIn,
 } from './ebay';
 
 /** The fetcher tests read the series 3 fixture: series 3's searches and markers only. */
@@ -2715,6 +2716,40 @@ describe('Turbo Attax 2026', () => {
     expect(result.listings.filter((l) => l.collection !== 'turbo-attax-2026')).toEqual([]);
   });
 
+  test("the fetch reads Turbo Attax titles with Turbo Attax's catalog names", async () => {
+    const norris = {
+      itemId: 'v1|260000000001|0',
+      legacyItemId: '260000000001',
+      title: 'Topps Turbo Attax 2026 Lando Norris #4',
+      itemWebUrl: 'https://www.ebay.de/itm/260000000001',
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    };
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 1, itemSummaries: [norris] }),
+    });
+    const read = (names: ReadonlyMap<CardId, string>) =>
+      createEbayFetcher({
+        collections: TA,
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        cardNames: () => names,
+      }).fetchListings();
+    const known = await read(new Map([[cid('4'), 'Lando Norris']]));
+    expect(known.listings.map((l) => l.cardIds)).toEqual([ids('4')]);
+    const unknown = await read(new Map());
+    expect(unknown.listings).toEqual([]);
+    expect(unknown.skippedNoId).toBe(1);
+  });
+
+  test('readIdsIn refuses a collection without eBay settings', () => {
+    expect(() => readIdsIn('Topps Turbo Attax 2026 #12', 'other-set' as CollectionId, TA)).toThrow(
+      'eBay: no settings of other-set to read a title with'
+    );
+  });
+
   test('titleExclusion names the Turbo Attax reasons', () => {
     const why = (title: string) => titleExclusion(title, 'turbo-attax-2026');
     expect(why('Topps Turbo Attax 2026 Lewis Hamilton Karte #323 limitiert 03/99')).toBe(
@@ -2834,6 +2869,21 @@ describe('Turbo Attax 2026', () => {
         });
       }
       expect(result.truncated!.some((t) => t.includes('5-page cap'))).toBe(true);
+    });
+
+    test('a query two collections share reads the larger of their caps', async () => {
+      const fake = makeFetch({ searchBody: paged(9000) });
+      await createEbayFetcher({
+        collections: [
+          { ...TA[0]!, maxPages: 2 },
+          { ...TA[0]!, id: 'lego-minecraft-3', maxPages: undefined },
+        ],
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings();
+      expect(fake.searchUrls).toHaveLength(MAX_PAGES_PER_QUERY);
     });
 
     test('a collection may lower its cap below the default', async () => {

@@ -4,8 +4,8 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
+  # Release images come from the published release only: also building on the tag push would
+  # build, push and sign every release twice (`gh release create` pushes the tag too).
   release:
     types: [published]
   pull_request:

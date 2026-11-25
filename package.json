@@ -1,6 +1,6 @@
 {
   "name": "minecraft-cards-bot",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Discord bot that tracks trading card availability in shops (LEGO Minecraft, Topps F1 Turbo Attax)",
   "license": "MIT",
   "main": "src/bot/bot.ts",

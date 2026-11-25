@@ -35,8 +35,10 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       exit 1
     fi
   else
-    # Updating a ref: the commits it gains, less those already on any branch of the remote
-    # (a branch rebased onto main gains main's commits, which were checked when they landed).
+    # Updating a ref: the commits it gains, less those on the remote's tracking refs as last
+    # fetched. A branch rebased onto main gains main's commits; they are already on the remote, so
+    # not this push's to fix (CI's DCO check covers every PR and main). Pushing to a bare URL
+    # matches no tracking refs, so such a push checks the whole range, as before.
     if ! git rev-list "$remote_sha..$local_sha" --not "--remotes=$REMOTE" >"$commits_file"; then
       echo "Error: git rev-list failed for $remote_sha..$local_sha; cannot verify DCO sign-offs." >&2
       exit 1

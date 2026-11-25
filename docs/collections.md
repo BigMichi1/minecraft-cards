@@ -59,8 +59,10 @@ is stored in the database: it is never renamed and never removed.
      for eBay, a title of the new collection in the marker test (each marker must match only its
      own collection's title);
    - `commands/missing.test.ts` and `commands/collectionOption.test.ts`: the choices;
-   - `shops/adapters.test.ts`: the adapter list (`shop:collection`), eBay's collections and
-     `enabledShopsOf`.
+   - `shops/adapters.test.ts`: the adapter list (`shop:collection`), the collections of the
+     blue-ocean and eBay adapters, `enabledShopsOf`, and, for a collection read with eBay's
+     `minecraft` forms, the catalog-names test ("passes the catalog names on to eBay");
+   - `shops/blueOcean.test.ts`, for a blue-ocean collection: the walk's collections.
 
 6. **Check.** Run `./bin/mise run typecheck`, `lint`, `format:check` and `test`. The start checks
    below run in `shops/adapters.test.ts` through `createShopAdapters`.
@@ -69,7 +71,7 @@ is stored in the database: it is never renamed and never removed.
    the README's collection list, and, when cards must be added by hand, a line to
    `docs/deployment.md` ("First start").
 8. **After deploy:**
-   - the slash commands are registered at every start (`bot.ts`): with `GUILD_ID` the new choice
+   - the slash commands are registered at every start (`bot.ts`): with `DISCORD_GUILD_ID` the new choice
      appears at once, globally it can take a while;
    - the catalog comes from laststicker with the next check (`/admin catalog sync collection:<id>`
      loads it now);
@@ -103,7 +105,7 @@ Settings are checked at start (`checkSettings`, `checkIdRule` and `checkDistinct
 - eBay settings without a search, or with title forms reading another rule than the collection's;
 - a `g` or `y` flag on a marker or exclusion pattern;
 - an eBay page cap that is not a whole number from 1 to 50;
-- a euro-soccer-cards slug suffix that is no lowercase slug, or a category without its `/`.
+- a euro-soccer-cards slug suffix that is neither empty nor a dash-led lowercase slug, or a category without its `/`.
 
 ## When code is needed
 
@@ -111,7 +113,8 @@ Settings cover a collection whose shops and title forms are already supported. T
 
 - **A new numbered LEGO series on eBay.** Minecraft's title forms know series numbers 1 to 3
   (`SERIES_NUMBER` in `src/bot/shops/ebay.ts`, used by the series-list and picture-candidate
-  checks): raise it, with tests of the new list forms (`Serie 3-4`).
+  checks): raise it, with tests of the new list forms (`Serie 3-4`). It is one digit class, so a
+  series 10 or higher needs more than a wider range.
 - **A new id rule with eBay titles.** eBay reads titles with one of two readers (`idForms`:
   `minecraft` in `ebay.ts`, `turbo-attax` in `src/bot/shops/ebayTurboAttax.ts`). A rule of its
   own needs:

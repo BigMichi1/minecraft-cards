@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { HttpError, USER_AGENT } from '../utils/http';
 import { readFixture } from '../../test/shopHelpers';
 import { cid } from '../../test/cardIds';
+import { MINECRAFT_CARD_IDS, normalizeCardIdIn, TURBO_ATTAX_CARD_IDS } from '../cards/cardId';
 import {
   CatalogLayoutError,
   fetchLaststickerSet,
@@ -178,6 +179,52 @@ describe('the series 1 and 2 pages (2026-11-24)', () => {
     expect(() => parseLaststickerPage(readFixture('laststicker-lego-minecraft-2.html'))).toThrow(
       'no card number "XXL"'
     );
+  });
+});
+
+describe('the Turbo Attax 2026 page (2026-11-25)', () => {
+  const html = readFixture('laststicker-turbo-attax-2026.html');
+  const ta = (raw: string) => normalizeCardIdIn(TURBO_ATTAX_CARD_IDS, raw);
+
+  test("parses with Turbo Attax's id rule: 422 cards, codes and relics, no #135", () => {
+    const { setId, rows } = parseLaststickerPage(html, ta);
+    expect(setId).toBe(12348);
+    expect(rows).toHaveLength(422);
+    const ids = rows.map((r) => r.cardId);
+    expect(ids).not.toContain(cid('135'));
+    for (const id of ['1', '353', 'LE18', 'BG2', 'GG8', 'GU11', 'SUN11', 'MR-HAM', 'RR-ALB']) {
+      expect(ids).toContain(cid(id));
+    }
+    expect(rows.some((r) => r.puzzle)).toBe(false);
+    expect(rows.find((r) => r.cardId === cid('MR-HAM'))).toMatchObject({
+      name: 'Lewis Hamilton',
+      kind: 'Manufactured Relics',
+      pictureUrl: 'https://www.laststicker.com/i/cards/12348/mr-ham.jpg',
+    });
+    expect(rows.find((r) => r.cardId === cid('LE1'))).toMatchObject({
+      name: 'Oscar Piastri',
+      kind: '-',
+      variant: 'Limited Edition',
+    });
+  });
+
+  test("Minecraft's id rule cannot read it", () => {
+    expect(() =>
+      parseLaststickerPage(html, (raw) => normalizeCardIdIn(MINECRAFT_CARD_IDS, raw))
+    ).toThrow(CatalogLayoutError);
+    expect(() =>
+      parseLaststickerPage(html, (raw) => normalizeCardIdIn(MINECRAFT_CARD_IDS, raw))
+    ).toThrow('no card number "GU1"');
+  });
+
+  test('fetchLaststickerSet reads with the rule it is given', async () => {
+    const { rows } = await fetchLaststickerSet(
+      'topps_formula_1_turbo_attax_2026',
+      {},
+      async () => new Response(html),
+      TURBO_ATTAX_CARD_IDS
+    );
+    expect(rows).toHaveLength(422);
   });
 });
 

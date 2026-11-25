@@ -155,7 +155,12 @@ async function fetchAndApply(
   let rows;
   try {
     const { set, ...options } = definition.laststicker;
-    ({ rows } = await (deps.fetchSet ?? fetchLaststickerSet)(set, options));
+    ({ rows } = await (deps.fetchSet ?? fetchLaststickerSet)(
+      set,
+      options,
+      undefined,
+      definition.cardIds
+    ));
   } catch (error) {
     // An unreadable page stays a layout error; anything else from the fetch is the network's.
     throw error instanceof CatalogLayoutError ? error : new FetchFailed(error);

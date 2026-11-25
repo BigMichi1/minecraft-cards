@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { MINECRAFT_CARD_IDS } from '../cards/cardId';
 import { legoMinecraft1 } from './legoMinecraft1';
 
 describe('legoMinecraft1', () => {
@@ -6,6 +7,8 @@ describe('legoMinecraft1', () => {
     expect(legoMinecraft1).toEqual({
       id: 'lego-minecraft-1',
       name: 'LEGO Minecraft Serie 1',
+      cardIds: MINECRAFT_CARD_IDS,
+      kleinanzeigen: 'lego-minecraft-karte',
       laststicker: { set: 'blue_ocean_lego_minecraft-1' },
       referenceFallbackShop: 'sammel-ente',
       shops: {
@@ -25,6 +28,7 @@ describe('legoMinecraft1', () => {
           title: /\bTCC\s*1\b/i,
         },
         ebay: {
+          idForms: 'minecraft',
           queries: ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'],
           series: /\b(?:Series?|Staffel)\s*1\b|\bTCC\s*1\b/i,
         },

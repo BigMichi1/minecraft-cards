@@ -20,14 +20,34 @@ import {
   type ShopFetcher,
 } from './types';
 
+import {
+  COUNT_AFTER,
+  COUNT_SYMBOLS,
+  COUNT_WORDS,
+  escapeRegExp,
+  LETTER,
+  MULTI_PICK_PATTERN,
+  NOT_A_COUNT,
+  NOT_AFTER_COUNT,
+  UNIT_WORDS,
+  wordsPattern,
+} from './ebayTitleWords';
+import { hasTurboAttaxRange, readTurboAttaxCardIds } from './ebayTurboAttax';
+
+export { COUNT_WORDS } from './ebayTitleWords';
+
 const TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 const SEARCH_URL = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
 const ITEM_URL = 'https://www.ebay.de/itm/';
 const TOKEN_SAFETY_MARGIN_MS = 60_000;
 /** Items per search page, the Browse API maximum. */
 const SEARCH_LIMIT = 200;
-/** Pages read per query: 1000 results. The broadest query had 295 on 2026-11-18. */
-const MAX_PAGES_PER_QUERY = 5;
+/**
+ * Pages read per query of a collection without `maxPages`: 1000 results. The broadest LEGO
+ * Minecraft query had 295 on 2026-11-18. Turbo Attax's had 4782 on 2026-11-25 (24 pages); its
+ * `maxPages` is 40.
+ */
+export const MAX_PAGES_PER_QUERY = 5;
 const PAGE_DELAY_MS = 1500;
 /** eBay's `total` is an estimate: a walk may end this many items short (the larger of the two). */
 const TOTAL_TOLERANCE_MIN = 5;
@@ -35,7 +55,10 @@ const TOTAL_TOLERANCE_SHARE = 0.02;
 const tolerance = (total: number) =>
   Math.max(TOTAL_TOLERANCE_MIN, Math.ceil(total * TOTAL_TOLERANCE_SHARE));
 
-/** Every collection read on eBay: its id, searches and series marker (CollectionDefinition). */
+/**
+ * Every collection read on eBay: its id and eBay settings (CollectionDefinition): searches,
+ * series marker, title forms (`idForms`), exclusions and page cap.
+ */
 export type EbayCollection = EbayCollectionSettings & { readonly id: CollectionId };
 
 /** The definitions that name eBay settings, as eBay collections, in their order. */
@@ -51,10 +74,6 @@ export const EBAY_QUERIES: readonly string[] = [
   ...new Set(EBAY_COLLECTIONS.flatMap((c) => c.queries)),
 ];
 
-const LETTER = 'A-Za-zÄÖÜäöüß';
-// A listing the buyer picks a card from: "zum aussuchen", "auswählen", "Auswahl", "du wählst",
-// "waehlen". `pick` only as a whole word: "Pickaxe" is a card name.
-const MULTI_PICK_PATTERN = /aussuch|auswahl|w(?:ä|ae)hl|\bchoos|\bpick\b/i;
 /** The numbered series there are (1 to 3): raise it with a new numbered series. */
 const SERIES_NUMBER = '[1-3]';
 // Not right after a series word: "Serie 3 - Steve" and "TCC 3 - Steve" name the series, not
@@ -66,88 +85,6 @@ const RANGE_PATTERN = new RegExp(
   `${NOT_AFTER_SERIES}(?<![\\w/])(?:LE|XXL)?(\\d{1,3})\\s*(?:-|–|bis\\b)\\s*(?:LE|XXL)?(\\d{1,3})(?!\\d)`,
   'gi'
 );
-
-// Products and their plurals: never a card name, and a number right before one is a count
-// ("3 Pack", "2 Boosters"), not a card number.
-const PRODUCT_WORDS = [
-  'Album',
-  'Alben',
-  'Blister',
-  'Blisters',
-  'Booster',
-  'Boosters',
-  'Box',
-  'Boxen',
-  'Bundle',
-  'Bundles',
-  'Cards',
-  'Display',
-  'Displays',
-  'Foil',
-  'Holo',
-  'Karten',
-  'Konvolut',
-  'Lot',
-  'Lots',
-  'Mappe',
-  'Mappen',
-  'Multipack',
-  'Multipacks',
-  'Pack',
-  'Packs',
-  'Packung',
-  'Packungen',
-  'Paket',
-  'Pakete',
-  'Sammelkarte',
-  'Sammelkarten',
-  'Sammlung',
-  'Set',
-  'Sets',
-  'Starter',
-];
-// Counts and units: "5 Stück", "2 St.", "3 Teile", "2 mal", "2 x".
-const UNIT_WORDS = [
-  'Exemplare',
-  'fach',
-  'mal',
-  'pcs',
-  'St.',
-  'Stk',
-  'Stück',
-  'Stueck',
-  'Teile',
-  'weitere',
-  'x',
-];
-// Prices and extras: "1 Euro", "2 EUR", "1 Karte gratis", "1 Karte dazu".
-const PRICE_WORDS = ['dazu', 'EUR', 'Euro', 'gratis'];
-// Seller slogans: "#1 Bestseller", "Nr. 1 Händler", "No. 1 Fan".
-const SLOGAN_WORDS = ['Bestseller', 'Fan', 'Händler', 'Seller', 'Verkäufer'];
-
-/**
- * The one shared list of words after which a number is a count, unit, price or slogan, never a
- * card id. Every number form checks it (NOT_A_COUNT): the prefixed list (`Karte 5 Stück`,
- * `#1 Bestseller`), LE/XXL (`XXL 1 Stück`), `NAME N Karte` (`Zombie 2 Karte gratis`), and the
- * dash form, whose name may not start with one (`5 - Stück - Charakterkarte`). A word added
- * here guards all of them; add it to the equality test in ebay.test.ts too.
- */
-export const COUNT_WORDS: readonly string[] = [
-  ...PRODUCT_WORDS,
-  ...UNIT_WORDS,
-  ...PRICE_WORDS,
-  ...SLOGAN_WORDS,
-];
-const escapeRegExp = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const wordsPattern = (words: readonly string[]) =>
-  `(?:${words.map(escapeRegExp).join('|')})(?![${LETTER}])`;
-// The count signs that are not words: "2 €", "2-fach".
-const COUNT_SYMBOLS = `(?:€|-fach(?![${LETTER}]))`;
-// After a number: not a decimal ("1,50", "1.50"), not a count sign, not a COUNT_WORDS word.
-const COUNT_AFTER = `(?!\\s*(?:${COUNT_SYMBOLS}|${wordsPattern(COUNT_WORDS)}))`;
-const NOT_A_COUNT = `(?![,.]\\d)${COUNT_AFTER}`;
-// Before a number: "je 2", "2x 5", "2 x 5", "Stück 5" make it a count.
-const NOT_AFTER_COUNT = `(?<!(?:\\bje|\\d\\s*x|\\b${wordsPattern(UNIT_WORDS)})\\s*)`;
 
 const LE_XXL_PATTERN = new RegExp(`\\b(LE|XXL)\\s?(\\d+)\\b${NOT_A_COUNT}`, 'gi');
 // "12/228": only the series size counts, so dates (`11/2026`) and sizes (`10/12`) do not match.
@@ -272,7 +209,7 @@ function hasRange(title: string): boolean {
  * (nameMatchedCardIds).
  */
 export type TitleExclusion =
-  'other series' | 'several collections' | 'no series' | 'pick list' | 'range';
+  'other series' | 'several collections' | 'no series' | 'pick list' | 'range' | 'parallel';
 
 // A series word followed by a list of series numbers ("Serie 1-2", "Serie 1 & 2 - Karte 45",
 // "Serie 1 bis 3", "Serie 3 und 1", "Serie 1 bzw. 2", "Serie 1 (2)", "Serie 1 2 3"). The series
@@ -376,8 +313,10 @@ export function classifyTitle(
 /**
  * Why a title cannot name a card of `collection` (series 3 unless given), or null when it can.
  * It must name that collection's series and no other's, and must not be a listing to pick
- * cards from or name a number range ("Einzelkarten 1 - 228 zum aussuchen"): a range or a
- * choice is not stock.
+ * cards from or name a number range in the collection's forms ("Einzelkarten 1 - 228 zum
+ * aussuchen", "#1 - 264"): a range or a choice is not stock. A title matching the collection's
+ * `excludes` (Turbo Attax parallels) names another card than the checklist's. The first
+ * reason that applies is the one returned (a parallel listed as a range is `range`).
  */
 export function titleExclusion(
   title: string,
@@ -388,13 +327,35 @@ export function titleExclusion(
   if ('exclusion' in placed) return placed.exclusion;
   if (placed.collection !== collection) return 'other series';
   if (MULTI_PICK_PATTERN.test(title)) return 'pick list';
-  if (hasRange(title)) return 'range';
+  const settings = collections.find((c) => c.id === collection);
+  const turboAttax = settings?.idForms === 'turbo-attax';
+  if (turboAttax ? hasTurboAttaxRange(title) : hasRange(title)) return 'range';
+  if (settings?.excludes?.test(title)) return 'parallel';
   return null;
 }
 
 /**
+ * The title forms of `collection` read its card ids (EbayCollectionSettings.idForms); Turbo
+ * Attax's take the collection's catalog `names` (a driver's own card beside his race number).
+ * Throws for a collection without eBay settings: no title is read with another one's forms.
+ */
+export function readIdsIn(
+  title: string,
+  collection: CollectionId,
+  collections: readonly EbayCollection[],
+  names: ReadonlyMap<CardId, string> = new Map()
+): CardId[] {
+  const settings = collections.find((c) => c.id === collection);
+  // Placed titles name a known collection, and the default (series 3) is always known.
+  if (!settings) throw new Error(`eBay: no settings of ${collection} to read a title with`);
+  const forms = settings.idForms;
+  return forms === 'turbo-attax' ? readTurboAttaxCardIds(title, names) : readCardIds(title);
+}
+
+/**
  * Card ids of `collection` (series 3 unless given) named in an eBay title, only for a title
- * titleExclusion lets through for it. Prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `Card 134`,
+ * titleExclusion lets through for it, read with the collection's `idForms` (Turbo Attax's:
+ * ebayTurboAttax.ts). LEGO Minecraft's forms: prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `Card 134`,
  * `LE8`), `n/228`, `132 - Name - Charakterkarte` (also after "Karten") and `ZOMBIE 68 Karte` (a
  * card name word from CARD_NAME_WORDS) count; bare numbers (`Serie 3`, `2026`) and counts
  * (`6 Karten`) never do.
@@ -404,10 +365,10 @@ export function extractCardIdsFromTitle(
   collection: CollectionId = LEGACY_COLLECTION
 ): CardId[] {
   if (titleExclusion(title, collection) !== null) return [];
-  return readCardIds(title);
+  return readIdsIn(title, collection, EBAY_COLLECTIONS);
 }
 
-/** The card ids of the title forms extractCardIdsFromTitle reads, whatever the series. */
+/** The card ids of LEGO Minecraft's title forms (`idForms: 'minecraft'`), whatever the series. */
 function readCardIds(title: string): CardId[] {
   const ids = new Set<CardId>();
   const add = (raw: string) => {
@@ -880,27 +841,29 @@ export function createEbayFetcher(
   }
 
   /**
-   * Every result of a search, page by page by `offset`, up to MAX_PAGES_PER_QUERY pages. eBay takes
-   * only offsets that are a multiple of the limit, and a page may hold fewer items than the limit
-   * before the end, so the offset is the page number times SEARCH_LIMIT, not the number of items
+   * Every result of a search, page by page by `offset`, up to `maxPages` pages (the largest cap of
+   * the collections searching it). eBay takes only offsets that are a multiple of the limit, and a
+   * page may hold fewer items than the limit before the end, so the offset is the page number times SEARCH_LIMIT, not the number of items
    * read, and a short page never ends a walk by itself. The walk ends at an empty page, or once the
    * next offset reaches the answer's total (a later page without a total keeps the earlier one);
    * the items read are then checked against the total (endShort). ShopLayoutErrors, as a partial
    * walk would mark the unread listings unavailable: a walk ending more than the tolerance below
-   * the total (endShort), a walk at the cap reading more than tolerance(1000) = 20 fewer than 1000
-   * items (the offsets it read hold that many, whatever eBay's estimate of the total), an empty
+   * the total (endShort), a walk at the cap reading more than tolerance(reach) fewer items than the
+   * offsets it read reach (`maxPages` × 200: 1000 and 20 for 5 pages, whatever eBay's estimate of
+   * the total), an empty
    * first page with a total above 0, and a first page with neither `itemSummaries` nor `total`. A
-   * search cut at the cap (more announced than 1000 offsets reach, or no total at all) is logged
+   * search cut at the cap (more announced than its offsets reach, or no total at all) is logged
    * and added to `truncated`.
    */
   async function search(
     query: string,
     pace: () => Promise<void>,
-    truncated: string[]
+    truncated: string[],
+    maxPages: number
   ): Promise<EbayItem[]> {
     const all: EbayItem[] = [];
     let total: number | null = null;
-    for (let page = 0; page < MAX_PAGES_PER_QUERY; page++) {
+    for (let page = 0; page < maxPages; page++) {
       const offset = page * SEARCH_LIMIT;
       const result = await searchPage(query, offset, pace);
       total = result.total ?? total;
@@ -926,12 +889,12 @@ export function createEbayFetcher(
         return all;
       }
     }
-    const lastOffset = (MAX_PAGES_PER_QUERY - 1) * SEARCH_LIMIT;
+    const lastOffset = (maxPages - 1) * SEARCH_LIMIT;
     if (total !== null) {
       // Only totals above the cap get here: every offset below it was read, so items missing
       // there are short pages, not the estimate. Their tolerance is that of the offsets read,
       // not of the total, or a large total would pass a partial walk as a cut one.
-      const reach = MAX_PAGES_PER_QUERY * SEARCH_LIMIT;
+      const reach = maxPages * SEARCH_LIMIT;
       if (reach - all.length > tolerance(reach)) {
         throw new ShopLayoutError(
           `eBay search "${query}": the walk ended at offset ${lastOffset} with ${all.length} items read of the first ${reach}, total ${total} (tolerance ${tolerance(reach)})`
@@ -943,7 +906,7 @@ export function createEbayFetcher(
         return all;
       }
     }
-    const note = `search "${query}": ${total ?? 'more'} results, only the first ${all.length} read (${MAX_PAGES_PER_QUERY}-page cap)`;
+    const note = `search "${query}": ${total ?? 'more'} results, only the first ${all.length} read (${maxPages}-page cap)`;
     logger.warn(`eBay ${note}`);
     truncated.push(note);
     return all;
@@ -965,8 +928,9 @@ export function createEbayFetcher(
       const series3 = collections.some((c) => c.id === LEGACY_COLLECTION);
       const names = series3 ? namesOf(LEGACY_COLLECTION) : new Map<CardId, string>();
       // Every other known series, read in this run or not, may have the name at that number.
+      // Only collections read with Minecraft's title forms share series 3's numbers and names.
       const others = known
-        .filter((c) => c.id !== LEGACY_COLLECTION)
+        .filter((c) => c.id !== LEGACY_COLLECTION && c.idForms === 'minecraft')
         .map((c) => ({ id: c.id, names: namesOf(c.id) }));
       const otherNames = others.map((o) => o.names);
       // An other series' catalog not synced yet cannot rule a name out: no title read by name
@@ -994,7 +958,13 @@ export function createEbayFetcher(
       };
       const perQuery = new Map<string, number>();
       for (const query of queries) {
-        const items = await search(query, pace, truncated);
+        // The largest cap of the collections searching it; MAX_PAGES_PER_QUERY when they set none.
+        const maxPages = Math.max(
+          ...collections
+            .filter((c) => c.queries.includes(query))
+            .map((c) => c.maxPages ?? MAX_PAGES_PER_QUERY)
+        );
+        const items = await search(query, pace, truncated, maxPages);
         itemsSeen += items.length;
         // Usable items only: answers of nothing but items without link or title are empty.
         perQuery.set(query, items.filter((i) => listingUrl(i) && i.title).length);
@@ -1041,7 +1011,7 @@ export function createEbayFetcher(
             continue;
           }
           // Placed and not excluded above: the title forms read its numbers.
-          const cardIds = readCardIds(title);
+          const cardIds = readIdsIn(title, collection, known, namesOf(collection));
           // isPictureCandidate is series 3's only (it needs a title naming series 3).
           if (cardIds.length === 0 && isPictureCandidate(title, known)) {
             // No card id, but one single card: passed on without ids for the picture to decide.

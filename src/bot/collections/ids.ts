@@ -1,4 +1,4 @@
-import type { CardId } from '../cards/cardId';
+import type { CardId, CardIdRule } from '../cards/cardId';
 import type { ShopId } from '../shops/types';
 
 /**
@@ -8,7 +8,12 @@ import type { ShopId } from '../shops/types';
  * starting with a letter; button custom ids split on `:` and embed them unescaped
  * (`ids.test.ts`).
  */
-export const COLLECTION_IDS = ['lego-minecraft-1', 'lego-minecraft-2', 'lego-minecraft-3'] as const;
+export const COLLECTION_IDS = [
+  'lego-minecraft-1',
+  'lego-minecraft-2',
+  'lego-minecraft-3',
+  'turbo-attax-2026',
+] as const;
 
 export type CollectionId = (typeof COLLECTION_IDS)[number];
 
@@ -30,7 +35,10 @@ export function isCollectionId(value: string): value is CollectionId {
 /** A shop category of one series: its absolute URL and the series label its titles carry. */
 export interface CategoryShopSettings {
   readonly category: string;
-  /** `Serie N`: sammel-ente titles name it before their pipe, collect-it's end with it. */
+  /**
+   * `Serie N`: sammel-ente titles name it before their pipe, collect-it's end with it; or a year
+   * (`2026`, Turbo Attax on collect-it).
+   */
   readonly series: string;
 }
 
@@ -45,6 +53,23 @@ export interface LaststickerSetOptions {
 /** How eBay is searched for a collection, and how its titles are told from other series'. */
 export interface EbayCollectionSettings {
   readonly queries: readonly string[];
+  /**
+   * The title forms its card ids are read with: LEGO Minecraft's (`Karte 12`, `LE8`, `ZOMBIE 68
+   * Karte`, the name check of series 3) or Turbo Attax's (`#340`, `LE4`, `MR-VER`,
+   * `shops/ebayTurboAttax.ts`).
+   */
+  readonly idForms: 'minecraft' | 'turbo-attax';
+  /**
+   * Pages of 200 read per search of this collection, 1 to 50 (eBay takes no offset beyond
+   * 10000; unset, MAX_PAGES_PER_QUERY, 5); a search several collections share reads the largest
+   * of their caps. A search with more results is cut and alerted (`shop-truncated:ebay`).
+   */
+  readonly maxPages?: number;
+  /**
+   * A title of the collection matching this names another card than the checklist's (Turbo
+   * Attax parallels: `Refractor`, `/99`): excluded (`parallel`). No `g` or `y` flag.
+   */
+  readonly excludes?: RegExp;
   /**
    * A title naming the collection; a title matching several collections' gives no ids. No `g`
    * or `y` flag (`test` would keep state between titles; refused at start).
@@ -109,6 +134,15 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   readonly id: K;
   /** Display name in commands and alerts. */
   readonly name: string;
+  /**
+   * The collection's card id rule: its laststicker numbers, card lists, commands, collect-it
+   * titles and Turbo Attax eBay titles are read with it, so an id outside it (`GG8` in Minecraft)
+   * is refused. sammel-ente, blue-ocean and eBay's Minecraft forms read Minecraft's rule only,
+   * which the start check requires of a collection using them.
+   */
+  readonly cardIds: CardIdRule;
+  /** Kleinanzeigen search words before the card id, dash-joined (`lego-minecraft-karte`). */
+  readonly kleinanzeigen: string;
   /** A checklist (`parseChecklist` form) seeded into an empty catalog at start, if any. */
   readonly starterChecklist?: string;
   /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */

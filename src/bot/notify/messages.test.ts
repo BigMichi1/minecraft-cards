@@ -1,3 +1,4 @@
+import type { CardId } from '../cards/cardId';
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { ButtonStyle } from 'discord.js';
 import type { MessageCreateOptions } from 'discord.js';
@@ -88,10 +89,17 @@ describe('notification messages', () => {
     ]);
   });
 
-  test('kleinanzeigenSearchUrl lowercases the id', () => {
-    expect(kleinanzeigenSearchUrl(cid('LE8'))).toBe(
+  test("kleinanzeigenSearchUrl searches the collection's words and the lowercase id", () => {
+    expect(kleinanzeigenSearchUrl('lego-minecraft-3', cid('LE8'))).toBe(
       'https://www.kleinanzeigen.de/s-lego-minecraft-karte-le8/k0'
     );
+    expect(kleinanzeigenSearchUrl('turbo-attax-2026', cid('MR-HAM'))).toBe(
+      'https://www.kleinanzeigen.de/s-turbo-attax-2026-mr-ham/k0'
+    );
+    // A collection this build does not define has no search words: no search.
+    expect(kleinanzeigenSearchUrl('other-set' as CollectionId, cid('12'))).toBeNull();
+    // A URL validUrl refuses (over 512 characters) gives no search either.
+    expect(kleinanzeigenSearchUrl('lego-minecraft-3', 'X'.repeat(600) as CardId)).toBeNull();
   });
 
   test('up to 5 listings get one message each, buttons in the same message, no markers', () => {
@@ -144,6 +152,23 @@ describe('notification messages', () => {
     expect(row.components[0].url).toBe('https://shop/1');
     expect(row.components[1].url).toBe('https://www.kleinanzeigen.de/s-lego-minecraft-karte-12/k0');
     expect(row.components[2].custom_id).toBe('report:1');
+  });
+
+  test("a DM row's Kleinanzeigen search is the listing's collection's; none for an unknown one", () => {
+    const labelsAndUrls = (over: Partial<StoredListing>) => {
+      const row = (
+        atMsg(buildNotificationMessages([item(1, over)]), 0).components![0] as any
+      ).toJSON();
+      return row.components.map((c: { label: string; url?: string }) => [c.label, c.url]);
+    };
+    expect(
+      labelsAndUrls({ collection: 'turbo-attax-2026', cardIds: [cid('MR-HAM')] })
+    ).toContainEqual([
+      'Kleinanzeigen #MR-HAM',
+      'https://www.kleinanzeigen.de/s-turbo-attax-2026-mr-ham/k0',
+    ]);
+    const unknown = labelsAndUrls({ collection: 'other-set' as CollectionId });
+    expect(unknown.some(([label]: [string]) => label.startsWith('Kleinanzeigen'))).toBe(false);
   });
 
   test('the title names the collection: names repeat across series', () => {

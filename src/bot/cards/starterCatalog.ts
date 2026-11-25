@@ -1,4 +1,4 @@
-import { type CardId, parseCardList } from './cardId';
+import { type CardId, type CardIdRule, parseCardList } from './cardId';
 
 /**
  * The laststicker checklist of the `lego-minecraft-3` starter catalog (its definition's
@@ -13,13 +13,17 @@ const INLINE_HEADER = /^[^\d,:]*:/;
 /**
  * Parse a pasted laststicker checklist. Header lines ending in `:` are ignored, and so is a
  * header in front of the ids on the same line: a Discord string option cannot hold newlines,
- * so `/admin catalog import` receives the whole paste as one line.
+ * so `/admin catalog import` receives the whole paste as one line. Ids are read with the
+ * collection's `rule`.
  */
-export function parseChecklist(text: string): { ids: CardId[]; invalid: string[] } {
+export function parseChecklist(
+  text: string,
+  rule: CardIdRule
+): { ids: CardId[]; invalid: string[] } {
   const body = text
     .split(/\r?\n/)
     .filter((line) => !line.trim().endsWith(':'))
     .map((line) => line.replace(INLINE_HEADER, ''))
     .join(',');
-  return parseCardList(body);
+  return parseCardList(body, rule);
 }

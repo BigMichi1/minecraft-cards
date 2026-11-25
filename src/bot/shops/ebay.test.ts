@@ -13,6 +13,8 @@ import {
   EBAY_COLLECTIONS,
   titleExclusion,
   EBAY_QUERIES,
+  MAX_PAGES_PER_QUERY,
+  readIdsIn,
 } from './ebay';
 
 /** The fetcher tests read the series 3 fixture: series 3's searches and markers only. */
@@ -1805,6 +1807,48 @@ describe('createEbayFetcher', () => {
     expect(error.message).not.toContain('leaked');
   });
 
+  test('a token answer without access_token or expires_in is an error', async () => {
+    for (const tokenBody of [
+      JSON.stringify({ expires_in: 7200 }),
+      JSON.stringify({ access_token: 'x' }),
+    ]) {
+      const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: makeFetch({ tokenBody }).fetchFn,
+        sleep: noSleep,
+      });
+      await expect(adapter.fetchListings()).rejects.toThrow(
+        'eBay token response has no access_token/expires_in'
+      );
+    }
+  });
+
+  test('an item without an item id and with an unreadable web URL is invalid', async () => {
+    const good = {
+      itemId: 'v1|270000000001|0',
+      legacyItemId: '270000000001',
+      title: 'LEGO Minecraft On Fire Karte 12',
+      itemWebUrl: 'https://www.ebay.de/itm/270000000001',
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    };
+    const broken = { title: 'LEGO Minecraft On Fire Karte 13', itemWebUrl: 'not a url' };
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 2, itemSummaries: [good, broken] }),
+    });
+    const result = await createEbayFetcher({
+      collections: SERIES_3_ONLY,
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    }).fetchListings();
+    expect(result.skippedInvalid).toBe(1);
+    expect(result.listings.map((l) => l.url)).toEqual(['https://www.ebay.de/itm/270000000001']);
+  });
+
   test('a failure body echoing the Basic credential is redacted (C3)', async () => {
     const basic = btoa('id:topsecret');
     const fake = makeFetch({
@@ -2388,6 +2432,7 @@ describe('one eBay run for every collection', () => {
       'lego minecraft tcc serie 3',
       'lego minecraft trading card on fire',
       'lego minecraft karten serie 3',
+      'turbo attax 2026',
     ]);
   });
 
@@ -2616,5 +2661,283 @@ describe('one eBay run for every collection', () => {
       classifyTitle(title);
       expect(performance.now() - started).toBeLessThan(50);
     }
+  });
+});
+
+describe('Turbo Attax 2026', () => {
+  const TA = EBAY_COLLECTIONS.filter((c) => c.id === 'turbo-attax-2026');
+  const FIXTURE = readFixture('ebay-search-turbo-attax.json');
+  /**
+   * Every item of ebay-search-turbo-attax.json (2026-11-25 probe, ids and URLs replaced) by its
+   * 1300000000xx number: its ids, or why it gives none. Reviewed by hand, item by item.
+   */
+  const EXPECTED: Record<number, string[] | 'excluded' | 'no id'> = {
+    1: ['340'],
+    2: ['LE4'],
+    3: ['BG2'],
+    4: ['345'], // "F1 Gold" is a checklist section, no parallel
+    5: ['341'],
+    6: ['LE6'],
+    7: ['MR-VER'],
+    8: ['MR-STE'],
+    9: ['16'],
+    10: ['264'],
+    11: ['GG1'],
+    12: ['GG8'],
+    13: ['19'],
+    14: ['295'],
+    15: ['309'],
+    16: ['LE18'],
+    17: ['LE5'],
+    18: ['133'],
+    19: ['157', '163', '174'],
+    20: 'no id',
+    21: 'no id',
+    22: 'no id',
+    23: 'no id',
+    24: 'no id',
+    25: 'excluded', // pick list
+    26: 'excluded', // pick list and range
+    27: 'excluded', // range
+    28: 'excluded', // numbered parallel 03/99
+    29: 'excluded', // Refractor
+    30: 'excluded', // Pink
+    31: 'excluded', // GOLD LE5
+    32: 'excluded', // Gold Relic
+    33: 'excluded', // /94
+    34: 'excluded', // Rainbow
+    35: 'excluded', // Parallel/Variante
+    36: 'excluded', // Gold Card #350: maybe the F1 Gold card, unsure, so nothing
+    37: 'excluded', // another year (2023)
+    38: 'excluded', // 2025
+    39: 'excluded', // variations
+    40: 'excluded', // 2/38 reads as a numbered parallel
+  };
+
+  test('every fixture item gives its reviewed ids, in Turbo Attax', async () => {
+    const fake = makeFetch({ searchBody: () => FIXTURE });
+    const result = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    }).fetchListings();
+    const byNumber = new Map(result.listings.map((l) => [Number(l.url.slice(-2)), l] as const));
+    const items = (JSON.parse(FIXTURE) as { itemSummaries: unknown[] }).itemSummaries;
+    expect(Object.keys(EXPECTED)).toHaveLength(items.length);
+    for (const [n, expected] of Object.entries(EXPECTED)) {
+      const listing = byNumber.get(Number(n));
+      const got: unknown = listing
+        ? { collection: listing.collection, ids: listing.cardIds }
+        : 'not stored';
+      const want: unknown = Array.isArray(expected)
+        ? { collection: 'turbo-attax-2026', ids: ids(...expected) }
+        : 'not stored';
+      expect({ n, got }).toEqual({ n, got: want });
+    }
+    const counted = Object.values(EXPECTED);
+    expect(result.skippedNoId).toBe(counted.filter((e) => e === 'no id').length);
+    expect(result.skippedExcluded).toBe(counted.filter((e) => e === 'excluded').length);
+  });
+
+  test('the fixture with every catalog loaded puts no Turbo Attax title in series 3 by name', async () => {
+    const fake = makeFetch({ searchBody: () => FIXTURE });
+    const result = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      cardNames: (c) =>
+        c === 'lego-minecraft-3'
+          ? new Map([
+              [cid('101'), 'Kimi Antonelli'],
+              [cid('12'), 'Michael Schumacher'],
+            ])
+          : OTHER_SERIES_NAMES,
+    }).fetchListings();
+    expect(result.listings.filter((l) => l.collection !== 'turbo-attax-2026')).toEqual([]);
+  });
+
+  test("the fetch reads Turbo Attax titles with Turbo Attax's catalog names", async () => {
+    const norris = {
+      itemId: 'v1|260000000001|0',
+      legacyItemId: '260000000001',
+      title: 'Topps Turbo Attax 2026 Lando Norris #4',
+      itemWebUrl: 'https://www.ebay.de/itm/260000000001',
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    };
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 1, itemSummaries: [norris] }),
+    });
+    const read = (names: ReadonlyMap<CardId, string>) =>
+      createEbayFetcher({
+        collections: TA,
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+        cardNames: () => names,
+      }).fetchListings();
+    const known = await read(new Map([[cid('4'), 'Lando Norris']]));
+    expect(known.listings.map((l) => l.cardIds)).toEqual([ids('4')]);
+    const unknown = await read(new Map());
+    expect(unknown.listings).toEqual([]);
+    expect(unknown.skippedNoId).toBe(1);
+  });
+
+  test('readIdsIn refuses a collection without eBay settings', () => {
+    expect(() => readIdsIn('Topps Turbo Attax 2026 #12', 'other-set' as CollectionId, TA)).toThrow(
+      'eBay: no settings of other-set to read a title with'
+    );
+  });
+
+  test('titleExclusion names the Turbo Attax reasons', () => {
+    const why = (title: string) => titleExclusion(title, 'turbo-attax-2026');
+    expect(why('Topps Turbo Attax 2026 Lewis Hamilton Karte #323 limitiert 03/99')).toBe(
+      'parallel'
+    );
+    expect(why('Topps Turbo Attax F1 2026 - Chrome Refractor - Lance Stroll #329')).toBe(
+      'parallel'
+    );
+    expect(why('Topps Turbo Attax 2026 F1 Gold Max Verstappen #345')).toBeNull();
+    expect(why('Turbo Attax 2026 BG 1 Esteban Ocon (Black Gold)')).toBeNull();
+    expect(why('Topps Turbo Attax 2026 Einzelkarten #1 - 264')).toBe('range');
+    expect(why('Topps Turbo Attax 2026 Karte aussuchen')).toBe('pick list');
+    expect(why('Topps Turbo Attax 2026 #101 Miami GP 2023')).toBe('no series');
+    expect(why('LEGO Minecraft On Fire Karte 12')).toBe('other series');
+  });
+
+  test('a Minecraft title keeps its own forms, and a Turbo Attax title is never series 3', () => {
+    expect(extractCardIdsFromTitle('LEGO Minecraft On Fire Karte LE 5')).toEqual(ids('LE5'));
+    expect(extractCardIdsFromTitle('Topps Turbo Attax 2026 Lando Norris LE5')).toEqual([]);
+    expect(
+      extractCardIdsFromTitle('Topps Turbo Attax 2026 Lando Norris LE5', 'turbo-attax-2026')
+    ).toEqual(ids('LE5'));
+    // Turbo Attax's forms do not read Minecraft's: "Karte 12" is no Turbo Attax id.
+    expect(extractCardIdsFromTitle('Topps Turbo Attax 2026 Karte 12', 'turbo-attax-2026')).toEqual(
+      []
+    );
+  });
+
+  test("series 3's name check ignores Turbo Attax's card list, loaded or not", async () => {
+    const ghast = {
+      itemId: 'v1|250000000001|0',
+      legacyItemId: '250000000001',
+      title: 'LEGO Minecraft Karte 131 - Ghast',
+      itemWebUrl: 'https://www.ebay.de/itm/250000000001',
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    };
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 1, itemSummaries: [ghast] }),
+    });
+    const result = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      cardNames: (c) =>
+        c === 'lego-minecraft-3'
+          ? new Map([[cid('131'), 'Ghast']])
+          : c === 'turbo-attax-2026'
+            ? new Map()
+            : OTHER_SERIES_NAMES,
+    }).fetchListings();
+    expect(result.listings.map((l) => [l.collection, l.cardIds])).toEqual([
+      ['lego-minecraft-3', ids('131')],
+    ]);
+    expect(result.namesUnknown).toBeUndefined();
+  });
+
+  describe('the page cap', () => {
+    const paged = (total: number) => (_n: number, url: string) => {
+      const offset = Number(new URL(url).searchParams.get('offset') ?? '0');
+      const count = Math.max(0, Math.min(200, total - offset));
+      const items = Array.from({ length: count }, (_, i) => {
+        const n = String(600000000000 + offset + i);
+        return {
+          itemId: `v1|${n}|0`,
+          legacyItemId: n,
+          title: `Topps Turbo Attax 2026 #${(i % 300) + 1}`,
+          itemWebUrl: `https://www.ebay.de/itm/${n}`,
+          price: { value: '1.00', currency: 'EUR' },
+          buyingOptions: ['FIXED_PRICE'],
+        };
+      });
+      return JSON.stringify({ total, offset, limit: 200, itemSummaries: items });
+    };
+    const run = async (total: number) => {
+      const fake = makeFetch({ searchBody: paged(total) });
+      const result = await createEbayFetcher({
+        collections: TA,
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings();
+      return { result, pages: fake.searchUrls.length };
+    };
+
+    test("Turbo Attax's search of 4782 results is read whole, not cut", async () => {
+      expect(TA[0]!.maxPages).toBe(40);
+      const { result, pages } = await run(4782);
+      expect(pages).toBe(24);
+      expect(result.truncated).toBeUndefined();
+      expect(result.listings).toHaveLength(4782);
+    });
+
+    test('a search beyond its 40 pages is still cut and reported', async () => {
+      const { result, pages } = await run(9000);
+      expect(pages).toBe(40);
+      expect(result.truncated).toHaveLength(1);
+      expect(result.truncated![0]).toContain('40-page cap');
+    });
+
+    test("in one run each query keeps its own collections' cap: Minecraft 5 pages, Turbo Attax 40", async () => {
+      const fake = makeFetch({ searchBody: paged(9000) });
+      const result = await createEbayFetcher({
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings();
+      const pagesOf = (q: string) =>
+        fake.searchUrls.filter((u) => new URL(u).searchParams.get('q') === q).length;
+      for (const q of EBAY_QUERIES) {
+        expect({ q, pages: pagesOf(q) }).toEqual({
+          q,
+          pages: q === 'turbo attax 2026' ? 40 : MAX_PAGES_PER_QUERY,
+        });
+      }
+      expect(result.truncated!.some((t) => t.includes('5-page cap'))).toBe(true);
+    });
+
+    test('a query two collections share reads the larger of their caps', async () => {
+      const fake = makeFetch({ searchBody: paged(9000) });
+      await createEbayFetcher({
+        collections: [
+          { ...TA[0]!, maxPages: 2 },
+          { ...TA[0]!, id: 'lego-minecraft-3', maxPages: undefined },
+        ],
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings();
+      expect(fake.searchUrls).toHaveLength(MAX_PAGES_PER_QUERY);
+    });
+
+    test('a collection may lower its cap below the default', async () => {
+      const fake = makeFetch({ searchBody: paged(9000) });
+      await createEbayFetcher({
+        collections: [{ ...TA[0]!, maxPages: 2 }],
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings();
+      expect(fake.searchUrls).toHaveLength(2);
+    });
   });
 });

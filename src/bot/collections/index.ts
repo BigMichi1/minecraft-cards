@@ -1,7 +1,9 @@
+import { normalizeCardIdIn, type CardId, type CardIdRule } from '../cards/cardId';
 import { COLLECTION_IDS, type CollectionDefinition, type CollectionId } from './ids';
 import { legoMinecraft1 } from './legoMinecraft1';
 import { legoMinecraft2 } from './legoMinecraft2';
 import { legoMinecraft3 } from './legoMinecraft3';
+import { turboAttax2026 } from './turboAttax2026';
 
 /**
  * One definition per id, filed under its own id: an id without a definition, or a definition
@@ -11,6 +13,7 @@ const DEFINITIONS: { readonly [K in CollectionId]: CollectionDefinition<K> } = {
   'lego-minecraft-1': legoMinecraft1,
   'lego-minecraft-2': legoMinecraft2,
   'lego-minecraft-3': legoMinecraft3,
+  'turbo-attax-2026': turboAttax2026,
 };
 
 /** Every collection, in display order (the order of COLLECTION_IDS). */
@@ -22,6 +25,24 @@ export function collectionById(id: CollectionId): CollectionDefinition {
   return DEFINITIONS[id];
 }
 
+/** The card id rule a collection's ids are read with. */
+export function cardIdRuleOf(collection: CollectionId): CardIdRule {
+  return DEFINITIONS[collection].cardIds;
+}
+
+/**
+ * A canonical id under any registry collection's rule, or null. For values that carry ids of
+ * every collection without naming it (button custom ids); the caller checks them against the
+ * listing they belong to.
+ */
+export function anyCollectionCardId(raw: string): CardId | null {
+  for (const definition of COLLECTIONS) {
+    const id = normalizeCardIdIn(definition.cardIds, raw);
+    if (id !== null) return id;
+  }
+  return null;
+}
+
 /**
  * The display name of a collection, or its id when no definition exists (a row the database
  * holds for an id this build does not define).
@@ -29,6 +50,12 @@ export function collectionById(id: CollectionId): CollectionDefinition {
 export function collectionName(id: CollectionId): string {
   const known: Partial<Record<string, CollectionDefinition>> = DEFINITIONS;
   return known[id]?.name ?? id;
+}
+
+/** A collection's Kleinanzeigen search words, or null when no definition exists. */
+export function collectionKleinanzeigen(id: CollectionId): string | null {
+  const known: Partial<Record<string, CollectionDefinition>> = DEFINITIONS;
+  return known[id]?.kleinanzeigen ?? null;
 }
 
 /** Slash command choices for the `collection` option. */

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { ButtonStyle } from 'discord.js';
-import type { CardId } from '../cards/cardId';
+import { MINECRAFT_CARD_IDS, type CardId } from '../cards/cardId';
 import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
 import type { RunSummary } from '../check/runner';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
@@ -20,7 +20,7 @@ import {
 const S = T / 1000;
 const FENCE = '```';
 const ALL: readonly ShopId[] = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay'];
-const CATALOG: CardId[] = parseChecklist(STARTER_CHECKLIST).ids;
+const CATALOG: CardId[] = parseChecklist(STARTER_CHECKLIST, MINECRAFT_CARD_IDS).ids;
 
 function input(over: Partial<StockInput> = {}): StockInput {
   return {

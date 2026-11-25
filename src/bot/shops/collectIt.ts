@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { normalizeCardId } from '../cards/cardId';
+import { MINECRAFT_CARD_IDS, normalizeCardIdIn, type CardIdRule } from '../cards/cardId';
 import { errorMessage, sleep as realSleep } from '../utils/async';
 import { fetchText, HttpError } from '../utils/http';
 import logger from '../utils/logger';
@@ -34,11 +34,31 @@ export function readArticleTotal(text: string): number | null {
 }
 
 // "12 - Squid - Charakterkarte - Serie 3" -> id "12", name "Squid";
-// "LE01 - Ender Dragon - Limitierte Karte - Serie 3" -> id "LE1" (canonical, normalizeCardId).
-// "XXL 1 - Explodierender Creeper - …" (series 1) -> id "XXL1".
-const TITLE_PATTERN = /^((?:LE|XXL)?\s?\d+) - (.+?)(?: - |$)/i;
-// The last ` - ` part of a title naming a series ("Serie 1"); compared with the collection's.
-const SERIES_SUFFIX = / - (Serie \d+)$/i;
+// "LE01 - Ender Dragon - Limitierte Karte - Serie 3" -> id "LE1" (canonical, the collection's rule).
+// "XXL 1 - Explodierender Creeper - …" (series 1) -> id "XXL1";
+// "MR-HAM - Lewis Hamilton - Manufactured Relic - 2026" (Turbo Attax) -> id "MR-HAM".
+// The first part (letters and digits, at most one dash or space inside), spaces removed, is read
+// with the collection's card id rule.
+const TITLE_PATTERN = /^([A-Za-z0-9]+(?:[- ][A-Za-z0-9]+)?) - (.+?)(?: - |$)/;
+// The last ` - ` part of a title naming a series, of the kind the collection's label is: "Serie 1"
+// (LEGO Minecraft) or a year ("2026", Turbo Attax). A label of the other kind is no series label:
+// collect-it changed its titles, so the box is unreadable rather than another series'.
+const SERIE_SUFFIX = / - (Serie \d+)$/i;
+const YEAR_SUFFIX = / - ((?:19|20)\d{2})$/;
+const YEAR_LABEL = /^(?:19|20)\d{2}$/;
+
+/** The series label a title ends with, of `series`' kind (either kind when null). */
+function seriesLabel(title: string, series: string | null): string | undefined {
+  const patterns =
+    series === null
+      ? [SERIE_SUFFIX, YEAR_SUFFIX]
+      : [YEAR_LABEL.test(series) ? YEAR_SUFFIX : SERIE_SUFFIX];
+  for (const pattern of patterns) {
+    const label = pattern.exec(title)?.[1];
+    if (label !== undefined) return label;
+  }
+  return undefined;
+}
 // schema.org ItemAvailability values, lowercased, and whether each means "can be ordered now".
 const AVAILABILITY = new Map<string, boolean>([
   ['instock', true],
@@ -132,11 +152,17 @@ export interface CollectItPage {
 /**
  * Parse one category page. The category holds only singles, so a skipped box is parser drift,
  * and the adapter rejects a page with any. With `series`, a card box whose title ends with
- * another series label goes to `excluded` (no skip), and one with no series label is a skip
- * (the title format changed); null reads every series. `canonical` and `next` are returned raw;
+ * another series label of the same kind (`Serie N`, or a year for a year label) goes to
+ * `excluded` (no skip), and one with no label of that kind is a skip (the title format
+ * changed); null reads either kind. Card ids are read with the collection's `rule` (Minecraft's
+ * unless given). `canonical` and `next` are returned raw;
  * the adapter checks them with `categoryPageNumber`.
  */
-export function parseCollectItPage(html: string, series: string | null): CollectItPage {
+export function parseCollectItPage(
+  html: string,
+  series: string | null,
+  rule: CardIdRule = MINECRAFT_CARD_IDS
+): CollectItPage {
   const $ = cheerio.load(html);
   const listings: Listing[] = [];
   const excluded: string[] = [];
@@ -172,24 +198,25 @@ export function parseCollectItPage(html: string, series: string | null): Collect
       skippedInvalid++;
       return;
     }
-    const match = TITLE_PATTERN.exec(title);
-    const cardId = match ? normalizeCardId((match[1] ?? '').replace(/\s/g, '')) : null;
-    if (!match || !cardId) {
-      skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no card id`);
-      skippedNoId++;
-      return;
-    }
-    const titleSeries = SERIES_SUFFIX.exec(title)?.[1];
+    const titleSeries = seriesLabel(title, series);
     if (series !== null && titleSeries === undefined) {
-      // A title naming no series: the title format changed, so this box cannot be trusted, and
-      // a box the walk drops would read as sold out (collect-it hides sold-out cards).
+      // A title naming no series of the collection's kind: the title format changed, so this
+      // box cannot be trusted, and a box the walk drops would read as sold out (collect-it hides
+      // sold-out cards).
       skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no series label`);
       skippedNoId++;
       return;
     }
     if (series !== null && titleSeries !== undefined && !sameSeries(titleSeries, series)) {
-      // Another series' card in this category: counted, never stored as this collection's.
+      // Another series' card in this category, whatever its id: counted, never stored here.
       excluded.push(url);
+      return;
+    }
+    const match = TITLE_PATTERN.exec(title);
+    const cardId = match ? normalizeCardIdIn(rule, (match[1] ?? '').replace(/\s/g, '')) : null;
+    if (!match || !cardId) {
+      skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no card id`);
+      skippedNoId++;
       return;
     }
     const availabilityHref = box.find('link[itemprop="availability"]').first().attr('href');
@@ -309,8 +336,9 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
 }
 
 /**
- * collect-it.de lists a series' single cards in one category (`settings.category`), 30 per page. It hides sold-out products
- * instead of marking them, so a card that sells out simply vanishes (and the run marks the stored
+ * collect-it.de lists a series' single cards in one category (`settings.category`), 30 per page,
+ * each title's card id read with the collection's `rule`. It hides sold-out products instead of
+ * marking them, so a card that sells out simply vanishes (and the run marks the stored
  * listing unavailable). That makes a partial read dangerous: every card on an unread page would
  * read as sold out and re-notify on the next healthy run. So the walk follows each page's
  * `<link rel="next">`, and a page whose canonical link is missing, unreadable or names another
@@ -324,7 +352,8 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
 export function createCollectItFetcher(
   settings: CategoryShopSettings,
   fetchFn?: FetchFn,
-  options: AdapterOptions = {}
+  options: AdapterOptions = {},
+  rule: CardIdRule = MINECRAFT_CARD_IDS
 ): ShopFetcher {
   const { category, series } = settings;
   const sleep = options.sleep ?? realSleep;
@@ -342,7 +371,7 @@ export function createCollectItFetcher(
           throw new ShopLayoutError(`collect-it: still a next page after ${MAX_PAGES} pages`);
         }
         if (page > 1) await sleep(delayMs);
-        const parsed = parseCollectItPage(await fetchPage(url, page, fetchFn), series);
+        const parsed = parseCollectItPage(await fetchPage(url, page, fetchFn), series, rule);
         if (parsed.productCount === 0) {
           // A bot wall, maintenance page or empty category; a linked page always has products.
           throw new ShopLayoutError(`collect-it: page ${page} has no products`);

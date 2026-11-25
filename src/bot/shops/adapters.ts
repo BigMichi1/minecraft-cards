@@ -1,4 +1,9 @@
-import type { CardId } from '../cards/cardId';
+import {
+  MINECRAFT_CARD_IDS,
+  TURBO_ATTAX_CARD_IDS,
+  type CardId,
+  type CardIdRule,
+} from '../cards/cardId';
 import {
   LEGACY_COLLECTION,
   type CollectionDefinition,
@@ -50,13 +55,22 @@ export interface AdapterDeps {
  * into a regular expression and compared with lowercased URLs), with an empty picture part (in
  * every file name), an empty category path or one holding `/` (never matched, yet it makes the
  * collection read titles by `Nummer`), or with a `g`/`y` title or exclusion marker, or eBay
- * settings without a search (the collection's listings would be marked gone, never searched) or
- * with a `g`/`y` marker (`test` would keep state between titles).
+ * settings without a search (the collection's listings would be marked gone, never searched),
+ * with a `g`/`y` marker or exclusion pattern (`test` would keep state between titles), or with a
+ * page cap that is not a whole number from 1 to 50 (eBay takes no offset beyond 10000).
  */
 function checkSettings(definition: CollectionDefinition): void {
+  checkIdRule(definition);
   for (const shop of ['sammel-ente', 'collect-it'] as const) {
     const settings = definition.shops[shop];
     if (!settings) continue;
+    // collect-it titles end with `Serie N` or a year; sammel-ente's name `Serie N` before their pipe.
+    const label = shop === 'collect-it' ? /^(?:Serie \d+|(?:19|20)\d{2})$/ : /^Serie \d+$/;
+    if (!label.test(settings.series)) {
+      throw new Error(
+        `${definition.id}: the ${shop} series label must be "Serie N"${shop === 'collect-it' ? ' or a year' : ''}`
+      );
+    }
     const host = new URL(settings.category).hostname;
     if (host !== SHOP_HOSTS[shop]) {
       throw new Error(`${definition.id}: ${shop} category is on ${host}, not ${SHOP_HOSTS[shop]}`);
@@ -96,6 +110,15 @@ function checkSettings(definition: CollectionDefinition): void {
   if (ebay && (ebay.series.global || ebay.series.sticky)) {
     throw new Error(`${definition.id}: the eBay series marker must not use the g or y flag`);
   }
+  if (ebay?.excludes && (ebay.excludes.global || ebay.excludes.sticky)) {
+    throw new Error(`${definition.id}: the eBay exclusion pattern must not use the g or y flag`);
+  }
+  if (
+    ebay?.maxPages !== undefined &&
+    !(Number.isInteger(ebay.maxPages) && ebay.maxPages >= 1 && ebay.maxPages <= 50)
+  ) {
+    throw new Error(`${definition.id}: the eBay page cap must be a whole number from 1 to 50`);
+  }
 }
 
 /**
@@ -120,6 +143,54 @@ function checkDistinctBlueOcean(definitions: readonly CollectionDefinition[]): v
       }
       seen.push([value, d.id]);
     }
+  }
+}
+
+/** Whether two rules accept the same ids (the same prefixes and code families). */
+function sameRule(a: CardIdRule, b: CardIdRule): boolean {
+  const key = (r: CardIdRule) =>
+    JSON.stringify([[...r.prefixes].sort(), [...(r.codes ?? [])].sort()]);
+  return key(a) === key(b);
+}
+
+/** The id rule each eBay title form reads (`ebay.ts` readIdsIn, `ebayTurboAttax.ts`). */
+const FORM_RULES = { minecraft: MINECRAFT_CARD_IDS, 'turbo-attax': TURBO_ATTAX_CARD_IDS } as const;
+
+/**
+ * Throws for a card id rule the parser would silently never match (a prefix that is not
+ * uppercase letters, a code family that is not two of them, a repeat), Kleinanzeigen search
+ * words that are not one lowercase dash-joined path segment, and shop settings whose title
+ * reader reads another rule than the collection's: sammel-ente and blue-ocean read LEGO
+ * Minecraft ids only, and eBay's `idForms` reads its own rule.
+ */
+function checkIdRule(definition: CollectionDefinition): void {
+  const { id, cardIds: rule, shops } = definition;
+  const codes = rule.codes ?? [];
+  if (
+    !rule.prefixes.every((p) => /^[A-Z]+$/.test(p)) ||
+    !codes.every((c) => /^[A-Z]{2}$/.test(c)) ||
+    new Set(rule.prefixes).size !== rule.prefixes.length ||
+    new Set(codes).size !== codes.length
+  ) {
+    throw new Error(
+      `${id}: the card id rule needs distinct uppercase prefixes and two-letter code families`
+    );
+  }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(definition.kleinanzeigen)) {
+    throw new Error(
+      `${id}: the Kleinanzeigen search words must be lowercase letters and digits joined by dashes`
+    );
+  }
+  for (const shop of ['sammel-ente', 'blue-ocean'] as const) {
+    if (shops[shop] && !sameRule(rule, MINECRAFT_CARD_IDS)) {
+      throw new Error(`${id}: ${shop} reads only LEGO Minecraft card ids`);
+    }
+  }
+  const forms = shops.ebay?.idForms;
+  if (forms && !sameRule(rule, FORM_RULES[forms])) {
+    throw new Error(
+      `${id}: eBay's ${forms} title forms read another id rule than the collection's`
+    );
   }
 }
 
@@ -149,7 +220,7 @@ function fetcherFor(
     }
     case 'collect-it': {
       const settings = definition.shops['collect-it'];
-      return settings ? createCollectItFetcher(settings, fetchFn) : null;
+      return settings ? createCollectItFetcher(settings, fetchFn, {}, definition.cardIds) : null;
     }
   }
 }

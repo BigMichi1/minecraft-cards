@@ -175,8 +175,8 @@ export interface AdapterOptions {
 export type EnabledShops = ReadonlyMap<CollectionId, readonly ShopId[]>;
 
 /**
- * Whether two series labels name one series (`Serie 1`, `Serie 01`, `1`): their numbers are
- * compared as numbers, so a zero-padded label is no other series.
+ * Whether two series labels name one series (`Serie 1`, `Serie 01`, `1`; years `2026`): their
+ * numbers are compared as numbers, so a zero-padded label is no other series.
  */
 export function sameSeries(a: string, b: string): boolean {
   const number = (label: string) => Number(/(\d+)/.exec(label)?.[1] ?? Number.NaN);

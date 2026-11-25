@@ -487,6 +487,30 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   no stored listing of it is available any more): then it sold out, is stored
   empty and the admin is told (`shop-soldout`). eBay never reports a sell-out.
 
+## Notes from PR 4 for the later steps
+
+- Card ids are read with a rule per collection (`CardIdRule` in `cards/cardId.ts`, the
+  definition's `cardIds`): Minecraft `LE`/`XXL`, Turbo Attax `BG`, `GG`, `GU`, `LE`, `SUN` and the
+  relic families `MR`/`RR`. Sorting and formatting serve every rule (bare numbers, then prefixes
+  alphabetically), so the database keeps `cards.type` (`LE` is `le`, every other Turbo Attax
+  prefix and relic `base`); the import preview counts per prefix. A rule, the Kleinanzeigen words
+  and the shops' title forms are checked against each other at start. A new collection names its rule, or adds
+  one.
+- `CollectionDefinition.kleinanzeigen` holds the collection's Kleinanzeigen search words (the
+  link was Minecraft's for every collection).
+- eBay: `EbayCollectionSettings.idForms` picks the title reader (`minecraft` or `turbo-attax`),
+  `excludes` the parallels, `maxPages` the page cap of the collection's searches (default 5, 1 to
+  50, a shared query reads the largest; Turbo Attax 40 for 4782 results). Turbo Attax ids are
+  never the race number of a driver the title names (unless the catalog names him on that card),
+  and relic codes count only in a relic's title.
+- collect-it reads only the collection's kind of series label (`Serie N` or a year). Series 3's name check weighs only `minecraft` collections.
+- laststicker's Turbo Attax list (2026-11-25) lacks #135 and misnames #134 (its scan is Sergio
+  Perez, its name "Valtteri Bottas"); the admin adds #135 by hand.
+- Shop search (2026-11-25) for more Turbo Attax singles: only euro-soccer-cards.com (EU, all
+  sections but #343–353 and the relics, sold-out cards listed) is worth a parser (PR 4b).
+  sammel-ente and blue-ocean sell none; sticker-und-co none by number; Stickerpoint, Smyths,
+  Müller and the UK chains sealed product only; Kleinanzeigen is private sales.
+
 ## Left to the builder
 
 - Exact module layout inside each adapter, the migration's SQL (generated), names of helpers.

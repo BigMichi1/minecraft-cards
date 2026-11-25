@@ -475,6 +475,36 @@ describe('/admin', () => {
       );
     });
 
+    test("add reads the card with its collection's id rule (Turbo Attax #135)", async () => {
+      await adminExecute(
+        fakeAdmin('catalog', 'add', {
+          collection: 'turbo-attax-2026',
+          card: '135',
+          name: 'Valtteri Bottas',
+        }),
+        ctx
+      );
+      expect(lastReply().content).toBe(
+        'Added #135 Valtteri Bottas to Topps F1 Turbo Attax 2026 (manual).'
+      );
+      expect(catalogManager.getCard('turbo-attax-2026', cid('135'))).toMatchObject({
+        source: 'manual',
+      });
+      await adminExecute(
+        fakeAdmin('catalog', 'add', {
+          collection: 'turbo-attax-2026',
+          card: 'mr-ham',
+          name: 'Lewis Hamilton',
+        }),
+        ctx
+      );
+      expect(lastReply().content).toBe(
+        'Added #MR-HAM Lewis Hamilton to Topps F1 Turbo Attax 2026 (manual).'
+      );
+      await adminExecute(fakeAdmin('catalog', 'add', { card: 'GG1', name: 'X' }), ctx);
+      expect(lastReply().content).toBe('Not a card number: GG1');
+    });
+
     test('add stores a manual card and names refusals', async () => {
       const add = (opts: Record<string, string>) =>
         adminExecute(fakeAdmin('catalog', 'add', opts), ctx);
@@ -663,6 +693,19 @@ describe('/admin', () => {
   describe('catalog import', () => {
     const header = 'Prüfliste für Nummern diese Sammlung:\n';
     const withLE23 = `${STARTER_CHECKLIST}, LE23`;
+
+    test("a Turbo Attax list is read with Turbo Attax's id rule; Minecraft refuses its codes", async () => {
+      await adminExecute(
+        fakeAdmin('catalog', 'import', {
+          collection: 'turbo-attax-2026',
+          list: `${header}1, 2, GG1, MR-HAM, LE4`,
+        }),
+        ctx
+      );
+      expect(lastReply().content).toContain('Catalog: 2 base, 1 GG, 1 LE, 1 MR-.');
+      await adminExecute(fakeAdmin('catalog', 'import', { list: '1, GG1' }), ctx);
+      expect(lastReply().content).toBe('Nothing stored. Invalid tokens: GG1');
+    });
 
     test('previews additions with save/cancel buttons and stores nothing yet', async () => {
       await adminExecute(fakeAdmin('catalog', 'import', { list: header + withLE23 }), ctx);

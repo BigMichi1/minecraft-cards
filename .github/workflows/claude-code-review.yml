@@ -39,8 +39,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # kodiak updates PR branches with main; review those pushes too.
-          allowed_bots: 'kodiakhq'
+          # kodiak updates PR branches with main, and the Claude app pushes the fixes an
+          # `@claude` comment asks for; review those pushes too. The review only comments, so a
+          # review never triggers another.
+          allowed_bots: 'kodiakhq,claude'
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'

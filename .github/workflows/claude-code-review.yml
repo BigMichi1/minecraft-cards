@@ -12,6 +12,9 @@ on:
 
 jobs:
   claude-review:
+    # Dependabot PRs are not reviewed: their runs get no CLAUDE_CODE_OAUTH_TOKEN, and kodiak's
+    # updates of them fail the action's check that a bot-updated PR has an allowed author.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||

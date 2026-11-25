@@ -12,5 +12,13 @@ export const turboAttax2026: CollectionDefinition<'turbo-attax-2026'> = {
   cardIds: TURBO_ATTAX_CARD_IDS,
   kleinanzeigen: 'turbo-attax-2026',
   laststicker: { set: 'topps_formula_1_turbo_attax_2026' },
-  shops: {},
+  shops: {
+    // "MR-HAM - Lewis Hamilton - Manufactured Relic - 2026": 303 articles on 11 pages, sold-out
+    // cards hidden (2026-11-25 probe).
+    'collect-it': {
+      category:
+        'https://www.collect-it.de/sammelkarten/formel1/Topps-Turbo-Attax-Formel-1-2026/Einzelkarten',
+      series: '2026',
+    },
+  },
 };

@@ -100,13 +100,13 @@ describe('definition rules', () => {
     }
   });
 
-  test('every category is on its shop host and every series label reads "Serie N"', () => {
+  test('every category is on its shop host and every series label reads "Serie N" or a year', () => {
     for (const d of COLLECTIONS) {
       for (const shop of ['sammel-ente', 'collect-it'] as const) {
         const settings = d.shops[shop];
         if (!settings) continue;
         expect(new URL(settings.category).hostname).toBe(SHOP_HOSTS[shop]);
-        expect(settings.series).toMatch(/^Serie \d+$/);
+        expect(settings.series).toMatch(/^(?:Serie \d+|(?:19|20)\d{2})$/);
       }
     }
   });

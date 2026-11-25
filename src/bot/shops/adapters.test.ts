@@ -1,5 +1,8 @@
 import { describe, expect, spyOn, test } from 'bun:test';
+import * as cheerio from 'cheerio';
 import logger from '../utils/logger';
+import { readFixture } from '../../test/shopHelpers';
+import { cid } from '../../test/cardIds';
 import { checkAdapters, createShopAdapters, enabledShopsOf } from './adapters';
 import { legoMinecraft1 } from '../collections/legoMinecraft1';
 import type { CollectionId } from '../collections/ids';
@@ -26,9 +29,28 @@ describe('createShopAdapters', () => {
       'sammel-ente:lego-minecraft-2',
       'sammel-ente:lego-minecraft-3',
       'collect-it:lego-minecraft-3',
+      'collect-it:turbo-attax-2026',
       'blue-ocean:lego-minecraft-3',
     ]);
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(true);
+  });
+
+  test("Turbo Attax's collect-it adapter reads titles with Turbo Attax's id rule", async () => {
+    const $ = cheerio.load(readFixture('collect-it-turbo-attax-p10.html'));
+    const category =
+      'https://www.collect-it.de/sammelkarten/formel1/Topps-Turbo-Attax-Formel-1-2026/Einzelkarten';
+    $('link[rel="next"], link[rel="prev"]').remove();
+    $('link[rel="canonical"]').attr('href', category);
+    $('.ci-pagination-meta').html('Du hast <strong>alle 30</strong> Artikel gesehen');
+    const adapters = withWarnings(() =>
+      createShopAdapters(null, undefined, {
+        fetchFn: async () => new Response($.html()),
+        sleep: async () => {},
+      })
+    ).value;
+    const ta = adapters.find((a) => a.id === 'collect-it' && a.collection === 'turbo-attax-2026')!;
+    const { listings } = await ta.fetchListings();
+    expect(listings.map((l) => l.cardIds[0])).toContain(cid('MR-HAM'));
   });
 
   test('with eBay credentials, one eBay adapter covers every collection, and no warning', () => {

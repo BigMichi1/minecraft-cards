@@ -35,7 +35,10 @@ export function isCollectionId(value: string): value is CollectionId {
 /** A shop category of one series: its absolute URL and the series label its titles carry. */
 export interface CategoryShopSettings {
   readonly category: string;
-  /** `Serie N`: sammel-ente titles name it before their pipe, collect-it's end with it. */
+  /**
+   * `Serie N`: sammel-ente titles name it before their pipe, collect-it's end with it; or a year
+   * (`2026`, Turbo Attax on collect-it).
+   */
   readonly series: string;
 }
 

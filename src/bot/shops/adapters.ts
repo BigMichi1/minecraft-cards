@@ -149,7 +149,7 @@ function fetcherFor(
     }
     case 'collect-it': {
       const settings = definition.shops['collect-it'];
-      return settings ? createCollectItFetcher(settings, fetchFn) : null;
+      return settings ? createCollectItFetcher(settings, fetchFn, {}, definition.cardIds) : null;
     }
   }
 }

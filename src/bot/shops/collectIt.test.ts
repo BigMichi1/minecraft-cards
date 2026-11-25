@@ -12,6 +12,9 @@ import { readFixture, fakeFetch } from '../../test/shopHelpers';
 import { cid } from '../../test/cardIds';
 import { legoMinecraft1 } from '../collections/legoMinecraft1';
 import { legoMinecraft3 } from '../collections/legoMinecraft3';
+import { turboAttax2026 } from '../collections/turboAttax2026';
+import { MINECRAFT_CARD_IDS, TURBO_ATTAX_CARD_IDS } from '../cards/cardId';
+import { sameSeries } from './types';
 
 const SERIES_3 = legoMinecraft3.shops['collect-it']!;
 const SERIES_1 = legoMinecraft1.shops['collect-it']!;
@@ -818,5 +821,82 @@ describe('series 1', () => {
     const result = await createCollectItFetcher(SERIES_3, fetchFn, { delayMs: 0 }).fetchListings();
     expect(result.listings).toHaveLength(unique);
     expect(result.skippedExcluded).toBeUndefined();
+  });
+});
+
+describe('Turbo Attax 2026', () => {
+  const TA = turboAttax2026.shops['collect-it']!;
+  const TA_P1 = readFixture('collect-it-turbo-attax-p1.html');
+  const TA_P10 = readFixture('collect-it-turbo-attax-p10.html');
+
+  test('the definition reads the Turbo Attax category with the year as its series label', () => {
+    expect(TA).toEqual({
+      category:
+        'https://www.collect-it.de/sammelkarten/formel1/Topps-Turbo-Attax-Formel-1-2026/Einzelkarten',
+      series: '2026',
+    });
+    expect(sameSeries('2026', '2026')).toBe(true);
+    expect(sameSeries('2026', 'Serie 2')).toBe(false);
+  });
+
+  test("page 1 reads every card with Turbo Attax's rule, nothing skipped", () => {
+    const page = parseCollectItPage(TA_P1, '2026', TURBO_ATTAX_CARD_IDS);
+    expect(page.listings).toHaveLength(30);
+    expect(page.skippedNoId + page.skippedInvalid).toBe(0);
+    expect(page.excluded).toEqual([]);
+    expect(page.listings[0]).toMatchObject({
+      cardIds: [cid('1')],
+      cardName: 'Team Logo McLaren Mastercard',
+      title: '1 - Team Logo McLaren Mastercard - 2026',
+      available: true,
+    });
+    expect(page.listings[2]).toMatchObject({
+      cardIds: [cid('3')],
+      cardName: 'Lando Norris / Oscar Piastri',
+    });
+    expect(page.countText).toBe('Du hast 30 von 303 Artikeln gesehen');
+  });
+
+  test('page 10 reads the Greats of the Grid and relic codes', () => {
+    const page = parseCollectItPage(TA_P10, '2026', TURBO_ATTAX_CARD_IDS);
+    expect(page.listings).toHaveLength(30);
+    expect(page.skippedNoId + page.skippedInvalid).toBe(0);
+    const byId = new Map(page.listings.map((l) => [l.cardIds[0], l]));
+    expect(byId.get(cid('GG8'))?.cardName).toBe('Michael Schumacher');
+    expect(byId.get(cid('MR-HAM'))?.cardName).toBe('Lewis Hamilton');
+    expect(byId.get(cid('344'))?.cardName).toBe('George Russell');
+  });
+
+  test('a Turbo Attax title in a Minecraft category is another series, never a skip', () => {
+    const page = parseCollectItPage(TA_P1, 'Serie 1', MINECRAFT_CARD_IDS);
+    expect(page.listings).toEqual([]);
+    expect(page.excluded).toHaveLength(30);
+    expect(page.skippedNoId + page.skippedInvalid).toBe(0);
+  });
+
+  test('a Minecraft title in the Turbo Attax category is another series', () => {
+    const page = parseCollectItPage(
+      readFixture('collect-it-serie-1-p1.html'),
+      '2026',
+      TURBO_ATTAX_CARD_IDS
+    );
+    expect(page.listings).toEqual([]);
+    expect(page.excluded).toHaveLength(30);
+  });
+
+  test("the fetcher reads with the collection's rule", async () => {
+    const $ = cheerio.load(TA_P10);
+    $('link[rel="next"], link[rel="prev"]').remove();
+    $('link[rel="canonical"]').attr('href', TA.category);
+    $('.ci-pagination-meta').html('Du hast <strong>alle 30</strong> Artikel gesehen');
+    const { fetchFn } = fakeFetch({ Einzelkarten: $.html() });
+    const { listings } = await createCollectItFetcher(
+      TA,
+      fetchFn,
+      { delayMs: 0 },
+      TURBO_ATTAX_CARD_IDS
+    ).fetchListings();
+    expect(listings.map((l) => l.cardIds[0])).toContain(cid('MR-HAM'));
+    expect(listings).toHaveLength(30);
   });
 });

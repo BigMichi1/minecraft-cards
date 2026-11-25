@@ -11,7 +11,8 @@ their embeddings reaches `IMAGE_MATCH_THRESHOLD`. Code: `src/bot/matcher/embedde
 collection step 2, measured in "Measurement on laststicker scans" below):
 
 - **A laststicker card**: its laststicker scan (`/i/cards/<set id>/<id>.jpg`, stored by the
-  catalog sync). The collection's `referenceFallbackShop` (sammel-ente for every series) gives the
+  catalog sync). The collection's `referenceFallbackShop` (sammel-ente for every LEGO Minecraft series; Turbo
+  Attax has none) gives the
   fallback: the newest picture of that shop's listing of the card.
 - **A set without scans** (`laststicker.scans: false`, series 2): the sync stores no scan URL,
   so the fallback shop's picture is the reference from the start; nothing is fetched from

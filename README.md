@@ -2,7 +2,8 @@
 
 A Discord bot that checks shops (sammel-ente, blue-ocean, collect-it, euro-soccer-cards, optionally eBay) every hour
 (configurable, `CHECK_INTERVAL_MINUTES`) for trading card availability (LEGO Minecraft, Topps F1
-Turbo Attax) and DMs users about the cards they are missing. A
+Turbo Attax) and DMs users about the cards they are missing. Adding a card set is described in
+`docs/collections.md`. A
 picture comparison against the card's laststicker scan (sammel-ente's picture where laststicker
 has none) marks a listing as confirmed.
 

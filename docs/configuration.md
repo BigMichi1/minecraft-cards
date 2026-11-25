@@ -25,3 +25,6 @@ commit a real `.env`; the secret scan in CI rejects tracked env files.
 
 Shop requests use the User-Agent `minecraft-cards-bot/1.0 (+hourly stock check)`, a 20 s
 timeout, and 1500 ms between page requests of one shop.
+
+Collections and their shops are not configured here: they are definitions in code (spec
+"Non-goals"), added as `docs/collections.md` describes.

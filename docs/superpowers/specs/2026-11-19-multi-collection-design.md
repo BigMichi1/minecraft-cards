@@ -507,7 +507,7 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
 - laststicker's Turbo Attax list (2026-11-25) lacks #135 and misnames #134 (its scan is Sergio
   Perez, its name "Valtteri Bottas"); the admin adds #135 by hand.
 - Shop search (2026-11-25) for more Turbo Attax singles: only euro-soccer-cards.com (EU, all
-  sections but #343–353 and the relics, sold-out cards listed) is worth a parser (PR 4b).
+  sections but #343–353 and the relics, sold-out cards listed) is worth a parser (PR 4b, built: `shops/euroSoccerCards.ts`, ids from the URL slug, sold-out cards listed). The card commands now show only the shops a collection's definition lists (`shopsOf`), so series 2 lost its always-empty collect-it column too.
   sammel-ente and blue-ocean sell none; sticker-und-co none by number; Stickerpoint, Smyths,
   Müller and the UK chains sealed product only; Kleinanzeigen is private sales.
 

@@ -1,6 +1,6 @@
 # minecraft-cards-bot
 
-A Discord bot that checks shops (sammel-ente, blue-ocean, collect-it, optionally eBay) every hour
+A Discord bot that checks shops (sammel-ente, blue-ocean, collect-it, euro-soccer-cards, optionally eBay) every hour
 (configurable, `CHECK_INTERVAL_MINUTES`) for trading card availability (LEGO Minecraft, Topps F1
 Turbo Attax) and DMs users about the cards they are missing. A
 picture comparison against the card's laststicker scan (sammel-ente's picture where laststicker
@@ -8,7 +8,7 @@ has none) marks a listing as confirmed.
 
 Users keep one list per card collection (`lego-minecraft-1`, `lego-minecraft-2`,
 `lego-minecraft-3` and `turbo-attax-2026`: LEGO Minecraft series 1, 2 "TNT Boom-Bastic" and 3
-"On Fire", and Topps F1 Turbo Attax 2026, which collect-it and eBay sell); the card
+"On Fire", and Topps F1 Turbo Attax 2026, which collect-it, euro-soccer-cards and eBay sell); the card
 commands (`/missing *`, `/stock`, `/card`, `/admin map`, `/admin catalog import`) take a
 required `collection:` option. Users manage their list with
 `/missing set|add|remove|list|clear|status`; the admin runs `/admin` (`map`, `clear`, `status`,

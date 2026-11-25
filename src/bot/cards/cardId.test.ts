@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  cardIdGroup,
   cardType,
   compareCardIds,
   formatCardList,
@@ -138,6 +139,16 @@ describe('card id rules', () => {
       invalid: ['MR-HAM-MR-VER', 'GG1-LE2'],
     });
     expect(parseCardList('GG1, XXL1').invalid).toEqual(['GG1']);
+  });
+
+  test('cardIdGroup names the prefix an id is counted under', () => {
+    expect(ids('12', 'LE8', 'XXL1', 'GG8', 'MR-HAM').map(cardIdGroup)).toEqual([
+      'base',
+      'LE',
+      'XXL',
+      'GG',
+      'MR-',
+    ]);
   });
 
   test('compare and format across prefixes', () => {

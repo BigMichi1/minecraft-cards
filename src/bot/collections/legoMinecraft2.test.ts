@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { MINECRAFT_CARD_IDS } from '../cards/cardId';
 import { legoMinecraft2 } from './legoMinecraft2';
 
 describe('legoMinecraft2', () => {
@@ -6,6 +7,8 @@ describe('legoMinecraft2', () => {
     expect(legoMinecraft2).toEqual({
       id: 'lego-minecraft-2',
       name: 'LEGO Minecraft Serie 2 "TNT Boom-Bastic"',
+      cardIds: MINECRAFT_CARD_IDS,
+      kleinanzeigen: 'lego-minecraft-karte',
       laststicker: {
         set: 'blue_ocean_lego_minecraft_tnt_boom_bastic',
         scans: false,

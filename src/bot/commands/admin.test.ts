@@ -475,6 +475,36 @@ describe('/admin', () => {
       );
     });
 
+    test("add reads the card with its collection's id rule (Turbo Attax #135)", async () => {
+      await adminExecute(
+        fakeAdmin('catalog', 'add', {
+          collection: 'turbo-attax-2026',
+          card: '135',
+          name: 'Valtteri Bottas',
+        }),
+        ctx
+      );
+      expect(lastReply().content).toBe(
+        'Added #135 Valtteri Bottas to Topps F1 Turbo Attax 2026 (manual).'
+      );
+      expect(catalogManager.getCard('turbo-attax-2026', cid('135'))).toMatchObject({
+        source: 'manual',
+      });
+      await adminExecute(
+        fakeAdmin('catalog', 'add', {
+          collection: 'turbo-attax-2026',
+          card: 'mr-ham',
+          name: 'Lewis Hamilton',
+        }),
+        ctx
+      );
+      expect(lastReply().content).toBe(
+        'Added #MR-HAM Lewis Hamilton to Topps F1 Turbo Attax 2026 (manual).'
+      );
+      await adminExecute(fakeAdmin('catalog', 'add', { card: 'GG1', name: 'X' }), ctx);
+      expect(lastReply().content).toBe('Not a card number: GG1');
+    });
+
     test('add stores a manual card and names refusals', async () => {
       const add = (opts: Record<string, string>) =>
         adminExecute(fakeAdmin('catalog', 'add', opts), ctx);

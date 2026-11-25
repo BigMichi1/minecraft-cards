@@ -9,7 +9,7 @@ import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import type { DownloadFn } from '../notify/pictures';
 import { SHOP_IDS } from '../shops/types';
-import { cid } from '../../test/cardIds';
+import { cid, ids } from '../../test/cardIds';
 import { runOf, storedListing as listing } from '../../test/listings';
 import logger from '../utils/logger';
 import { data, execute, type CardContext } from './card';
@@ -106,6 +106,17 @@ describe('/card', () => {
     db.delete(cards).run();
     catalogManager.seedIfEmpty();
     runManager.record(runOf(['sammel-ente', 'blue-ocean']));
+  });
+
+  test("a Turbo Attax card is read with its collection's id rule and searched as Turbo Attax", async () => {
+    catalogManager.applyImport({ collection: 'turbo-attax-2026', ids: ids('MR-HAM') });
+    await execute(command('mr-ham', null, 'turbo-attax-2026'), ctx());
+    expect(embed().title).toBe('#MR-HAM');
+    expect(links()).toEqual([
+      ['Kleinanzeigen #MR-HAM', 'https://www.kleinanzeigen.de/s-turbo-attax-2026-mr-ham/k0'],
+    ]);
+    await execute(command('GG8', null, 'lego-minecraft-3'), ctx());
+    expect(last().content).toBe('Unknown card: GG8');
   });
 
   test('a card of a collection whose card list is not loaded yet says so', async () => {

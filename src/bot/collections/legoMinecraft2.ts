@@ -1,8 +1,11 @@
+import { MINECRAFT_CARD_IDS } from '../cards/cardId';
 import type { CollectionDefinition } from './ids';
 
 export const legoMinecraft2: CollectionDefinition<'lego-minecraft-2'> = {
   id: 'lego-minecraft-2',
   name: 'LEGO Minecraft Serie 2 "TNT Boom-Bastic"',
+  cardIds: MINECRAFT_CARD_IDS,
+  kleinanzeigen: 'lego-minecraft-karte',
   // laststicker has no scans of this set (2026-11-24: every picture URL answers 404), and lists
   // its one XXL card as a bare "XXL" (sammel-ente: #XXL001 Ghast).
   laststicker: {

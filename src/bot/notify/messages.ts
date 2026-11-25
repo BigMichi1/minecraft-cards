@@ -8,7 +8,7 @@ import {
 import type { CardId } from '../cards/cardId';
 import { encodeRightId } from '../interactions/buttonIds';
 import type { CollectionId } from '../collections/ids';
-import { collectionName } from '../collections/index';
+import { collectionKleinanzeigen, collectionName } from '../collections/index';
 import { catalogManager } from '../database/catalogManager';
 import type { StoredListing } from '../database/listingManager';
 import type { Money, ShopId } from '../shops/types';
@@ -40,8 +40,15 @@ export const SHOP_NAMES: Record<ShopId, string> = {
   ebay: 'eBay',
 };
 
-export function kleinanzeigenSearchUrl(cardId: CardId): string {
-  return `https://www.kleinanzeigen.de/s-lego-minecraft-karte-${cardId.toLowerCase()}/k0`;
+/**
+ * A Kleinanzeigen search for a card: the collection's search words and the lowercase id; null for
+ * a collection this build does not define (a stored row of a removed definition).
+ */
+export function kleinanzeigenSearchUrl(collection: CollectionId, cardId: CardId): string | null {
+  const words = collectionKleinanzeigen(collection);
+  return words === null
+    ? null
+    : `https://www.kleinanzeigen.de/s-${words}-${cardId.toLowerCase()}/k0`;
 }
 
 export const MAX_URL = 512;
@@ -169,14 +176,12 @@ function buildRow(item: NotificationItem, marker: string): ActionRowBuilder<Butt
         new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(listingUrl),
     });
   }
-  if (first) {
+  const search = first ? kleinanzeigenSearchUrl(listing.collection, first) : null;
+  if (first && search) {
     buttons.push({
       label: `Kleinanzeigen #${first}`,
       build: (label) =>
-        new ButtonBuilder()
-          .setStyle(ButtonStyle.Link)
-          .setLabel(label)
-          .setURL(kleinanzeigenSearchUrl(first)),
+        new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel(label).setURL(search),
     });
   }
   buttons.push({

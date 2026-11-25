@@ -121,9 +121,8 @@ export function buildCardReply(input: CardInput): CardReply {
     const url = cell.offers.map((l) => validUrl(l.url)).find((u) => u !== null);
     if (url) buttons.push(link(`Open ${SHOP_NAMES[shop]}`, url));
   }
-  if (!input.shop) {
-    buttons.push(link(`Kleinanzeigen #${input.card}`, kleinanzeigenSearchUrl(input.card)));
-  }
+  const search = input.shop ? null : kleinanzeigenSearchUrl(input.collection, input.card);
+  if (search) buttons.push(link(`Kleinanzeigen #${input.card}`, search));
   const embed = new EmbedBuilder()
     .setTitle(clipText(input.name ? `#${input.card} ${input.name}` : `#${input.card}`, MAX_TITLE))
     .setDescription([...lines, '', lastCheckLine(input)].join('\n'));

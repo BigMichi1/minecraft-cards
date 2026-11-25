@@ -1,5 +1,6 @@
 import { and, count, eq, inArray, isNotNull } from 'drizzle-orm';
 import {
+  cardIdGroup,
   cardType,
   compareCardIds,
   parseCardList,
@@ -7,7 +8,7 @@ import {
   type CardType,
 } from '../cards/cardId';
 import { parseChecklist } from '../cards/starterCatalog';
-import { COLLECTIONS, collectionById } from '../collections/index';
+import { cardIdRuleOf, COLLECTIONS, collectionById } from '../collections/index';
 import type {
   CardSource,
   CollectionCards,
@@ -199,7 +200,8 @@ function pictureKey(url: string): string {
 }
 
 export interface ImportPreview {
-  counts: Record<CardType, number>;
+  /** Cards of the pasted list per group (`base`, `LE`, `GG`, `MR-`: cardIdGroup), in id order. */
+  counts: Record<string, number>;
   added: CardId[];
   removed: CardId[];
   /** Manual cards the paste lacks: kept, as an import never removes the admin's cards. */
@@ -225,7 +227,7 @@ export function parseKnownCardList(
   input: string,
   { checkCatalog = true }: { checkCatalog?: boolean } = {}
 ): CardListResult {
-  const parsed = parseCardList(input);
+  const parsed = parseCardList(input, cardIdRuleOf(collection));
   const known = checkCatalog ? catalogManager.knownIds(collection) : null;
   const unknown = known ? parsed.ids.filter((id) => !known.has(id)) : [];
   const invalid = [...parsed.invalid, ...unknown];
@@ -751,8 +753,11 @@ export const catalogManager = {
     const lacking = [...current].filter((id) => !next.has(id)).sort(compareCardIds);
     const removed = lacking.filter((id) => !manual.has(id));
     const keptManual = lacking.filter((id) => manual.has(id));
-    const counts: Record<CardType, number> = { base: 0, le: 0, xxl: 0 };
-    for (const id of next) counts[cardType(id)]++;
+    const counts: Record<string, number> = {};
+    for (const id of [...next].sort(compareCardIds)) {
+      const group = cardIdGroup(id);
+      counts[group] = (counts[group] ?? 0) + 1;
+    }
 
     const removedStillWanted: { cardId: CardId; users: number }[] = [];
     if (removed.length > 0) {

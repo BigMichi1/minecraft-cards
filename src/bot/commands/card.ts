@@ -1,6 +1,7 @@
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
-import { normalizeCardId } from '../cards/cardId';
+import { normalizeCardIdIn } from '../cards/cardId';
+import { cardIdRuleOf } from '../collections/index';
 import { catalogManager } from '../database/catalogManager';
 import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
@@ -69,7 +70,7 @@ export async function execute(
       await interaction.editReply(text(UNKNOWN_COLLECTION));
       return;
     }
-    const id = normalizeCardId(token);
+    const id = normalizeCardIdIn(cardIdRuleOf(collection), token);
     const card = id ? catalogManager.getCard(collection, id) : undefined;
     if (!card) {
       await interaction.editReply(text(catalogNotLoaded(collection) ?? `Unknown card: ${token}`));

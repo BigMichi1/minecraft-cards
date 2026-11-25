@@ -86,6 +86,7 @@ describe('/missing', () => {
           { name: 'LEGO Minecraft Serie 1', value: 'lego-minecraft-1' },
           { name: 'LEGO Minecraft Serie 2 "TNT Boom-Bastic"', value: 'lego-minecraft-2' },
           { name: 'LEGO Minecraft Serie 3 "On Fire"', value: 'lego-minecraft-3' },
+          { name: 'Topps F1 Turbo Attax 2026', value: 'turbo-attax-2026' },
         ],
       });
     }

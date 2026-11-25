@@ -7,7 +7,7 @@ import {
   SlashCommandBuilder,
 } from 'discord.js';
 import type { ChatInputCommandInteraction, SlashCommandStringOption } from 'discord.js';
-import { formatCardList, normalizeCardId, type CardId } from '../cards/cardId';
+import { formatCardList, normalizeCardIdIn, type CardId } from '../cards/cardId';
 import { formatSyncOutcome, type SyncOutcome } from '../catalog/sync';
 import { manualRefusal, removeRow, removeStore } from '../interactions/catalogRemove';
 import { MAX_URL, validUrl } from '../notify/messages';
@@ -24,7 +24,7 @@ import { ephemeral, replyWithError } from '../utils/interactionReply';
 import { logError } from '../utils/logger';
 import { DISCORD_MESSAGE_LIMIT, clipText, joinWithinLimit } from '../utils/messageLimit';
 import type { CollectionId } from '../collections/ids';
-import { collectionName } from '../collections/index';
+import { cardIdRuleOf, collectionName } from '../collections/index';
 import { collectionOption, readCollection, UNKNOWN_COLLECTION } from './collectionOption';
 
 const LIST_OPTION_MAX_LENGTH = 6000;
@@ -182,7 +182,7 @@ async function catalogCardCommand(
     return;
   }
   const token = interaction.options.getString('card', true).trim();
-  const cardId = normalizeCardId(token);
+  const cardId = normalizeCardIdIn(cardIdRuleOf(collection), token);
   if (!cardId) {
     await interaction.reply(ephemeral(clipText(`Not a card number: ${token}`, 200)));
     return;

@@ -4,7 +4,8 @@
  * `admin-dismiss:<listing>` (the admin's buttons); and the catalog removal's
  * `catalog-remove:<token>` / `catalog-keep:<token>`. The router routes by the prefixes below.
  */
-import { normalizeCardId, type CardId } from '../cards/cardId';
+import type { CardId } from '../cards/cardId';
+import { anyCollectionCardId } from '../collections/index';
 import type { ConfirmTarget } from '../database/listingManager';
 import { imageFingerprint, type ImageFingerprint } from '../matcher/imageFingerprint';
 
@@ -72,7 +73,7 @@ export function decodeConfirmId(customId: string): ConfirmId | null {
   if (listingId === null || !rawCards || !FINGERPRINT.test(rawImage)) return null;
   const cardIds: CardId[] = [];
   for (const raw of rawCards.split(',')) {
-    const id = normalizeCardId(raw);
+    const id = anyCollectionCardId(raw);
     if (!id) return null;
     cardIds.push(id);
   }

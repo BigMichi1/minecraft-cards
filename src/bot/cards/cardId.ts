@@ -100,6 +100,14 @@ function sortKey(id: CardId): { group: string; num: number | null } {
 }
 
 /**
+ * The group a canonical id is counted in: `base` for a bare number, else its prefix (`LE`, `GG`)
+ * or code family with its dash (`MR-`).
+ */
+export function cardIdGroup(id: CardId): string {
+  return sortKey(id).group || 'base';
+}
+
+/**
  * Sort order of every rule's ids: bare numbers numerically, then by prefix or code family
  * alphabetically (Minecraft: base, LE, XXL), numerically within a prefix, codes by their letters.
  */

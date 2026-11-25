@@ -8,6 +8,10 @@ import type { CollectionDefinition, CollectionId } from '../collections/ids';
 import { legoMinecraft2 } from '../collections/legoMinecraft2';
 import { legoMinecraft3 } from '../collections/legoMinecraft3';
 import { parseChecklist, STARTER_CHECKLIST } from '../cards/starterCatalog';
+import { MINECRAFT_CARD_IDS, TURBO_ATTAX_CARD_IDS } from '../cards/cardId';
+import { turboAttax2026 } from '../collections/turboAttax2026';
+import { readFixture } from '../../test/shopHelpers';
+import { fetchLaststickerSet } from './laststicker';
 import { HttpError } from '../utils/http';
 import { cid, ids } from '../../test/cardIds';
 import { CatalogLayoutError, type LaststickerRow } from './laststicker';
@@ -114,6 +118,27 @@ describe('syncCatalogs', () => {
         { scans: false, numberAliases: { XXL: 'XXL1' } },
       ],
     ]);
+  });
+
+  test("the collection's card id rule reads the page: Turbo Attax stores its codes", async () => {
+    const rules: unknown[] = [];
+    const outcomes = await run(10, {
+      collections: [turboAttax2026],
+      fetchSet: async (set, options, _fetchFn, rule) => {
+        rules.push(rule);
+        return fetchLaststickerSet(
+          set,
+          options,
+          async () => new Response(readFixture('laststicker-turbo-attax-2026.html')),
+          rule
+        );
+      },
+    });
+    expect(rules).toEqual([TURBO_ATTAX_CARD_IDS]);
+    expect(outcomes.map((o) => o.ok)).toEqual([true]);
+    const known = catalogManager.knownIds('turbo-attax-2026');
+    expect(known.size).toBe(422);
+    expect(known.has(cid('MR-HAM'))).toBe(true);
   });
 
   test('a collection never synced is due; a day later (less the slack) again, not before', async () => {
@@ -334,6 +359,8 @@ describe('syncCatalogs', () => {
     const other: CollectionDefinition = {
       id: 'other-set' as CollectionId,
       name: 'Other',
+      cardIds: MINECRAFT_CARD_IDS,
+      kleinanzeigen: 'x',
       shops: {},
       laststicker: { set: 'other_set' },
     };
@@ -370,6 +397,8 @@ describe('syncCatalogs', () => {
     const other: CollectionDefinition = {
       id: 'other-set' as CollectionId,
       name: 'Other',
+      cardIds: MINECRAFT_CARD_IDS,
+      kleinanzeigen: 'x',
       shops: {},
       laststicker: { set: 'other_set' },
     };
@@ -384,6 +413,8 @@ describe('syncCatalogs', () => {
     const plain: CollectionDefinition = {
       id: 'other-set' as CollectionId,
       name: 'Other',
+      cardIds: MINECRAFT_CARD_IDS,
+      kleinanzeigen: 'x',
       shops: {},
     };
     expect(await run(10, { collections: [plain] })).toEqual([]);

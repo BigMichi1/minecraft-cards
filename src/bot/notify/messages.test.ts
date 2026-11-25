@@ -88,10 +88,15 @@ describe('notification messages', () => {
     ]);
   });
 
-  test('kleinanzeigenSearchUrl lowercases the id', () => {
-    expect(kleinanzeigenSearchUrl(cid('LE8'))).toBe(
+  test("kleinanzeigenSearchUrl searches the collection's words and the lowercase id", () => {
+    expect(kleinanzeigenSearchUrl('lego-minecraft-3', cid('LE8'))).toBe(
       'https://www.kleinanzeigen.de/s-lego-minecraft-karte-le8/k0'
     );
+    expect(kleinanzeigenSearchUrl('turbo-attax-2026', cid('MR-HAM'))).toBe(
+      'https://www.kleinanzeigen.de/s-turbo-attax-2026-mr-ham/k0'
+    );
+    // A collection this build does not define has no search words: no search.
+    expect(kleinanzeigenSearchUrl('other-set' as CollectionId, cid('12'))).toBeNull();
   });
 
   test('up to 5 listings get one message each, buttons in the same message, no markers', () => {

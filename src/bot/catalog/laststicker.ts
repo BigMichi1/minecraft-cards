@@ -1,5 +1,11 @@
 import * as cheerio from 'cheerio';
-import { normalizeCardId, type CardId } from '../cards/cardId';
+import {
+  MINECRAFT_CARD_IDS,
+  normalizeCardId,
+  normalizeCardIdIn,
+  type CardId,
+  type CardIdRule,
+} from '../cards/cardId';
 import type { LaststickerSetOptions } from '../collections/ids';
 import type { FetchFn } from '../shops/types';
 import { fetchText } from '../utils/http';
@@ -120,15 +126,19 @@ export function parseLaststickerPage(
   return { setId, rows };
 }
 
-/** Fetch and parse one set page (`fetchText`: bot User-Agent, 20 s timeout). */
+/**
+ * Fetch and parse one set page (`fetchText`: bot User-Agent, 20 s timeout), its numbers read with
+ * the collection's card id rule (Minecraft's unless given).
+ */
 export async function fetchLaststickerSet(
   set: string,
   options: LaststickerOptions = {},
-  fetchFn: FetchFn = fetch
+  fetchFn: FetchFn = fetch,
+  rule: CardIdRule = MINECRAFT_CARD_IDS
 ): Promise<LaststickerSet> {
   return parseLaststickerPage(
     await fetchText(laststickerSetUrl(set), fetchFn),
-    normalizeCardId,
+    (raw) => normalizeCardIdIn(rule, raw),
     options
   );
 }

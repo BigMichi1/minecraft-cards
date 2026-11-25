@@ -1,8 +1,11 @@
+import { MINECRAFT_CARD_IDS } from '../cards/cardId';
 import type { CollectionDefinition } from './ids';
 
 export const legoMinecraft1: CollectionDefinition<'lego-minecraft-1'> = {
   id: 'lego-minecraft-1',
   name: 'LEGO Minecraft Serie 1',
+  cardIds: MINECRAFT_CARD_IDS,
+  kleinanzeigen: 'lego-minecraft-karte',
   laststicker: { set: 'blue_ocean_lego_minecraft-1' },
   referenceFallbackShop: 'sammel-ente',
   shops: {

@@ -1,4 +1,4 @@
-import type { CardId } from '../cards/cardId';
+import type { CardId, CardIdRule } from '../cards/cardId';
 import type { ShopId } from '../shops/types';
 
 /**
@@ -8,7 +8,12 @@ import type { ShopId } from '../shops/types';
  * starting with a letter; button custom ids split on `:` and embed them unescaped
  * (`ids.test.ts`).
  */
-export const COLLECTION_IDS = ['lego-minecraft-1', 'lego-minecraft-2', 'lego-minecraft-3'] as const;
+export const COLLECTION_IDS = [
+  'lego-minecraft-1',
+  'lego-minecraft-2',
+  'lego-minecraft-3',
+  'turbo-attax-2026',
+] as const;
 
 export type CollectionId = (typeof COLLECTION_IDS)[number];
 
@@ -109,6 +114,13 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   readonly id: K;
   /** Display name in commands and alerts. */
   readonly name: string;
+  /**
+   * The collection's card id rule: laststicker numbers, card lists, commands and shop titles of
+   * this collection are read with it, so another collection's ids (`GG8` in Minecraft) are refused.
+   */
+  readonly cardIds: CardIdRule;
+  /** Kleinanzeigen search words before the card id, dash-joined (`lego-minecraft-karte`). */
+  readonly kleinanzeigen: string;
   /** A checklist (`parseChecklist` form) seeded into an empty catalog at start, if any. */
   readonly starterChecklist?: string;
   /** The laststicker set its catalog is synced from (`/de/cards/<set>/`), if any. */

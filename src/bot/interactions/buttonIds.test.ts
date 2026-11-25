@@ -76,6 +76,16 @@ describe('Confirm ids', () => {
     ]);
   });
 
+  test('relic and code ids of any collection decode: the dash in MR-HAM is no separator', () => {
+    const image = imageFingerprint(listing.imageUrl);
+    expect(decodeConfirmId(`admin-confirm:7:MR-HAM,GG8:${image}`)).toEqual({
+      listingId: 7,
+      cardIds: [cid('MR-HAM'), cid('GG8')],
+      image,
+    });
+    expect(decodeConfirmId(`admin-confirm:7:ZZ9:${image}`)).toBeNull();
+  });
+
   test('no cards gives no id', () => {
     expect(encodeConfirmId({ ...listing, cardIds: [] })).toBeNull();
   });

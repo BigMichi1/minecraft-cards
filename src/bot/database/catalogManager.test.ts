@@ -146,7 +146,7 @@ describe('catalogManager', () => {
     expect(p.added).toEqual([cid('LE23')]);
     expect(p.removed).toEqual([cid('LE22')]);
     expect(p.removedStillWanted).toEqual([{ cardId: cid('LE22'), users: 1 }]);
-    expect(p.counts).toEqual({ base: 228, le: 22, xxl: 1 });
+    expect(p.counts).toEqual({ base: 228, LE: 22, XXL: 1 });
 
     catalogManager.applyImport({ collection: 'lego-minecraft-3', ids: next });
     expect(catalogManager.knownIds('lego-minecraft-3').has(cid('LE22'))).toBe(false);
@@ -161,6 +161,28 @@ describe('catalogManager', () => {
     ]);
     catalogManager.updateShopPictures('lego-minecraft-3', [{ cardId: cid('12'), imageUrl: null }]);
     expect(chosenReference('lego-minecraft-3', cid('12'))).toBe('https://x/12.jpg');
+  });
+
+  test('a Turbo Attax preview counts the cards per prefix, only the prefixes present', () => {
+    const p = catalogManager.previewImport({
+      collection: 'turbo-attax-2026',
+      ids: ids('1', 'LE1', 'GG1', 'GG2', 'MR-HAM'),
+    });
+    expect(p.counts).toEqual({ base: 1, GG: 2, LE: 1, 'MR-': 1 });
+  });
+
+  test("parseKnownCardList reads with the collection's own id rule", () => {
+    catalogManager.applyImport({ collection: 'turbo-attax-2026', ids: ids('1', 'GG1', 'MR-HAM') });
+    expect(parseKnownCardList('turbo-attax-2026', 'gg1, mr-ham, 1')).toEqual({
+      ok: true,
+      ids: ids('1', 'GG1', 'MR-HAM'),
+    });
+    catalogManager.seedIfEmpty();
+    expect(parseKnownCardList('lego-minecraft-3', 'GG1, MR-HAM, 12')).toEqual({
+      ok: false,
+      reason: 'invalid',
+      invalid: ['GG1', 'MR-HAM'],
+    });
   });
 
   test('parseKnownCardList tells empty input from invalid tokens', () => {

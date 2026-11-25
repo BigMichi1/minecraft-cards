@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { MINECRAFT_CARD_IDS } from '../cards/cardId';
 import {
   COLLECTION_IDS,
   LEGACY_COLLECTION,
@@ -37,10 +38,18 @@ describe('CollectionDefinition', () => {
     const definition: CollectionDefinition = {
       id: 'lego-minecraft-3',
       name: 'Series 3',
+      cardIds: MINECRAFT_CARD_IDS,
+      kleinanzeigen: 'x',
       shops: {},
     };
-    // @ts-expect-error an id outside the registry is not a CollectionId
-    const unknown: CollectionDefinition = { id: 'lego-minecraft-9', name: 'Series 9', shops: {} };
+    const unknown: CollectionDefinition = {
+      // @ts-expect-error an id outside the registry is not a CollectionId
+      id: 'lego-minecraft-9',
+      name: 'Series 9',
+      cardIds: MINECRAFT_CARD_IDS,
+      kleinanzeigen: 'x',
+      shops: {},
+    };
     expect(definition.id).toBe('lego-minecraft-3');
     expect(unknown.name).toBe('Series 9');
   });

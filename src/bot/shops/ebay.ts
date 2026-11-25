@@ -20,6 +20,21 @@ import {
   type ShopFetcher,
 } from './types';
 
+import {
+  COUNT_AFTER,
+  COUNT_SYMBOLS,
+  COUNT_WORDS,
+  escapeRegExp,
+  LETTER,
+  MULTI_PICK_PATTERN,
+  NOT_A_COUNT,
+  NOT_AFTER_COUNT,
+  UNIT_WORDS,
+  wordsPattern,
+} from './ebayTitleWords';
+
+export { COUNT_WORDS } from './ebayTitleWords';
+
 const TOKEN_URL = 'https://api.ebay.com/identity/v1/oauth2/token';
 const SEARCH_URL = 'https://api.ebay.com/buy/browse/v1/item_summary/search';
 const ITEM_URL = 'https://www.ebay.de/itm/';
@@ -51,10 +66,6 @@ export const EBAY_QUERIES: readonly string[] = [
   ...new Set(EBAY_COLLECTIONS.flatMap((c) => c.queries)),
 ];
 
-const LETTER = 'A-Za-zÄÖÜäöüß';
-// A listing the buyer picks a card from: "zum aussuchen", "auswählen", "Auswahl", "du wählst",
-// "waehlen". `pick` only as a whole word: "Pickaxe" is a card name.
-const MULTI_PICK_PATTERN = /aussuch|auswahl|w(?:ä|ae)hl|\bchoos|\bpick\b/i;
 /** The numbered series there are (1 to 3): raise it with a new numbered series. */
 const SERIES_NUMBER = '[1-3]';
 // Not right after a series word: "Serie 3 - Steve" and "TCC 3 - Steve" name the series, not
@@ -66,88 +77,6 @@ const RANGE_PATTERN = new RegExp(
   `${NOT_AFTER_SERIES}(?<![\\w/])(?:LE|XXL)?(\\d{1,3})\\s*(?:-|–|bis\\b)\\s*(?:LE|XXL)?(\\d{1,3})(?!\\d)`,
   'gi'
 );
-
-// Products and their plurals: never a card name, and a number right before one is a count
-// ("3 Pack", "2 Boosters"), not a card number.
-const PRODUCT_WORDS = [
-  'Album',
-  'Alben',
-  'Blister',
-  'Blisters',
-  'Booster',
-  'Boosters',
-  'Box',
-  'Boxen',
-  'Bundle',
-  'Bundles',
-  'Cards',
-  'Display',
-  'Displays',
-  'Foil',
-  'Holo',
-  'Karten',
-  'Konvolut',
-  'Lot',
-  'Lots',
-  'Mappe',
-  'Mappen',
-  'Multipack',
-  'Multipacks',
-  'Pack',
-  'Packs',
-  'Packung',
-  'Packungen',
-  'Paket',
-  'Pakete',
-  'Sammelkarte',
-  'Sammelkarten',
-  'Sammlung',
-  'Set',
-  'Sets',
-  'Starter',
-];
-// Counts and units: "5 Stück", "2 St.", "3 Teile", "2 mal", "2 x".
-const UNIT_WORDS = [
-  'Exemplare',
-  'fach',
-  'mal',
-  'pcs',
-  'St.',
-  'Stk',
-  'Stück',
-  'Stueck',
-  'Teile',
-  'weitere',
-  'x',
-];
-// Prices and extras: "1 Euro", "2 EUR", "1 Karte gratis", "1 Karte dazu".
-const PRICE_WORDS = ['dazu', 'EUR', 'Euro', 'gratis'];
-// Seller slogans: "#1 Bestseller", "Nr. 1 Händler", "No. 1 Fan".
-const SLOGAN_WORDS = ['Bestseller', 'Fan', 'Händler', 'Seller', 'Verkäufer'];
-
-/**
- * The one shared list of words after which a number is a count, unit, price or slogan, never a
- * card id. Every number form checks it (NOT_A_COUNT): the prefixed list (`Karte 5 Stück`,
- * `#1 Bestseller`), LE/XXL (`XXL 1 Stück`), `NAME N Karte` (`Zombie 2 Karte gratis`), and the
- * dash form, whose name may not start with one (`5 - Stück - Charakterkarte`). A word added
- * here guards all of them; add it to the equality test in ebay.test.ts too.
- */
-export const COUNT_WORDS: readonly string[] = [
-  ...PRODUCT_WORDS,
-  ...UNIT_WORDS,
-  ...PRICE_WORDS,
-  ...SLOGAN_WORDS,
-];
-const escapeRegExp = (word: string) => word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const wordsPattern = (words: readonly string[]) =>
-  `(?:${words.map(escapeRegExp).join('|')})(?![${LETTER}])`;
-// The count signs that are not words: "2 €", "2-fach".
-const COUNT_SYMBOLS = `(?:€|-fach(?![${LETTER}]))`;
-// After a number: not a decimal ("1,50", "1.50"), not a count sign, not a COUNT_WORDS word.
-const COUNT_AFTER = `(?!\\s*(?:${COUNT_SYMBOLS}|${wordsPattern(COUNT_WORDS)}))`;
-const NOT_A_COUNT = `(?![,.]\\d)${COUNT_AFTER}`;
-// Before a number: "je 2", "2x 5", "2 x 5", "Stück 5" make it a count.
-const NOT_AFTER_COUNT = `(?<!(?:\\bje|\\d\\s*x|\\b${wordsPattern(UNIT_WORDS)})\\s*)`;
 
 const LE_XXL_PATTERN = new RegExp(`\\b(LE|XXL)\\s?(\\d+)\\b${NOT_A_COUNT}`, 'gi');
 // "12/228": only the series size counts, so dates (`11/2026`) and sizes (`10/12`) do not match.

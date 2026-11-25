@@ -44,7 +44,7 @@ Bun + TypeScript Discord bot (discord.js), SQLite through Drizzle. `src/bot/bot.
 - `database/`: Drizzle schema, migrations and one manager per table group.
 - `utils/`: logger (`logError` for message plus stack), HTTP with User-Agent and timeout, async helpers, interaction error replies, Discord message length limits.
 
-Docs: `docs/development.md`, `configuration.md`, `image-matching.md`, `deployment.md`.
+Docs: `docs/development.md`, `configuration.md`, `collections.md` (adding a collection), `shops.md`, `image-matching.md`, `deployment.md`.
 
 ## Invariants (Global Constraints)
 

@@ -328,7 +328,8 @@ Each step is its own PR, reviewed with the pr-review-toolkit, and leaves the bot
    compared like any shop, the one-time re-match.
 3. `lego-minecraft-1` and `lego-minecraft-2`: definitions, shop settings, eBay classification.
 4. `turbo-attax-2026`: id rule, collect-it Turbo Attax titles, eBay title forms.
-5. `docs/collections.md` (how to add one) and doc updates (`shops.md`, `image-matching.md`,
+5. (Done in PR 5; most doc updates landed in PRs 1-4b.)
+   `docs/collections.md` (how to add one) and doc updates (`shops.md`, `image-matching.md`,
    `configuration.md`, `CLAUDE.md` decisions: "the sammel-ente listing picture is the image
    reference" becomes "laststicker is the reference", and the puzzle rule changes).
 

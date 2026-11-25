@@ -54,6 +54,22 @@ export interface LaststickerSetOptions {
 export interface EbayCollectionSettings {
   readonly queries: readonly string[];
   /**
+   * The title forms its card ids are read with: LEGO Minecraft's (`Karte 12`, `LE8`, `ZOMBIE 68
+   * Karte`, the name check of series 3) or Turbo Attax's (`#340`, `LE4`, `MR-VER`,
+   * `shops/ebayTurboAttax.ts`).
+   */
+  readonly idForms: 'minecraft' | 'turbo-attax';
+  /**
+   * Pages of 200 read per search of this collection (default 5, at most 50: eBay's offset limit
+   * of 10000). A search with more results is cut and alerted (`shop-truncated:ebay`).
+   */
+  readonly maxPages?: number;
+  /**
+   * A title of the collection matching this names another card than the checklist's (Turbo
+   * Attax parallels: `Refractor`, `/99`): excluded (`parallel`). No `g` or `y` flag.
+   */
+  readonly excludes?: RegExp;
+  /**
    * A title naming the collection; a title matching several collections' gives no ids. No `g`
    * or `y` flag (`test` would keep state between titles; refused at start).
    */

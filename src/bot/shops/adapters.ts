@@ -50,8 +50,9 @@ export interface AdapterDeps {
  * into a regular expression and compared with lowercased URLs), with an empty picture part (in
  * every file name), an empty category path or one holding `/` (never matched, yet it makes the
  * collection read titles by `Nummer`), or with a `g`/`y` title or exclusion marker, or eBay
- * settings without a search (the collection's listings would be marked gone, never searched) or
- * with a `g`/`y` marker (`test` would keep state between titles).
+ * settings without a search (the collection's listings would be marked gone, never searched),
+ * with a `g`/`y` marker or exclusion pattern (`test` would keep state between titles), or with a
+ * page cap that is not a whole number from 1 to 50 (eBay takes no offset beyond 10000).
  */
 function checkSettings(definition: CollectionDefinition): void {
   for (const shop of ['sammel-ente', 'collect-it'] as const) {
@@ -95,6 +96,15 @@ function checkSettings(definition: CollectionDefinition): void {
   }
   if (ebay && (ebay.series.global || ebay.series.sticky)) {
     throw new Error(`${definition.id}: the eBay series marker must not use the g or y flag`);
+  }
+  if (ebay?.excludes && (ebay.excludes.global || ebay.excludes.sticky)) {
+    throw new Error(`${definition.id}: the eBay exclusion pattern must not use the g or y flag`);
+  }
+  if (
+    ebay?.maxPages !== undefined &&
+    !(Number.isInteger(ebay.maxPages) && ebay.maxPages >= 1 && ebay.maxPages <= 50)
+  ) {
+    throw new Error(`${definition.id}: the eBay page cap must be a whole number from 1 to 50`);
   }
 }
 

@@ -26,6 +26,7 @@ export const legoMinecraft3: CollectionDefinition<'lego-minecraft-3'> = {
       series: 'Serie 3',
     },
     ebay: {
+      idForms: 'minecraft',
       queries: [
         'lego minecraft on fire karte',
         'lego minecraft tcc serie 3',

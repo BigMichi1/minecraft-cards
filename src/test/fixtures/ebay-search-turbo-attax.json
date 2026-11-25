@@ -1,0 +1,649 @@
+{
+ "href": "https://api.ebay.com/buy/browse/v1/item_summary/search",
+ "total": 40,
+ "limit": 200,
+ "offset": 0,
+ "itemSummaries": [
+  {
+   "itemId": "v1|130000000001|0",
+   "legacyItemId": "130000000001",
+   "title": "Topps Turbo Attax 2026 Formel 1 Mark Webber Turbo Chrome #340 Trading Card",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000001",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta01-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000002|0",
+   "legacyItemId": "130000000002",
+   "title": "Turbo Attax 2026 LE4 Lewis Hamilton Limited Edition ",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000002",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta02-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000003|0",
+   "legacyItemId": "130000000003",
+   "title": "Turbo Attax F1 (Formel 1 / Formula 1) 2026 BG 2 Franco Colapinto (Black Gold)",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000003",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta03-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000004|0",
+   "legacyItemId": "130000000004",
+   "title": "Topps Turbo Attax 2026 F1 Gold Max Verstappen #345",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000004",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta04-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000005|0",
+   "legacyItemId": "130000000005",
+   "title": "Topps F1 Turbo Attax 2026 Lewis Hamilton „The Winning Formula“ #341 1:250",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000005",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta05-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000006|0",
+   "legacyItemId": "130000000006",
+   "title": "Topps Turbo Attax F1 2026  - Limited Edition - Charles Leclerc #LE6",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000006",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta06-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000007|0",
+   "legacyItemId": "130000000007",
+   "title": "Topps Formula 1 Turbo Attax 2026 Relic Max Verstappen Oracle Red Bull MR-VER",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000007",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta07-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000008|0",
+   "legacyItemId": "130000000008",
+   "title": "Sir Jackie Stewart MRSTE Relic Legend Turbo Attax 2026",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000008",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta08-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000009|0",
+   "legacyItemId": "130000000009",
+   "title": "Topps Turbo Attax 2026 - Kimi Antonelli - # 16",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000009",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta09-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000010|0",
+   "legacyItemId": "130000000010",
+   "title": "Topps F1 Turbo Attax 2026 Trading Card 2026 Technical Drawing Basis-Karte NO 264",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000010",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta10-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000011|0",
+   "legacyItemId": "130000000011",
+   "title": "Topps Turbo Attax 2026 F1 I Greats of the Grid I Lewis Hamilton I #GG1",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000011",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta11-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000012|0",
+   "legacyItemId": "130000000012",
+   "title": "GG8 - Michael Schumacher - Greats Of The Grid - Limited Edition Turbo Attax 2026",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000012",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta12-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000013|0",
+   "legacyItemId": "130000000013",
+   "title": "Topps Turbo Attax 2026 Formel 1 Oracle Red Bull Racing #19 Trading Card",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000013",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta13-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000014|0",
+   "legacyItemId": "130000000014",
+   "title": "Topps Turbo Attax 2026 Max Verstappen 100 Club Foil Karte #295",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000014",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta14-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000015|0",
+   "legacyItemId": "130000000015",
+   "title": "Topps Turbo Attax 2026 F1 Isack Hadjar #309 Diamond Infinity Oracle Red Bull",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000015",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta15-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000016|0",
+   "legacyItemId": "130000000016",
+   "title": "Topps Turbo Attax 2026 Formel 1 Limited Edition Valtteri Bottas Cadillac LE18",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000016",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta16-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000017|0",
+   "legacyItemId": "130000000017",
+   "title": "TOPPS Turbo Attax 2026 F1 Lando Norris Limited Edition LE5",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000017",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta17-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000018|0",
+   "legacyItemId": "130000000018",
+   "title": "Topps Turbo Attax 2026 F1 I Speed Silhouettes I Colapinto I Alpine  I #133",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000018",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta18-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000019|0",
+   "legacyItemId": "130000000019",
+   "title": "Topps F1 Turbo Attax 2026 Driver Core 3x Karten Lot Alonso Sainz #157 #163 #174",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000019",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta19-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000020|0",
+   "legacyItemId": "130000000020",
+   "title": "Turbo Attax 2026 Turbo Chrome Nico Hülkenberg",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000020",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta20-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000021|0",
+   "legacyItemId": "130000000021",
+   "title": "Topps F1 Turbo Attax 2026 La Monumental 2x Karten Lot Colapinto Albon 225 214",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000021",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta21-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000022|0",
+   "legacyItemId": "130000000022",
+   "title": "2026 Turbo Attax 237 - Carlos Sainz - Turbo Attax Legacy",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000022",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta22-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000023|0",
+   "legacyItemId": "130000000023",
+   "title": "Topps Turbo Attax Formula 1 2026 - Display Box (24 Booster Packs) F1 Formel 1",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000023",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta23-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000024|0",
+   "legacyItemId": "130000000024",
+   "title": "2026 Topps Turbo Attax Kimi Antonelli KA5 Limited Edition Silverstone Exclusive",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000024",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta24-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000025|0",
+   "legacyItemId": "130000000025",
+   "title": "Topps Turbo Attax 2026 / PICK YOUR CARD (1-288) - KARTE AUSWÄHLEN",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000025",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta25-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000026|0",
+   "legacyItemId": "130000000026",
+   "title": "Topps Turbo Attax F1 2026 - Formula 1 2026 - Einzelkarten zum aussuchen #1 - 264",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000026",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta26-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000027|0",
+   "legacyItemId": "130000000027",
+   "title": "Turbo Attax 2026 F1 l Legends of the Grid l Complete Set l 15 Karten l #136-150",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000027",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta27-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000028|0",
+   "legacyItemId": "130000000028",
+   "title": "Topps Turbo Attax 2026 Lewis Hamilton Karte #323 limitiert 03/99 Formel 1",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000028",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta28-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000029|0",
+   "legacyItemId": "130000000029",
+   "title": "Topps Turbo Attax F1 2026 - Chrome Refractor - Lance Stroll #329",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000029",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta29-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000030|0",
+   "legacyItemId": "130000000030",
+   "title": "Topps F1 75 Turbo Attax 2026 Pink Diamond Pull Kimi Antonelli #317",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000030",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta30-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000031|0",
+   "legacyItemId": "130000000031",
+   "title": "Topps F1 Turbo Attax 2026 LANDO NORRIS GOLD LE5 LIMITED EDITION ",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000031",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta31-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000032|0",
+   "legacyItemId": "130000000032",
+   "title": "Turbo Attax 2026 - Sir Jackie Stewart Gold Relic Limited Edition",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000032",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta32-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000033|0",
+   "legacyItemId": "130000000033",
+   "title": "Topps Turbo Attax 2026 Max Verstappen Signature Style Silver #269 /94",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000033",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta33-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000034|0",
+   "legacyItemId": "130000000034",
+   "title": "Topps F1 Turbo Attax 2026 Oliver Bearman Haas Night Shift Rainbow Foil #NS-4",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000034",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta34-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000035|0",
+   "legacyItemId": "130000000035",
+   "title": "Topps Turbo Attax 2026 A. Alrassian Williams F1 Parallel/Variante Karte #41",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000035",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta35-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000036|0",
+   "legacyItemId": "130000000036",
+   "title": "Topps F1 Turbo Attax 2026 Oliver Bearman Gold Card F1 #350",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000036",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta36-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000037|0",
+   "legacyItemId": "130000000037",
+   "title": "Topps Turbo Attax 2026 Kimi Antonelli EPIC MOMENT #101 Miami GP 2023",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000037",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta37-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000038|0",
+   "legacyItemId": "130000000038",
+   "title": "Topps F1 Turbo Attax 2025 Formel 1 Michael Schumacher Limited Edition Relic",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000038",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta38-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  },
+  {
+   "itemId": "v1|130000000039|0",
+   "legacyItemId": "130000000039",
+   "title": "Topps Turbo Attax 2026 Einzelkarten",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000039",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta39-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ],
+   "itemGroupType": "SELLER_DEFINED_VARIATIONS"
+  },
+  {
+   "itemId": "v1|130000000040|0",
+   "legacyItemId": "130000000040",
+   "title": "Topps Turbo Attax 2026 F1 2 Karten Lot Team Principal Stella & Vowles 2/38",
+   "itemWebUrl": "https://www.ebay.de/itm/130000000040",
+   "image": {
+    "imageUrl": "https://i.ebayimg.com/images/g/ta40-0/s-l225.jpg"
+   },
+   "price": {
+    "value": "1.50",
+    "currency": "EUR"
+   },
+   "buyingOptions": [
+    "FIXED_PRICE"
+   ]
+  }
+ ]
+}

@@ -65,7 +65,9 @@ describe('createShopAdapters', () => {
       'lego-minecraft-1',
       'lego-minecraft-2',
       'lego-minecraft-3',
+      'turbo-attax-2026',
     ]);
+    expect(enabledShopsOf(value).get('turbo-attax-2026')).toEqual(['collect-it', 'ebay']);
     expect(enabledShopsOf(value).get('lego-minecraft-2')).toEqual([
       'sammel-ente',
       'blue-ocean',
@@ -158,18 +160,43 @@ describe('createShopAdapters', () => {
 
   test('eBay settings without a search, or with a stateful marker, are refused at start', () => {
     const creds = { clientId: 'id', clientSecret: 's' };
-    const noSearch = { ...legoMinecraft1, shops: { ebay: { queries: [], series: /Serie 1/i } } };
+    const noSearch = {
+      ...legoMinecraft1,
+      shops: { ebay: { queries: [], idForms: 'minecraft' as const, series: /Serie 1/i } },
+    };
     expect(() => createShopAdapters(creds, undefined, { collections: [noSearch] })).toThrow(
       'lego-minecraft-1: eBay settings without a search'
     );
-    const global = { ...legoMinecraft1, shops: { ebay: { queries: ['q'], series: /Serie 1/gi } } };
+    const global = {
+      ...legoMinecraft1,
+      shops: { ebay: { queries: ['q'], idForms: 'minecraft' as const, series: /Serie 1/gi } },
+    };
     expect(() => createShopAdapters(creds, undefined, { collections: [global] })).toThrow(
       'must not use the g or y flag'
     );
-    const sticky = { ...legoMinecraft1, shops: { ebay: { queries: ['q'], series: /Serie 1/y } } };
+    const sticky = {
+      ...legoMinecraft1,
+      shops: { ebay: { queries: ['q'], idForms: 'minecraft' as const, series: /Serie 1/y } },
+    };
     expect(() => createShopAdapters(creds, undefined, { collections: [sticky] })).toThrow(
       'must not use the g or y flag'
     );
+  });
+
+  test('an eBay exclusion pattern with g or y, or a page cap outside 1-50, is refused at start', () => {
+    const creds = { clientId: 'id', clientSecret: 's' };
+    const ebay = (over: object) => ({
+      ...legoMinecraft1,
+      shops: { ebay: { ...legoMinecraft1.shops.ebay!, ...over } },
+    });
+    expect(() =>
+      createShopAdapters(creds, undefined, { collections: [ebay({ excludes: /pink/gi })] })
+    ).toThrow('lego-minecraft-1: the eBay exclusion pattern must not use the g or y flag');
+    for (const maxPages of [0, 51, 2.5]) {
+      expect(() =>
+        createShopAdapters(creds, undefined, { collections: [ebay({ maxPages })] })
+      ).toThrow('lego-minecraft-1: the eBay page cap must be a whole number from 1 to 50');
+    }
   });
 
   test('without a collection on eBay there is no eBay adapter; without series 3 the first one files the counts', () => {

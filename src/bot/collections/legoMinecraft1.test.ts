@@ -28,6 +28,7 @@ describe('legoMinecraft1', () => {
           title: /\bTCC\s*1\b/i,
         },
         ebay: {
+          idForms: 'minecraft',
           queries: ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'],
           series: /\b(?:Series?|Staffel)\s*1\b|\bTCC\s*1\b/i,
         },

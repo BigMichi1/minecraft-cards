@@ -27,6 +27,7 @@ describe('legoMinecraft2', () => {
           excludes: /\bTCC\s*2\b|\bBoom[-\s]?Bastic\b/i,
         },
         ebay: {
+          idForms: 'minecraft',
           queries: ['lego minecraft karten serie 2', 'lego minecraft boom bastic karte'],
           series: /\b(?:Series?|Staffel)\s*2\b|\bBoom[-\s]?Bastic\b/i,
         },

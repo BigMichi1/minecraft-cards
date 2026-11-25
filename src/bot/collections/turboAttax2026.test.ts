@@ -16,7 +16,50 @@ describe('turboAttax2026', () => {
             'https://www.collect-it.de/sammelkarten/formel1/Topps-Turbo-Attax-Formel-1-2026/Einzelkarten',
           series: '2026',
         },
+        ebay: {
+          queries: ['turbo attax 2026'],
+          idForms: 'turbo-attax',
+          maxPages: 30,
+          series: turboAttax2026.shops.ebay!.series,
+          excludes: turboAttax2026.shops.ebay!.excludes,
+        },
       },
     });
+  });
+
+  test('the eBay marker needs Turbo Attax and 2026, and no other year', () => {
+    const marker = turboAttax2026.shops.ebay!.series;
+    expect(marker.test('Topps Turbo Attax 2026 F1 Gold Max Verstappen #345')).toBe(true);
+    expect(marker.test('TOPPS TURBO ATTAX F1 2026 LE5')).toBe(true);
+    expect(marker.test('Topps Turbo Attax 2025 #12')).toBe(false);
+    expect(marker.test('Topps Turbo Attax 2026 #101 Miami GP 2023')).toBe(false);
+    expect(marker.test('Topps F1 2026 Chrome #12')).toBe(false);
+    expect(marker.test('LEGO Minecraft Serie 3 2026 Karte 12')).toBe(false);
+  });
+
+  test('the parallel words exclude other cards, not the F1 Gold or Black Gold sections', () => {
+    const parallel = turboAttax2026.shops.ebay!.excludes!;
+    for (const title of [
+      '#323 limitiert 03/99',
+      'Signature Style Silver #269 /94',
+      'Chrome Refractor #322',
+      'SuperFractor 1 of 1',
+      'Pink Diamond Pull #317',
+      'Rainbow Foil',
+      'Parallel/Variante Karte #41',
+      'Green Max Verstappen',
+      'LANDO NORRIS GOLD LE5',
+      'Gold Relic',
+    ]) {
+      expect({ title, parallel: parallel.test(title) }).toEqual({ title, parallel: true });
+    }
+    for (const title of [
+      'F1 Gold Max Verstappen #345',
+      'F1® Gold #344',
+      'BG 1 (Black Gold)',
+      'Oracle Red Bull #19',
+    ]) {
+      expect({ title, parallel: parallel.test(title) }).toEqual({ title, parallel: false });
+    }
   });
 });

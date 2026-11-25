@@ -30,6 +30,7 @@ export const legoMinecraft2: CollectionDefinition<'lego-minecraft-2'> = {
     },
     // Mostly category lots ("Sammelkarten Serie 2\"NETHER\""), a few "Boom-Bastic" singles.
     ebay: {
+      idForms: 'minecraft',
       queries: ['lego minecraft karten serie 2', 'lego minecraft boom bastic karte'],
       series: /\b(?:Series?|Staffel)\s*2\b|\bBoom[-\s]?Bastic\b/i,
     },

@@ -28,6 +28,7 @@ export const legoMinecraft1: CollectionDefinition<'lego-minecraft-1'> = {
     },
     // "LEGO Minecraft Serie 1 Trading Card 134 - Neon Lohe - Mob Karte" (2026-11-24 probe).
     ebay: {
+      idForms: 'minecraft',
       queries: ['lego minecraft karten serie 1', 'lego minecraft tcc serie 1'],
       series: /\b(?:Series?|Staffel)\s*1\b|\bTCC\s*1\b/i,
     },

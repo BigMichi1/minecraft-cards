@@ -1,10 +1,16 @@
 declare const cardIdBrand: unique symbol;
 /**
- * A canonical card id (`12`, `LE8`, `XXL1`, Turbo Attax `GG8`, `MR-HAM`). Branded so a raw string cannot pass for one:
- * only this module creates them (normalizeCardIdIn, parseCardList), and the database columns
+ * A canonical card id (`12`, `LE8`, `XXL1`, Turbo Attax `GG8`, `MR-HAM`). Branded so a raw
+ * string cannot pass for one: only this module creates them (normalizeCardIdIn, parseCardList),
+ * and the database columns
  * holding card ids are typed with it (`.$type<CardId>()`).
  */
 export type CardId = string & { readonly [cardIdBrand]: true };
+/**
+ * `cards.type`, from LEGO Minecraft's kinds: `le` and `xxl` for those prefixes, everything else
+ * `base` (Turbo Attax's other prefixes and relics too). Kept for the stored column; counts and
+ * order use cardIdGroup, which serves every rule.
+ */
 export const CARD_TYPES = ['base', 'le', 'xxl'] as const;
 export type CardType = (typeof CARD_TYPES)[number];
 
@@ -19,8 +25,9 @@ const CANONICAL_PATTERN = /^(?:([A-Z]+)(\d+)|(\d+)|([A-Z]{2})-([A-Z]{3}))$/;
 
 /**
  * A collection's card id rule (CollectionDefinition.cardIds): which prefixes may stand before a
- * card number and which code families exist. Ids of one rule are refused by another (`GG8` is no
- * Minecraft card), so a list or title is read only with its own collection's rule.
+ * card number and which code families exist. An id outside a collection's rule is refused there
+ * (`GG8` is no Minecraft card; `12` and `LE8` are ids of both), so a list or title is read only
+ * with its own collection's rule.
  */
 export interface CardIdRule {
   /** Letters before a card number, besides none (Minecraft `LE`, `XXL`). Uppercase. */
@@ -146,8 +153,9 @@ function parseToken(rule: CardIdRule, token: string): CardId[] | null {
 }
 
 /**
- * Parse a comma separated list of ids and ranges under the collection's `rule`. Valid ids come back deduped and
- * sorted; unparseable tokens come back, trimmed and in input order, in `invalid`.
+ * Parse a comma separated list of ids and ranges under the collection's `rule`. Valid ids come
+ * back deduped and sorted; unparseable tokens come back, trimmed and in input order, in
+ * `invalid`.
  */
 export function parseCardList(
   input: string,

@@ -1,7 +1,7 @@
 /**
  * The title words every eBay title reader shares (Minecraft's forms in ebay.ts, Turbo Attax's in
- * ebayTurboAttax.ts): counts, products, prices and pick lists, so a number before one is never
- * read as a card in any collection.
+ * ebayTurboAttax.ts): products, counts and units, prices, seller slogans and pick lists, so a
+ * number before one is never read as a card in any collection.
  */
 
 export const LETTER = 'A-Za-zÄÖÜäöüß';
@@ -70,9 +70,10 @@ const SLOGAN_WORDS = ['Bestseller', 'Fan', 'Händler', 'Seller', 'Verkäufer'];
 
 /**
  * The one shared list of words after which a number is a count, unit, price or slogan, never a
- * card id. Every number form checks it (NOT_A_COUNT): the prefixed list (`Karte 5 Stück`,
- * `#1 Bestseller`), LE/XXL (`XXL 1 Stück`), `NAME N Karte` (`Zombie 2 Karte gratis`), and the
- * dash form, whose name may not start with one (`5 - Stück - Charakterkarte`). A word added
+ * card id. Every collection's number forms check it (NOT_A_COUNT): Minecraft's prefixed list
+ * (`Karte 5 Stück`, `#1 Bestseller`), LE/XXL (`XXL 1 Stück`), `NAME N Karte` (`Zombie 2 Karte
+ * gratis`) and the dash form, whose name may not start with one (`5 - Stück - Charakterkarte`),
+ * and Turbo Attax's `#N`/`Nr. N` and prefixed numbers (`Turbo Attax 2026 #5 Stück`). A word added
  * here guards all of them; add it to the equality test in ebay.test.ts too.
  */
 export const COUNT_WORDS: readonly string[] = [

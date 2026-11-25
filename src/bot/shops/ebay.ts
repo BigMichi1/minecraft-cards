@@ -43,8 +43,9 @@ const TOKEN_SAFETY_MARGIN_MS = 60_000;
 /** Items per search page, the Browse API maximum. */
 const SEARCH_LIMIT = 200;
 /**
- * Pages read per query unless its collection sets `maxPages`: 1000 results. The broadest LEGO
- * Minecraft query had 295 on 2026-11-18; Turbo Attax's had 4782 on 2026-11-25 (30 pages).
+ * Pages read per query of a collection without `maxPages`: 1000 results. The broadest LEGO
+ * Minecraft query had 295 on 2026-11-18. Turbo Attax's had 4782 on 2026-11-25 (24 pages); its
+ * `maxPages` is 40.
  */
 export const MAX_PAGES_PER_QUERY = 5;
 const PAGE_DELAY_MS = 1500;
@@ -54,7 +55,10 @@ const TOTAL_TOLERANCE_SHARE = 0.02;
 const tolerance = (total: number) =>
   Math.max(TOTAL_TOLERANCE_MIN, Math.ceil(total * TOTAL_TOLERANCE_SHARE));
 
-/** Every collection read on eBay: its id, searches and series marker (CollectionDefinition). */
+/**
+ * Every collection read on eBay: its id and eBay settings (CollectionDefinition): searches,
+ * series marker, title forms (`idForms`), exclusions and page cap.
+ */
 export type EbayCollection = EbayCollectionSettings & { readonly id: CollectionId };
 
 /** The definitions that name eBay settings, as eBay collections, in their order. */
@@ -311,7 +315,8 @@ export function classifyTitle(
  * It must name that collection's series and no other's, and must not be a listing to pick
  * cards from or name a number range in the collection's forms ("Einzelkarten 1 - 228 zum
  * aussuchen", "#1 - 264"): a range or a choice is not stock. A title matching the collection's
- * `excludes` (Turbo Attax parallels) names another card than the checklist's.
+ * `excludes` (Turbo Attax parallels) names another card than the checklist's. The first
+ * reason that applies is the one returned (a parallel listed as a range is `range`).
  */
 export function titleExclusion(
   title: string,
@@ -344,7 +349,8 @@ function readIdsIn(
 
 /**
  * Card ids of `collection` (series 3 unless given) named in an eBay title, only for a title
- * titleExclusion lets through for it. Prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `Card 134`,
+ * titleExclusion lets through for it, read with the collection's `idForms` (Turbo Attax's:
+ * ebayTurboAttax.ts). LEGO Minecraft's forms: prefixed forms (`#12`, `Nr. 12`, `Karte 12`, `Card 134`,
  * `LE8`), `n/228`, `132 - Name - Charakterkarte` (also after "Karten") and `ZOMBIE 68 Karte` (a
  * card name word from CARD_NAME_WORDS) count; bare numbers (`Serie 3`, `2026`) and counts
  * (`6 Karten`) never do.
@@ -357,7 +363,7 @@ export function extractCardIdsFromTitle(
   return readIdsIn(title, collection, EBAY_COLLECTIONS);
 }
 
-/** The card ids of the title forms extractCardIdsFromTitle reads, whatever the series. */
+/** The card ids of LEGO Minecraft's title forms (`idForms: 'minecraft'`), whatever the series. */
 function readCardIds(title: string): CardId[] {
   const ids = new Set<CardId>();
   const add = (raw: string) => {
@@ -830,18 +836,18 @@ export function createEbayFetcher(
   }
 
   /**
-   * Every result of a search, page by page by `offset`, up to `maxPages` pages (its collections'
-   * largest `maxPages`, else MAX_PAGES_PER_QUERY). eBay takes
-   * only offsets that are a multiple of the limit, and a page may hold fewer items than the limit
-   * before the end, so the offset is the page number times SEARCH_LIMIT, not the number of items
+   * Every result of a search, page by page by `offset`, up to `maxPages` pages (the largest cap of
+   * the collections searching it). eBay takes only offsets that are a multiple of the limit, and a
+   * page may hold fewer items than the limit before the end, so the offset is the page number times SEARCH_LIMIT, not the number of items
    * read, and a short page never ends a walk by itself. The walk ends at an empty page, or once the
    * next offset reaches the answer's total (a later page without a total keeps the earlier one);
    * the items read are then checked against the total (endShort). ShopLayoutErrors, as a partial
    * walk would mark the unread listings unavailable: a walk ending more than the tolerance below
-   * the total (endShort), a walk at the cap reading more than tolerance(1000) = 20 fewer than 1000
-   * items (the offsets it read hold that many, whatever eBay's estimate of the total), an empty
+   * the total (endShort), a walk at the cap reading more than tolerance(reach) fewer items than the
+   * offsets it read reach (`maxPages` × 200: 1000 and 20 for 5 pages, whatever eBay's estimate of
+   * the total), an empty
    * first page with a total above 0, and a first page with neither `itemSummaries` nor `total`. A
-   * search cut at the cap (more announced than 1000 offsets reach, or no total at all) is logged
+   * search cut at the cap (more announced than its offsets reach, or no total at all) is logged
    * and added to `truncated`.
    */
   async function search(

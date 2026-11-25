@@ -60,8 +60,9 @@ export interface EbayCollectionSettings {
    */
   readonly idForms: 'minecraft' | 'turbo-attax';
   /**
-   * Pages of 200 read per search of this collection (default 5, at most 50: eBay's offset limit
-   * of 10000). A search with more results is cut and alerted (`shop-truncated:ebay`).
+   * Pages of 200 read per search of this collection, 1 to 50 (eBay takes no offset beyond
+   * 10000; unset, MAX_PAGES_PER_QUERY, 5); a search several collections share reads the largest
+   * of their caps. A search with more results is cut and alerted (`shop-truncated:ebay`).
    */
   readonly maxPages?: number;
   /**
@@ -134,8 +135,10 @@ export interface CollectionDefinition<K extends CollectionId = CollectionId> {
   /** Display name in commands and alerts. */
   readonly name: string;
   /**
-   * The collection's card id rule: laststicker numbers, card lists, commands and shop titles of
-   * this collection are read with it, so another collection's ids (`GG8` in Minecraft) are refused.
+   * The collection's card id rule: its laststicker numbers, card lists, commands, collect-it
+   * titles and Turbo Attax eBay titles are read with it, so an id outside it (`GG8` in Minecraft)
+   * is refused. sammel-ente, blue-ocean and eBay's Minecraft forms read Minecraft's rule only,
+   * which the start check requires of a collection using them.
    */
   readonly cardIds: CardIdRule;
   /** Kleinanzeigen search words before the card id, dash-joined (`lego-minecraft-karte`). */

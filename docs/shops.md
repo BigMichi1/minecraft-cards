@@ -1,20 +1,20 @@
 # Shops
 
-Which shops were checked for LEGO Minecraft TCC series 3 ("On Fire") single cards (series 1 and 2:
-see "Per collection", checked 2026-11-24), whether they sell
+Which shops were checked for LEGO Minecraft TCC series 3 ("On Fire") single cards (series 1 and 2
+and Topps F1 Turbo Attax 2026: see "Per collection", checked 2026-11-24 and 2026-11-25), whether they sell
 them, and whether the bot can read them. Checked 2026-11-17 / 2026-11-18. Re-check when a shop
 changes or a new one is suggested.
 
 ## Used by the bot
 
-| Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                                                                                                                                                                                        |
-| ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the fallback reference when laststicker has no scan of a card; its listings are compared like every shop's.                                                                                                                                                 |
-| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. One walk of the sticker-cards category for every collection; each product is placed by its URL (details below). Series 3's card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`; the title's "Nr." is wrong), series 1 and 2's from the title's `Nummer NNN`.                                               |
-| [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                                                                                                   |
-| eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. One run for every collection: each collection's searches (eight in all), every page by `offset`; card ids from titles naming exactly one collection's series (details below). |
+| Shop                                                                                                  | Sells singles                   | Readable                         | How the bot reads it                                                                                                                                                                                                                                                                                                                                       |
+| ----------------------------------------------------------------------------------------------------- | ------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [shop-sammel-ente.de](https://shop-sammel-ente.de/Minecraft/Serie-3/)                                 | yes (all 228 + LE + XXL1)       | yes                              | Shopware storefront HTML, `?p=N` pages. Card id from the title (`#012 Squid`). Its pictures are the fallback reference when laststicker has no scan of a card; its listings are compared like every shop's.                                                                                                                                                |
+| [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. One walk of the sticker-cards category for every collection; each product is placed by its URL (details below). Series 3's card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`; the title's "Nr." is wrong), series 1 and 2's from the title's `Nummer NNN`.                                              |
+| [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                                                                                                  |
+| eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. One run for every collection: each collection's searches (nine in all), every page by `offset`; card ids from titles naming exactly one collection's series (details below). |
 
-## Per collection (2026-11-24)
+## Per collection (2026-11-24, Turbo Attax 2026-11-25)
 
 | Collection         | sammel-ente                                                                        | collect-it                                                                                                                                                                                    | blue-ocean | eBay     |
 | ------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------- |
@@ -34,19 +34,35 @@ changes or a new one is suggested.
 - collect-it's Turbo Attax titles end with the year (`4 - Lando Norris - 2026`,
   `344 - George Russell - F1 Gold - 2026`, `GG8 - … - Greats Of The Grid - Limited Edition - 2026`,
   `MR-HAM - Lewis Hamilton - Manufactured Relic - 2026`); the year is the series label, and the
-  first title part is read with Turbo Attax's card id rule. 303 articles on 11 pages, all in
+  first title part is read with Turbo Attax's card id rule. A category reads only its own kind of
+  label: a year in a `Serie N` category, or `Serie N` in the Turbo Attax one, is no series label
+  (an unreadable box, the walk fails); another year in the Turbo Attax category is another
+  series (skipped and counted). 303 articles on 11 pages, all in
   stock (sold-out cards are hidden, as for Minecraft); no `LE`, `BG`, `GU`, `SUN` or `RR` card
   was listed.
 - eBay Turbo Attax (2026-11-25 probe): `turbo attax 2026` had 4782 results, mostly German single
-  cards (category "Trading Card Einzelkarten"), so the collection reads 30 pages (`maxPages`).
-  Titles are read with Turbo Attax's forms (`shops/ebayTurboAttax.ts`): `#340`, `# 16`,
-  `NO 264`, `LE4`, `#LE6`, `BG 2`, `#GG1`, `MR-VER`, `MRSTE`; lots give all their ids
-  (`#157 #163 #174`). Never read: bare numbers (`Ferrari 8 Karten`, `237 - Carlos Sainz`),
-  `Karte N`/`Card N` (`Trading Card 2026`), unknown prefixes (`KA5`). Excluded: another year
-  (`Miami GP 2023`), pick lists, ranges (`#1 - 264`, `(1-288)`, `GG1-GG8`) and parallels
-  (`03/99`, `/94`, `Refractor`, `Pink`, `Rainbow`, `Green`, `Parallel`/`Variante`, `Gold` but
-  not `F1 Gold` or `Black Gold`). The fixture `ebay-search-turbo-attax.json` holds 40 reviewed
-  titles.
+  cards (category "Trading Card Einzelkarten"), so the collection reads up to 40 pages
+  (`maxPages`; 24 were needed). Titles are read with Turbo Attax's forms
+  (`shops/ebayTurboAttax.ts`): `#340`, `# 16`, `NO 264`, `LE4`, `#LE6`, `BG 2`, `#GG1`, and in a
+  relic's title (`Relic`, `Relikt`) `MR-VER`, `MRSTE`; lots give all their ids (`#157 #163 #174`).
+  Never read: bare numbers (`Ferrari 8 Karten`, `237 - Carlos Sainz`), `Karte N`/`Card N`
+  (`Trading Card 2026`), unknown prefixes (`KA5`), a prefix glued to a word (`LE 24h`), and a
+  `#N`/`No N` that is the race number of a driver the title names (`Lewis Hamilton #44`).
+  Excluded: another year (`Miami GP 2023`), pick lists, ranges in either order and any joiner
+  (`#1 - 264`, `(1-288)`, `GG1-GG8`, `#1 to #264`, `1~150`) and parallels (any digit/digit such as
+  `03/99`, `#269 /94` or `2/38`; `Refractor`, `SuperFractor`, `Pink`, `Rainbow`, `Green`,
+  `Silver`, `Orange`, `Blue`, `Purple`, `Bronze`, `Printing Plate`, autographs, `Parallel`/`Variante`,
+  `Gold`/`Golden` but not `F1 Gold` or `Black Gold`). The parallel list is an exclusion list of
+  the parallels seen: a new parallel name is added to the definition's `excludes`. The fixture
+  `ebay-search-turbo-attax.json` holds 40 reviewed titles.
+  - The run stays one for every collection (spec "eBay"): a failing page of the Turbo Attax
+    search (up to 40 requests an hour) fails the whole eBay run, so the LEGO Minecraft eBay
+    listings are not updated that hour either; nothing is marked gone. Kept so: a listing found
+    by one collection's search may belong to another, so a narrower failure scope could mark real
+    listings unavailable.
+  - The first runs store thousands of new Turbo Attax listings `pending`; only listings someone
+    wants are compared (`wantedOrPictureOnly` in `check/runner.ts`), so the picture matching load
+    follows the wanted lists, not the search size.
 - blue-ocean (2026-11-24 probe): series 1 has no category page of its own (series 2's
   `…/trading-card-collection-boom-bastic/` lists the same series 2 products as the walk); the
   sticker-cards category lists every series' singles, stickers and packs (31 pages, 734
@@ -133,12 +149,14 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   not the number of items read, and a short page never ends a walk by itself. The walk ends at an
   empty page, or once the next offset reaches the answer's `total` (a later page without a
   `total` keeps the earlier one); the items read are then checked against the `total`
-  (tolerance below). At most 5 pages (offsets below 1000) per query. 1500 ms between two search
+  (tolerance below). At most `maxPages` pages per query (default 5, offsets below 1000; Turbo
+  Attax 40, below 8000; a query several collections share reads the largest). 1500 ms between two search
   requests, as between two shop pages.
 - **Errors**: a failing page is a shop error, like a failing shop page. So is a partial walk,
   because the unread listings would be marked unavailable: a walk that ends (on the last page by
   the `total`, or on an empty later page) further below the `total` than its tolerance, a walk at
-  the cap that read more than 20 items fewer than 1000, an empty first page with a `total` above
+  the cap that read more than tolerance(reach) items fewer than its offsets reach (`maxPages` × 200:
+  20 fewer than 1000 at 5 pages), an empty first page with a `total` above
   0, a first page with neither `itemSummaries` nor `total` (`{"total":0}` is a valid empty result),
   and an answer of the wrong shape (not an object, `itemSummaries` not a list of items,
   `total` not a number) are `ShopLayoutError`s naming the query and the offset. All searches
@@ -149,8 +167,9 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
   in pages of 199); an empty first page with a `total` above 0 is always an error. That gap is
   accepted with a warning naming the query, the total and the count read, and no admin alert; a
   larger gap (600 announced, 400 delivered) stays a `ShopLayoutError`. The page cap is reached only
-  with a `total` above 1000, or none: there, the offsets read hold 1000 items whatever the estimate,
-  so more than tolerance(1000) = 20 fewer is a `ShopLayoutError` (1500 announced, 500 read; 1001
+  with a `total` above the reach (`maxPages` × 200; 1000 at 5 pages), or none: there, the offsets
+  read hold that many items whatever the estimate, so more than tolerance(reach) fewer (20 at 5
+  pages) is a `ShopLayoutError` (1500 announced, 500 read; 1001
   announced, 979 read), a `total` within the tolerance of the items read counts as complete (1021
   announced, 1000 read), and a larger one is a cut search (below; 1022 announced, 1000 read).
 - **Page cap**: a search cut at the cap logs a warning and is reported in `FetchResult.truncated`;
@@ -175,7 +194,7 @@ seller data, are in `src/test/fixtures/ebay-search.json`):
 
   Counts are not ids: `6 Karten`, `21 Packs à 6 Karten`, `193 verschiedene Karten`,
   `incl. 1 special Card`, and the series number in `Serie 3 Karte`. Counts, units, prices and
-  slogans are never ids. One shared list, `COUNT_WORDS` in `src/bot/shops/ebay.ts`, holds them all:
+  slogans are never ids. One shared list, `COUNT_WORDS` in `src/bot/shops/ebayTitleWords.ts`, holds them all:
   - products and their plurals: Album, Alben, Blister(s), Booster(s), Box, Boxen, Bundle(s),
     Cards, Display(s), Foil, Holo, Karten, Konvolut, Lot(s), Mappe(n), Multipack(s), Pack,
     Packs, Packung(en), Paket(e), Sammlung, Set(s), Starter;

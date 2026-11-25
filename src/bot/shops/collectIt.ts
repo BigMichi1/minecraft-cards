@@ -152,8 +152,10 @@ export interface CollectItPage {
 /**
  * Parse one category page. The category holds only singles, so a skipped box is parser drift,
  * and the adapter rejects a page with any. With `series`, a card box whose title ends with
- * another series label goes to `excluded` (no skip), and one with no series label is a skip
- * (the title format changed); null reads every series. `canonical` and `next` are returned raw;
+ * another series label of the same kind (`Serie N`, or a year for a year label) goes to
+ * `excluded` (no skip), and one with no label of that kind is a skip (the title format
+ * changed); null reads either kind. Card ids are read with the collection's `rule` (Minecraft's
+ * unless given). `canonical` and `next` are returned raw;
  * the adapter checks them with `categoryPageNumber`.
  */
 export function parseCollectItPage(
@@ -334,8 +336,9 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
 }
 
 /**
- * collect-it.de lists a series' single cards in one category (`settings.category`), 30 per page. It hides sold-out products
- * instead of marking them, so a card that sells out simply vanishes (and the run marks the stored
+ * collect-it.de lists a series' single cards in one category (`settings.category`), 30 per page,
+ * each title's card id read with the collection's `rule`. It hides sold-out products instead of
+ * marking them, so a card that sells out simply vanishes (and the run marks the stored
  * listing unavailable). That makes a partial read dangerous: every card on an unread page would
  * read as sold out and re-notify on the next healthy run. So the walk follows each page's
  * `<link rel="next">`, and a page whose canonical link is missing, unreadable or names another

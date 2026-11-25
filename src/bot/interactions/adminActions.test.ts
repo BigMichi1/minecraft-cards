@@ -48,10 +48,13 @@ function fakeButton(customId: string, userId = ADMIN, content = 'orig') {
   return self as unknown as ButtonInteraction & { update: (p: unknown) => Promise<void> };
 }
 
-function makeListing(cardIds = [cid('12')]): StoredListing {
+function makeListing(
+  cardIds = [cid('12')],
+  collection: CollectionId = 'lego-minecraft-3'
+): StoredListing {
   const l = listingManager.upsertFromRun(
     'ebay',
-    'lego-minecraft-3',
+    collection,
     [
       {
         shop: 'ebay',
@@ -65,6 +68,7 @@ function makeListing(cardIds = [cid('12')]): StoredListing {
         format: 'fixed_price',
         auctionEndsAt: null,
         idConflict: false,
+        collection,
       },
     ],
     1000
@@ -191,6 +195,17 @@ describe('admin actions', () => {
       } finally {
         info.mockRestore();
       }
+    });
+
+    test('a Turbo Attax relic listing is confirmed with its relic code', async () => {
+      const l = makeListing([cid('MR-HAM')], 'turbo-attax-2026');
+      await handleAdminConfirm(fakeButton(confirmId(l)), { adminId: ADMIN, now: () => 3000 });
+      expect(updates).toEqual([{ content: 'orig\n✅ Confirmed', components: [] }]);
+      expect(listingManager.getById(l.id)).toMatchObject({
+        collection: 'turbo-attax-2026',
+        cardIds: [cid('MR-HAM')],
+        matchStatus: 'confirmed',
+      });
     });
 
     test('from a DM without text adds only the status line', async () => {

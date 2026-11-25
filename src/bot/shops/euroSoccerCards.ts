@@ -19,11 +19,28 @@ const BOX = '.product-miniature';
 const MAX_QUOTED = 200;
 // "There are 392 products." above the grid (page 1 and every other page).
 const PRODUCT_TOTAL = /^There (?:are|is) (\d+) products?\.$/;
-// The picture's alt: "Buy Cards <name> Colección Turbo Attax 2026", also "Buy Cards online <name>
-// …" and "Buy Cards <name> Topps Formula 1 Turbo Attax 2026".
-const ALT_NAME = /^Buy Cards (?:online )?(.+?)(?: (?:Colección|Topps Formula) .*)?$/;
-// The id a link text ends with when it is not cut ("… Hero 4", "… SUN 8", "… Relic MR-HAM").
+// The picture's alt varies: "Buy Cards <name> Colección Turbo Attax 2026", "Buy Cards online
+// <name> …", "Get yours <name> Cards Turbo Attax F1 2026", "Find and Buy Cards <name> …". Its
+// lead-in and set words are cut off to leave the name.
+const ALT_LEAD =
+  /^(?:Find and Buy Cards|Buy Cards(?: online)?|Get yours|Get it now|Add to your collection|Collect|Get)\s+/i;
+const ALT_TAIL =
+  /\s+(?:(?:Cards|Topps|Formula 1|F1|Colección)\s+)*(?:Turbo Attax|Colección|Topps Formula)\b.*$/i;
+// The id a link text ends with when it is not cut ("… Hero 4", "… SUN 8", "… Relic MR-HAM",
+// "… F1 Car 184": a word before the number that is no prefix of the rule is part of the name).
 const TEXT_ID = /(?:^|\s)((?:[A-Za-z]{2,3}[\s-]?)?[A-Za-z0-9]{1,3})$/;
+
+/** The card id an uncut link text ends with, and the text before it; null without one. */
+function textCardId(text: string, rule: CardIdRule): { id: CardId; name: string } | null {
+  const m = TEXT_ID.exec(text);
+  const raw = m?.[1];
+  if (!m || raw === undefined) return null;
+  const whole = normalizeCardIdIn(rule, raw.replace(/\s/g, ''));
+  if (whole !== null) return { id: whole, name: text.slice(0, m.index).trim() };
+  const last = /[A-Za-z0-9]+$/.exec(raw)?.[0] ?? '';
+  const bare = /^\d+$/.test(last) ? normalizeCardIdIn(rule, last) : null;
+  return bare === null ? null : { id: bare, name: text.slice(0, text.length - last.length).trim() };
+}
 /** A price in the microdata's `content`: digits, a dot and at most two decimals. */
 const PRICE = /^\d+(?:\.\d{1,2})?$/;
 
@@ -125,7 +142,11 @@ export function parseEuroSoccerCardsPage(
     const img = box.find('img').first();
     const linkText = box.find('.product-title a').first().text().replace(/\s+/g, ' ').trim();
     const alt = (img.attr('alt') ?? '').replace(/\s+/g, ' ').trim();
-    const title = ALT_NAME.exec(alt)?.[1] ?? linkText;
+    const cut = linkText.endsWith('...');
+    const fromText = cut ? null : textCardId(linkText, rule);
+    const altName = alt.replace(ALT_LEAD, '').replace(ALT_TAIL, '').trim();
+    // The uncut link text without its id, else the alt's name, else the (cut) link text.
+    const title = fromText?.name || (cut ? altName || linkText : linkText);
     if (!href) {
       skip(`a product box without a link (${title ? quote(title) : `box ${index + 1}`})`);
       return;
@@ -144,9 +165,7 @@ export function parseEuroSoccerCardsPage(
       return;
     }
     // A link text that is not cut ends with the card's id: it must name the slug's card.
-    const textId = linkText.endsWith('...')
-      ? null
-      : normalizeCardIdIn(rule, (TEXT_ID.exec(linkText)?.[1] ?? '').replace(/\s/g, ''));
+    const textId = fromText?.id ?? null;
     if (textId !== null && textId !== cardId) {
       skip(`${quote(href)}: its text ${quote(linkText)} names another card than its link`);
       return;
@@ -156,8 +175,9 @@ export function parseEuroSoccerCardsPage(
       .find('link[itemprop="availability"]')
       .map((_, link) => readAvailability($(link).attr('href') ?? ''))
       .get() as (boolean | null)[];
-    const available = states.length > 0 && states.every((v) => v === states[0]) ? states[0] : null;
-    if (available === null || available === undefined) {
+    const first = states[0] ?? null;
+    const available = first !== null && states.every((v) => v === first) ? first : null;
+    if (available === null) {
       skip(
         `${quote(href)}: ${states.length === 0 ? 'no availability' : 'an unknown or conflicting availability'}`
       );

@@ -46,8 +46,9 @@ changes or a new one is suggested.
   category and `?page=N` (it disallows sort, filter and search parameters, and everything for
   PetalBot). Every card section but #343–353 and the relics, #135 included; 30 boxes were
   `OutOfStock` (flagged `Out-of-Stock`), the rest `InStock`. The list cuts titles
-  (`McLaren Mastercard Formula 1 Team F1...`); the picture's alt holds the name (`Buy Cards
-<name> Colección Turbo Attax 2026`) but no number, so the id comes from the slug only. Shipping
+  (`McLaren Mastercard Formula 1 Team F1...`); the uncut link text ends with the id (`Lando Norris 2026 F1 Hero 4`, checked against the slug),
+  and the picture's alt holds the name with a varying lead-in and set words (`Buy Cards <name>
+Colección Turbo Attax 2026`, `Get yours <name> Cards Turbo Attax F1 2026`) but no number, so the id comes from the slug only. Shipping
   to Germany: certified mail €5 (Europe zone A). Walk rules: see CLAUDE.md.
 - eBay Turbo Attax (2026-11-25 probe): `turbo attax 2026` had 4782 results, mostly German single
   cards (category "Trading Card Einzelkarten"), so the collection reads up to 40 pages

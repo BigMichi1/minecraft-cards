@@ -236,6 +236,21 @@ describe('createShopAdapters', () => {
     }
   });
 
+  test('a euro-soccer-cards category without its trailing slash is refused at start', () => {
+    const bad = {
+      ...turboAttax2026,
+      shops: {
+        'euro-soccer-cards': {
+          category: 'https://www.euro-soccer-cards.com/gb/topps-turbo-attax-2026',
+          slugSuffix: '',
+        },
+      },
+    };
+    expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+      'turbo-attax-2026: the euro-soccer-cards category must end with /'
+    );
+  });
+
   test('a euro-soccer-cards category on another host is refused at start', () => {
     const elsewhere = {
       ...turboAttax2026,

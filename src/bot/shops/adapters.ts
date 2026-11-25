@@ -75,6 +75,10 @@ function checkSettings(definition: CollectionDefinition): void {
         `${definition.id}: the ${shop} series label must be "Serie N"${shop === 'collect-it' ? ' or a year' : ''}`
       );
     }
+    if ('slugSuffix' in settings && !settings.category.endsWith('/')) {
+      // Products sit right inside the category: without the slash none would be inside it.
+      throw new Error(`${definition.id}: the euro-soccer-cards category must end with /`);
+    }
     if ('slugSuffix' in settings && !/^(?:-[a-z0-9]+)*$/.test(settings.slugSuffix)) {
       // Slugs are lowercased before the suffix is cut: another spelling would never match.
       throw new Error(

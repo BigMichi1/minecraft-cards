@@ -148,6 +148,27 @@ describe('parseEuroSoccerCardsPage', () => {
     expect(page.firstSkipped).toContain('names another card than its link');
   });
 
+  test("an F1 Car text checks its number too: Car 184 is no card of another slug's", () => {
+    const $ = cheerio.load(P1);
+    const a = $('.product-miniature').eq(3).find('.product-title a');
+    a.first().text('Kimi Antonelli 2026 F1 Car 184');
+    const page = read($.html());
+    expect(page.skipped).toBe(1);
+    expect(page.firstSkipped).toContain('names another card than its link');
+  });
+
+  test('the title is the uncut link text without its id, else the alt text without shop words', () => {
+    const page = read(P1);
+    expect(page.listings[3]!.title).toBe('Lando Norris 2026 F1 Hero');
+    const $ = cheerio.load(P1);
+    const box = $('.product-miniature').eq(3);
+    box.find('.product-title a').first().text('Lando Norris 2026 F1...');
+    box
+      .find('img')
+      .attr('alt', 'Get yours Lando Norris Power In Numbers Cards Turbo Attax F1 2026');
+    expect(read($.html()).listings[3]!.title).toBe('Lando Norris Power In Numbers');
+  });
+
   test('a query or fragment on a product link is dropped from the stored URL', () => {
     const $ = cheerio.load(P1);
     const a = $('.product-miniature').first().find('.product-title a');
@@ -169,7 +190,7 @@ describe('parseEuroSoccerCardsPage', () => {
     expect(page.firstSkipped).toContain('price');
   });
 
-  test('the title is the alt text without its shop words; a picture without a large size uses src', () => {
+  test('a cut link text takes the alt text without its shop words; a picture without a large size uses src', () => {
     const $ = cheerio.load(P1);
     const img = $('.product-miniature').first().find('img');
     img.attr(

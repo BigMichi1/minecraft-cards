@@ -11,7 +11,7 @@
 
 services:
   minecraft-cards:
-    # Tags: latest, main, 1.0.0 / 1.0 / 1 (releases), sha-<short-sha>
+    # Tags: latest, main, 0.2.0 / 0.2 (releases; from 1.0 on also the major, 1), sha-<short-sha>
     image: ghcr.io/bigmichi1/minecraft-cards:latest
     container_name: minecraft-cards
     restart: unless-stopped

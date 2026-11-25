@@ -23,7 +23,9 @@ collection step 2, measured in "Measurement on laststicker scans" below):
   scan URL clears the mark. Any other failure of a scan (5xx, timeout, network) never falls
   back: it is `image_unavailable`, retried once a day.
 - **A manual card** (`/admin catalog add|edit`): the admin's picture, else the shop picture.
-- No picture at all: `no_picture`, the card's listings are `no_reference`.
+- No picture at all: `no_picture`, the card's listings are `no_reference`. Turbo Attax has no
+  fallback shop: its relics (`MR-…`, `RR-…`, no laststicker scans on 2026-11-25) and #135
+  (missing on laststicker) are `no_reference` unless the admin gives a picture.
 
 A card whose chosen reference changes has its mismatches compared again: a new or changed scan
 (sync), a shop picture in use that changed (sammel-ente's run), a scan that answers 404 or 410

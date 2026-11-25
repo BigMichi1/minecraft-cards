@@ -16,11 +16,12 @@ changes or a new one is suggested.
 
 ## Per collection (2026-11-24)
 
-| Collection         | sammel-ente                                                                        | collect-it                                                                                                                                | blue-ocean | eBay     |
-| ------------------ | ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------- |
-| `lego-minecraft-1` | [`/Minecraft/Serie-1/`](https://shop-sammel-ente.de/Minecraft/Serie-1/) (13 pages) | [`/sammelwelt/…/serie1/Einzelkarten`](https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten) (256 singles) | yes        | yes      |
-| `lego-minecraft-2` | [`/Minecraft/Serie-2/`](https://shop-sammel-ente.de/Minecraft/Serie-2/) (13 pages) | none (no single-card category)                                                                                                            | yes        | yes      |
-| `lego-minecraft-3` | as below                                                                           | as below                                                                                                                                  | as below   | as below |
+| Collection         | sammel-ente                                                                        | collect-it                                                                                                                                                                                    | blue-ocean | eBay     |
+| ------------------ | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | -------- |
+| `lego-minecraft-1` | [`/Minecraft/Serie-1/`](https://shop-sammel-ente.de/Minecraft/Serie-1/) (13 pages) | [`/sammelwelt/…/serie1/Einzelkarten`](https://www.collect-it.de/sammelwelt/sammelkarten/lego/minecraft/serie1/Einzelkarten) (256 singles)                                                     | yes        | yes      |
+| `lego-minecraft-2` | [`/Minecraft/Serie-2/`](https://shop-sammel-ente.de/Minecraft/Serie-2/) (13 pages) | none (no single-card category)                                                                                                                                                                | yes        | yes      |
+| `lego-minecraft-3` | as below                                                                           | as below                                                                                                                                                                                      | as below   | as below |
+| `turbo-attax-2026` | none                                                                               | [`/sammelkarten/formel1/Topps-Turbo-Attax-Formel-1-2026/Einzelkarten`](https://www.collect-it.de/sammelkarten/formel1/Topps-Turbo-Attax-Formel-1-2026/Einzelkarten) (303 singles, 2026-11-25) | none       | yes      |
 
 - sammel-ente's titles name the series (`LEGO Minecraft Serie 1 | #001 Steve`, `#LE008`,
   `#XXL001`); one parser reads all three categories. A card title naming another series than the
@@ -30,6 +31,22 @@ changes or a new one is suggested.
   ending with another series label is skipped and counted, and still counts toward the article
   total; one without a series label fails the walk, as does a walk with no card of the series.
   `XXL 1 - …` (with a space) reads as XXL1.
+- collect-it's Turbo Attax titles end with the year (`4 - Lando Norris - 2026`,
+  `344 - George Russell - F1 Gold - 2026`, `GG8 - … - Greats Of The Grid - Limited Edition - 2026`,
+  `MR-HAM - Lewis Hamilton - Manufactured Relic - 2026`); the year is the series label, and the
+  first title part is read with Turbo Attax's card id rule. 303 articles on 11 pages, all in
+  stock (sold-out cards are hidden, as for Minecraft); no `LE`, `BG`, `GU`, `SUN` or `RR` card
+  was listed.
+- eBay Turbo Attax (2026-11-25 probe): `turbo attax 2026` had 4782 results, mostly German single
+  cards (category "Trading Card Einzelkarten"), so the collection reads 30 pages (`maxPages`).
+  Titles are read with Turbo Attax's forms (`shops/ebayTurboAttax.ts`): `#340`, `# 16`,
+  `NO 264`, `LE4`, `#LE6`, `BG 2`, `#GG1`, `MR-VER`, `MRSTE`; lots give all their ids
+  (`#157 #163 #174`). Never read: bare numbers (`Ferrari 8 Karten`, `237 - Carlos Sainz`),
+  `Karte N`/`Card N` (`Trading Card 2026`), unknown prefixes (`KA5`). Excluded: another year
+  (`Miami GP 2023`), pick lists, ranges (`#1 - 264`, `(1-288)`, `GG1-GG8`) and parallels
+  (`03/99`, `/94`, `Refractor`, `Pink`, `Rainbow`, `Green`, `Parallel`/`Variante`, `Gold` but
+  not `F1 Gold` or `Black Gold`). The fixture `ebay-search-turbo-attax.json` holds 40 reviewed
+  titles.
 - blue-ocean (2026-11-24 probe): series 1 has no category page of its own (series 2's
   `…/trading-card-collection-boom-bastic/` lists the same series 2 products as the walk); the
   sticker-cards category lists every series' singles, stickers and packs (31 pages, 734

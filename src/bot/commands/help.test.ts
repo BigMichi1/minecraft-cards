@@ -30,6 +30,8 @@ describe('/help', () => {
       '/card collection:<c> number:<id>',
       '/missing set collection:<c> list:<cards>',
       'LEGO Minecraft Serie 3 \\"On Fire\\"',
+      'Topps F1 Turbo Attax 2026',
+      'which cards you are missing, per collection',
       'shop:',
       '12, 45, LE8',
       '20-25',

@@ -14,7 +14,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
       .setColor(0x0099ff)
       .setTitle('Minecraft Cards Bot - Help')
       .setDescription(
-        'Tell the bot which Minecraft cards you are missing and it sends you a DM when one is available in a shop.'
+        'Tell the bot which cards you are missing, per collection, and it sends you a DM when one is available in a shop.'
       )
       .addFields(
         {

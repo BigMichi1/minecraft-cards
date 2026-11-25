@@ -501,7 +501,8 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
 - eBay: `EbayCollectionSettings.idForms` picks the title reader (`minecraft` or `turbo-attax`),
   `excludes` the parallels, `maxPages` the page cap of the collection's searches (default 5, 1 to
   50, a shared query reads the largest; Turbo Attax 40 for 4782 results). Turbo Attax ids are
-  never a driver's race number beside the driver, and relic codes count only in a relic's title.
+  never the race number of a driver the title names (unless the catalog names him on that card),
+  and relic codes count only in a relic's title.
 - collect-it reads only the collection's kind of series label (`Serie N` or a year). Series 3's name check weighs only `minecraft` collections.
 - laststicker's Turbo Attax list (2026-11-25) lacks #135 and misnames #134 (its scan is Sergio
   Perez, its name "Valtteri Bottas"); the admin adds #135 by hand.

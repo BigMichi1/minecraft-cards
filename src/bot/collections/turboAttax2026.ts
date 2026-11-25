@@ -20,6 +20,12 @@ export const turboAttax2026: CollectionDefinition<'turbo-attax-2026'> = {
         'https://www.collect-it.de/sammelkarten/formel1/Topps-Turbo-Attax-Formel-1-2026/Einzelkarten',
       series: '2026',
     },
+    // 392 singles on 11 pages, sold-out cards listed (2026-11-25 probe); the id is the URL
+    // slug's tail ("…-guardians-of-the-grid-gu-1-turbo-attax-2026" is GU1).
+    'euro-soccer-cards': {
+      category: 'https://www.euro-soccer-cards.com/gb/topps-turbo-attax-2026/',
+      slugSuffix: '-turbo-attax-2026',
+    },
     // "Topps Turbo Attax 2026 Formel 1 Mark Webber Turbo Chrome #340 Trading Card", "LE4", "MR-VER"
     // (2026-11-25 probe): 4782 results need 24 pages of 200; 40 leave room to grow (8000).
     ebay: {

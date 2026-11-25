@@ -1,12 +1,12 @@
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import type { CardId } from '../cards/cardId';
-import { notLoadedText } from '../collections/index';
+import { notLoadedText, shopsOf } from '../collections/index';
 import { COLLECTION_IDS, LEGACY_COLLECTION, type CollectionId } from '../collections/ids';
 import type { RunSummary } from '../check/runner';
 import { shopEntry } from '../database/runManager';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { SHOP_NAMES } from '../notify/messages';
-import { SHOP_IDS, type ShopId } from '../shops/types';
+import type { ShopId } from '../shops/types';
 import { DISCORD_MESSAGE_LIMIT } from '../utils/messageLimit';
 import { needsLastSuccess, shopCells, type CellContext, type ShopCell } from './shopCell';
 
@@ -47,15 +47,18 @@ const SHORT: Record<ShopId, string> = {
   'blue-ocean': 'BO',
   'collect-it': 'CI',
   ebay: 'EB',
+  'euro-soccer-cards': 'ES',
 };
 /** Cell values, ASCII only so the columns line up (Discord draws ✅ about two columns wide). */
 const IN_STOCK = 'x';
 const NOT_AVAILABLE = '-';
 const UNKNOWN = '?';
 const NOT_ENABLED = 'n/a';
-const LEGEND = [
+const legend = (collection: CollectionId) => [
   `\`${IN_STOCK}\` in stock · \`${NOT_AVAILABLE}\` not available · \`${UNKNOWN}\` not checked · \`${NOT_ENABLED}\` not enabled`,
-  SHOP_IDS.map((shop) => `${SHORT[shop]} ${SHOP_NAMES[shop]}`).join(' · '),
+  shopsOf(collection)
+    .map((shop) => `${SHORT[shop]} ${SHOP_NAMES[shop]}`)
+    .join(' · '),
 ];
 const GAP = '  ';
 const FENCE = '```';
@@ -166,7 +169,7 @@ function statusLines(input: StockInput): string[] {
   const lines = [
     [
       `Last check <t:${seconds(last.startedAt)}:R>`,
-      ...SHOP_IDS.map((s) => shopStatus(s, input, last)),
+      ...shopsOf(input.collection).map((s) => shopStatus(s, input, last)),
     ].join(' · '),
   ];
   if (input.now - last.startedAt > LAST_SUCCESS_WINDOW_MS) {
@@ -207,18 +210,20 @@ export function buildStockPage(input: StockInput): StockPage {
   const cellAt = shopCells(input);
   const rows = input.cards.map((card) => ({
     card: card as string,
-    cells: SHOP_IDS.map((shop) => cellText(cellAt(card, shop))),
+    cells: shopsOf(input.collection).map((shop) => cellText(cellAt(card, shop))),
   }));
   const shown = input.filter === 'in-stock' ? rows.filter((r) => r.cells.includes(IN_STOCK)) : rows;
   if (shown.length === 0) return { content: emptyText(input), components: [] };
 
   const cardWidth = Math.max('Card'.length, ...shown.map((r) => r.card.length));
-  const widths = SHOP_IDS.map((shop) => Math.max(SHORT[shop].length, NOT_ENABLED.length));
+  const widths = shopsOf(input.collection).map((shop) =>
+    Math.max(SHORT[shop].length, NOT_ENABLED.length)
+  );
   // Every line is padded to the full width (trailing spaces included), so each row costs the
   // same and the page can be filled exactly.
   const line = (cells: string[]) =>
     cells.map((text, i) => text.padEnd(i === 0 ? cardWidth : widths[i - 1]!)).join(GAP);
-  const header = line(['Card', ...SHOP_IDS.map((shop) => SHORT[shop])]);
+  const header = line(['Card', ...shopsOf(input.collection).map((shop) => SHORT[shop])]);
   const rowWidth = header.length;
   const status = statusLines(input);
 
@@ -230,7 +235,7 @@ export function buildStockPage(input: StockInput): StockPage {
       header,
       ...body,
       FENCE,
-      ...LEGEND,
+      ...legend(input.collection),
     ].join('\n');
   // The rows left after the frame, whose page label `x/y` is counted at its widest (`99/99` for
   // a two-digit page count). The page count depends on the rows per page, so its digits are

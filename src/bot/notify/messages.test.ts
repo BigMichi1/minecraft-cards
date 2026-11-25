@@ -73,6 +73,7 @@ describe('SHOP_NAMES', () => {
       'blue-ocean': 'blue-ocean',
       'collect-it': 'collect-it',
       ebay: 'eBay',
+      'euro-soccer-cards': 'euro-soccer-cards',
     });
   });
 });

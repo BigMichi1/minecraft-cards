@@ -1,8 +1,9 @@
+import { shopsOf } from '../collections/index';
 import { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import type { StoredListing } from '../database/listingManager';
 import { formatPrice, kleinanzeigenSearchUrl, SHOP_NAMES, validUrl } from '../notify/messages';
-import { SHOP_IDS, type ShopId } from '../shops/types';
+import type { ShopId } from '../shops/types';
 import { clipText } from '../utils/messageLimit';
 import { heldBack, pictureBacked, shopCells, type CellContext, type ShopCell } from './shopCell';
 
@@ -111,7 +112,7 @@ export function linkRows(buttons: ButtonBuilder[]): ActionRowBuilder<ButtonBuild
  */
 export function buildCardReply(input: CardInput): CardReply {
   const cellAt = shopCells(input);
-  const shops = input.shop ? [input.shop] : SHOP_IDS;
+  const shops = input.shop ? [input.shop] : shopsOf(input.collection);
   const lines: string[] = [];
   const buttons: ButtonBuilder[] = [];
   for (const shop of shops) {

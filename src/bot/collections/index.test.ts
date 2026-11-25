@@ -8,8 +8,10 @@ import { cid } from '../../test/cardIds';
 import { describe, expect, test } from 'bun:test';
 import { COLLECTION_IDS } from './ids';
 import type { CollectionId } from './ids';
+import { SHOP_IDS } from '../shops/types';
 import {
   anyCollectionCardId,
+  shopsOf,
   cardIdRuleOf,
   COLLECTIONS,
   collectionById,
@@ -124,6 +126,20 @@ describe('definition rules', () => {
         expect(normalizeCardIdIn(d.cardIds, id)).toBe(id as CardId);
       }
     }
+  });
+});
+
+describe('shopsOf', () => {
+  test("a collection's card commands show the shops its definition lists, in shop order", () => {
+    expect(shopsOf('lego-minecraft-3')).toEqual([
+      'sammel-ente',
+      'blue-ocean',
+      'collect-it',
+      'ebay',
+    ]);
+    expect(shopsOf('lego-minecraft-2')).toEqual(['sammel-ente', 'blue-ocean', 'ebay']);
+    expect(shopsOf('turbo-attax-2026')).toEqual(['collect-it', 'ebay', 'euro-soccer-cards']);
+    expect(shopsOf('other-set' as CollectionId)).toEqual([...SHOP_IDS]);
   });
 });
 

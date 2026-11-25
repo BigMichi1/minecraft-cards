@@ -117,6 +117,17 @@ export interface BlueOceanSettings {
   readonly excludes?: RegExp;
 }
 
+/** euro-soccer-cards' category of a set; card ids come from the product URL slug. */
+export interface EuroSoccerCardsSettings {
+  /** The category page (`?page=N` pages), on www.euro-soccer-cards.com. */
+  readonly category: string;
+  /**
+   * The set's tail of product slugs (`-turbo-attax-2026`), cut before the card id is read; `''`
+   * when the slugs end with the id.
+   */
+  readonly slugSuffix: string;
+}
+
 /** A collection's settings per shop; a collection lists only the shops that sell it. */
 export interface CollectionShops {
   /** The category page (`?p=N` pages). */
@@ -127,6 +138,8 @@ export interface CollectionShops {
   readonly 'blue-ocean'?: BlueOceanSettings;
   /** The collection's eBay searches and the series marker its titles name (`Serie 1`). */
   readonly ebay?: EbayCollectionSettings;
+  /** The set's single-card category (walked by `rel="next"`). */
+  readonly 'euro-soccer-cards'?: EuroSoccerCardsSettings;
 }
 
 /** One card set the bot watches: its own catalog, shops and wanted lists. */

@@ -1,3 +1,4 @@
+import { shopsOf } from '../collections/index';
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import type { ChatInputCommandInteraction } from 'discord.js';
 import { formatCardList } from '../cards/cardId';
@@ -5,7 +6,7 @@ import { catalogManager } from '../database/catalogManager';
 import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { userManager, type ListChange } from '../database/userManager';
-import { SHOP_IDS, type ShopId } from '../shops/types';
+import type { ShopId } from '../shops/types';
 import type { CardId } from '../cards/cardId';
 import type { CollectionId } from '../collections/ids';
 import {
@@ -108,7 +109,7 @@ function status(
   // the first readable run nothing is shown per shop, so nothing is looked up. null records
   // "looked up, none in the window", so the formatter can tell it from "not looked up".
   const lastSuccess: Partial<Record<ShopId, number | null>> = {};
-  for (const shop of SHOP_IDS) {
+  for (const shop of shopsOf(collection)) {
     if (needsLastSuccess(latest.summary, collection, shop, enabled)) {
       lastSuccess[shop] = runManager.lastSuccess(shop, collection, now) ?? null;
     }

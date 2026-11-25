@@ -146,12 +146,12 @@ function parseToken(rule: CardIdRule, token: string): CardId[] | null {
 }
 
 /**
- * Parse a comma separated list of ids and ranges under `rule` (Minecraft's unless given). Valid ids come back deduped and
+ * Parse a comma separated list of ids and ranges under the collection's `rule`. Valid ids come back deduped and
  * sorted; unparseable tokens come back, trimmed and in input order, in `invalid`.
  */
 export function parseCardList(
   input: string,
-  rule: CardIdRule = MINECRAFT_CARD_IDS
+  rule: CardIdRule
 ): { ids: CardId[]; invalid: string[] } {
   const ids = new Set<CardId>();
   const invalid: string[] = [];

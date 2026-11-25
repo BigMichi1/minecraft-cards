@@ -1,3 +1,4 @@
+import { MINECRAFT_CARD_IDS } from '../cards/cardId';
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { db, initializeDatabase } from './db';
@@ -13,7 +14,7 @@ import type { CollectionId } from '../collections/ids';
 /** A collection outside the registry, to show reads stay inside their own collection. */
 const OTHER = 'other-set' as CollectionId;
 
-const starter = parseChecklist(STARTER_CHECKLIST).ids;
+const starter = parseChecklist(STARTER_CHECKLIST, MINECRAFT_CARD_IDS).ids;
 const base228 = starter.filter((id) => /^\d+$/.test(id));
 const le1to21 = starter.filter((id) => /^LE\d+$/.test(id) && id !== 'LE22');
 
@@ -146,7 +147,11 @@ describe('catalogManager', () => {
     expect(p.added).toEqual([cid('LE23')]);
     expect(p.removed).toEqual([cid('LE22')]);
     expect(p.removedStillWanted).toEqual([{ cardId: cid('LE22'), users: 1 }]);
-    expect(p.counts).toEqual({ base: 228, LE: 22, XXL: 1 });
+    expect(p.counts).toEqual([
+      { group: 'base', count: 228 },
+      { group: 'LE', count: 22 },
+      { group: 'XXL', count: 1 },
+    ]);
 
     catalogManager.applyImport({ collection: 'lego-minecraft-3', ids: next });
     expect(catalogManager.knownIds('lego-minecraft-3').has(cid('LE22'))).toBe(false);
@@ -168,7 +173,12 @@ describe('catalogManager', () => {
       collection: 'turbo-attax-2026',
       ids: ids('1', 'LE1', 'GG1', 'GG2', 'MR-HAM'),
     });
-    expect(p.counts).toEqual({ base: 1, GG: 2, LE: 1, 'MR-': 1 });
+    expect(p.counts).toEqual([
+      { group: 'base', count: 1 },
+      { group: 'GG', count: 2 },
+      { group: 'LE', count: 1 },
+      { group: 'MR-', count: 1 },
+    ]);
   });
 
   test("parseKnownCardList reads with the collection's own id rule", () => {
@@ -182,6 +192,16 @@ describe('catalogManager', () => {
       ok: false,
       reason: 'invalid',
       invalid: ['GG1', 'MR-HAM'],
+    });
+    // Without the catalog check only the rule refuses them (userManager.removeFromList).
+    expect(parseKnownCardList('lego-minecraft-3', 'GG1, 12', { checkCatalog: false })).toEqual({
+      ok: false,
+      reason: 'invalid',
+      invalid: ['GG1'],
+    });
+    expect(parseKnownCardList('turbo-attax-2026', 'GG1, 12', { checkCatalog: false })).toEqual({
+      ok: true,
+      ids: ids('12', 'GG1'),
     });
   });
 

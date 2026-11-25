@@ -57,9 +57,7 @@ export function buildPreviewText(collection: CollectionId, preview: ImportPrevie
   const { counts, added, removed, removedStillWanted } = preview;
   const lines = [
     `Collection: ${collectionName(collection)}`,
-    `Catalog: ${Object.entries(counts)
-      .map(([group, n]) => `${n} ${group}`)
-      .join(', ')}.`,
+    `Catalog: ${counts.map(({ group, count }) => `${count} ${group}`).join(', ')}.`,
     joinWithinLimit('Added: ', added.length > 0 ? added : ['none'], 600),
     joinWithinLimit('Removed: ', removed.length > 0 ? removed : ['none'], 600),
   ];

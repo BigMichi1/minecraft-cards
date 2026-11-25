@@ -50,30 +50,38 @@ describe('cardType and compareCardIds', () => {
 
 describe('parseCardList', () => {
   test('parses a mixed list', () => {
-    expect(parseCardList('#012, 12 , LE008, le 8, 20-22, LE1-LE2, xxl1, foo, 0, 25-20')).toEqual({
+    expect(
+      parseCardList(
+        '#012, 12 , LE008, le 8, 20-22, LE1-LE2, xxl1, foo, 0, 25-20',
+        MINECRAFT_CARD_IDS
+      )
+    ).toEqual({
       ids: ids('12', '20', '21', '22', 'LE1', 'LE2', 'LE8', 'XXL1'),
       invalid: ['foo', '0', '25-20'],
     });
   });
 
   test('supports the LE1-3 shorthand', () => {
-    expect(parseCardList('LE1-3').ids).toEqual(ids('LE1', 'LE2', 'LE3'));
+    expect(parseCardList('LE1-3', MINECRAFT_CARD_IDS).ids).toEqual(ids('LE1', 'LE2', 'LE3'));
   });
 
   test('rejects ranges over 300 ids but allows exactly 300', () => {
-    expect(parseCardList('1-301').invalid).toEqual(['1-301']);
-    expect(parseCardList('1-301').ids).toEqual([]);
-    expect(parseCardList('1-300').ids.length).toBe(300);
+    expect(parseCardList('1-301', MINECRAFT_CARD_IDS).invalid).toEqual(['1-301']);
+    expect(parseCardList('1-301', MINECRAFT_CARD_IDS).ids).toEqual([]);
+    expect(parseCardList('1-300', MINECRAFT_CARD_IDS).ids.length).toBe(300);
   });
 
   test('rejects mixed-type ranges', () => {
-    expect(parseCardList('5-LE3')).toEqual({ ids: [], invalid: ['5-LE3'] });
-    expect(parseCardList('LE1-XXL2')).toEqual({ ids: [], invalid: ['LE1-XXL2'] });
+    expect(parseCardList('5-LE3', MINECRAFT_CARD_IDS)).toEqual({ ids: [], invalid: ['5-LE3'] });
+    expect(parseCardList('LE1-XXL2', MINECRAFT_CARD_IDS)).toEqual({
+      ids: [],
+      invalid: ['LE1-XXL2'],
+    });
   });
 
   test('handles empty input and empty segments', () => {
-    expect(parseCardList('')).toEqual({ ids: [], invalid: [] });
-    expect(parseCardList(' , ,1,')).toEqual({ ids: [cid('1')], invalid: [] });
+    expect(parseCardList('', MINECRAFT_CARD_IDS)).toEqual({ ids: [], invalid: [] });
+    expect(parseCardList(' , ,1,', MINECRAFT_CARD_IDS)).toEqual({ ids: [cid('1')], invalid: [] });
   });
 });
 
@@ -138,7 +146,17 @@ describe('card id rules', () => {
       ids: [],
       invalid: ['MR-HAM-MR-VER', 'GG1-LE2'],
     });
-    expect(parseCardList('GG1, XXL1').invalid).toEqual(['GG1']);
+    expect(parseCardList('GG1, XXL1', MINECRAFT_CARD_IDS).invalid).toEqual(['GG1']);
+  });
+
+  test('a formatted Turbo Attax list parses back to itself; codes never join into a range', () => {
+    const list = ids('1', '2', '3', 'SUN1', 'SUN2', 'SUN3', 'MR-HAM', 'MR-VER', 'RR-ALB');
+    const text = formatCardList(list);
+    expect(text).toBe('1-3, MR-HAM, MR-VER, RR-ALB, SUN1-SUN3');
+    expect(parseCardList(text, TURBO_ATTAX_CARD_IDS)).toEqual({
+      ids: ids('1', '2', '3', 'MR-HAM', 'MR-VER', 'RR-ALB', 'SUN1', 'SUN2', 'SUN3'),
+      invalid: [],
+    });
   });
 
   test('cardIdGroup names the prefix an id is counted under', () => {

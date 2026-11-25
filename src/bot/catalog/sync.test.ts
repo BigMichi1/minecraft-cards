@@ -24,7 +24,7 @@ import {
 } from './sync';
 
 const DAY = SYNC_EVERY_MS;
-const starter = parseChecklist(STARTER_CHECKLIST).ids;
+const starter = parseChecklist(STARTER_CHECKLIST, MINECRAFT_CARD_IDS).ids;
 const row = (id: string, name = `Card ${id}`): LaststickerRow => ({
   cardId: cid(id),
   name,

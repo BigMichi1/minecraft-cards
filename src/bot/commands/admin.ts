@@ -379,7 +379,10 @@ async function importCatalog(
   interaction: ChatInputCommandInteraction,
   collection: CollectionId
 ): Promise<void> {
-  const { ids, invalid } = parseChecklist(interaction.options.getString('list', true));
+  const { ids, invalid } = parseChecklist(
+    interaction.options.getString('list', true),
+    cardIdRuleOf(collection)
+  );
   if (invalid.length > 0) {
     await interaction.reply(
       ephemeral(joinWithinLimit('Nothing stored. Invalid tokens: ', [...new Set(invalid)]))

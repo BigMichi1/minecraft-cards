@@ -201,7 +201,7 @@ function pictureKey(url: string): string {
 
 export interface ImportPreview {
   /** Cards of the pasted list per group (`base`, `LE`, `GG`, `MR-`: cardIdGroup), in id order. */
-  counts: Record<string, number>;
+  readonly counts: readonly { readonly group: string; readonly count: number }[];
   added: CardId[];
   removed: CardId[];
   /** Manual cards the paste lacks: kept, as an import never removes the admin's cards. */
@@ -276,7 +276,7 @@ export const catalogManager = {
           .where(eq(cards.collection, collection))
           .get();
         if ((row?.n ?? 0) > 0) return;
-        insertCards(collection, parseChecklist(starterChecklist).ids);
+        insertCards(collection, parseChecklist(starterChecklist, cardIdRuleOf(collection)).ids);
       });
     }
   },
@@ -753,10 +753,12 @@ export const catalogManager = {
     const lacking = [...current].filter((id) => !next.has(id)).sort(compareCardIds);
     const removed = lacking.filter((id) => !manual.has(id));
     const keptManual = lacking.filter((id) => manual.has(id));
-    const counts: Record<string, number> = {};
+    const counts: { group: string; count: number }[] = [];
     for (const id of [...next].sort(compareCardIds)) {
       const group = cardIdGroup(id);
-      counts[group] = (counts[group] ?? 0) + 1;
+      const last = counts.at(-1);
+      if (last?.group === group) last.count++;
+      else counts.push({ group, count: 1 });
     }
 
     const removedStillWanted: { cardId: CardId; users: number }[] = [];

@@ -173,6 +173,7 @@ export const IMAGE_HOSTS: ReadonlySet<string> = new Set([
   'www.blue-ocean.de',
   'www.collect-it.de',
   'i.ebayimg.com',
+  'www.euro-soccer-cards.com',
   // laststicker's scans, the card references (catalog/laststicker.ts).
   LASTSTICKER_HOST,
 ]);

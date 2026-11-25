@@ -1,6 +1,6 @@
 # minecraft-cards-bot
 
-A Discord bot that checks shops (sammel-ente, blue-ocean, collect-it, optionally eBay) every hour
+A Discord bot that checks shops (sammel-ente, blue-ocean, collect-it, euro-soccer-cards, optionally eBay) every hour
 (configurable, `CHECK_INTERVAL_MINUTES`) for trading card availability (LEGO Minecraft, Topps F1
 Turbo Attax) and DMs users about the cards they are missing. A
 picture comparison against the card's laststicker scan (sammel-ente's picture where laststicker
@@ -8,7 +8,7 @@ has none) marks a listing as confirmed.
 
 Users keep one list per card collection (`lego-minecraft-1`, `lego-minecraft-2`,
 `lego-minecraft-3` and `turbo-attax-2026`: LEGO Minecraft series 1, 2 "TNT Boom-Bastic" and 3
-"On Fire", and Topps F1 Turbo Attax 2026, which collect-it and eBay sell); the card
+"On Fire", and Topps F1 Turbo Attax 2026, which collect-it, euro-soccer-cards and eBay sell); the card
 commands (`/missing *`, `/stock`, `/card`, `/admin map`, `/admin catalog import`) take a
 required `collection:` option. Users manage their list with
 `/missing set|add|remove|list|clear|status`; the admin runs `/admin` (`map`, `clear`, `status`,
@@ -17,7 +17,7 @@ synced from laststicker once a day; `catalog add` adds a card laststicker lacks.
 explains the rest.
 
 - `/stock collection:<c> [only:all|missing|in-stock]` pages through every card of that collection
-  (one row each, one column per shop): `x` in stock, `-` not available (held back and paused
+  (one row each, one column per shop that sells the collection): `x` in stock, `-` not available (held back and paused
   count as not available), `?` not checked, `n/a` not enabled. ◀ ▶ buttons turn the pages; each
   page fits in one message.
 - `/card collection:<c> number:<id> [shop:<shop>]` shows one card per shop (the best listing, the
@@ -26,7 +26,7 @@ explains the rest.
   prices compared in one currency) and a Kleinanzeigen search; `shop:` limits it to one shop.
 
 `/missing status` shows the last check per shop (with "data as of" for a shop whose check failed
-or did not run), then a table with one row per missing card and one column per shop:
+or did not run), then a table with one row per missing card and one column per shop that sells the collection:
 
 - A cell is a price, `in stock` (no price), `sold out`, `ended`, `paused`, `–` (the shop's last
   check succeeded and lists no such card), `?` (that check failed or never ran and nothing is

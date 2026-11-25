@@ -45,7 +45,7 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
         {
           name: '/card collection:<c> number:<id> [shop:<shop>]',
           value:
-            'One card in every shop (or just `shop:`), with buttons to the cheapest offer per shop. Example: `/card collection:lego-minecraft-3 number:LE8`',
+            'One card in every shop that sells it (or just `shop:`), with buttons to the cheapest offer per shop. Example: `/card collection:lego-minecraft-3 number:LE8`',
         },
         {
           name: 'Wrong card?',

@@ -145,6 +145,7 @@ describe('/card', () => {
       'blue-ocean',
       'collect-it',
       'eBay',
+      'euro-soccer-cards',
     ]);
   });
 

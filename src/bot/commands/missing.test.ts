@@ -227,7 +227,7 @@ describe('/missing', () => {
     expect(lastReply().content).toBe('Your missing list is now empty.');
   });
 
-  test('a shop the collection does not use is "not enabled" there', async () => {
+  test('a shop the collection lists but does not check is "not enabled"; one it does not list is left out', async () => {
     catalogManager.syncCollection(
       'lego-minecraft-2',
       [
@@ -259,7 +259,9 @@ describe('/missing', () => {
     };
     await executeWith(fakeInteraction('u1', 'status', undefined, 'lego-minecraft-2'), ctx);
     expect(lastReply().content).toContain('✅ sammel-ente: 297 listings');
-    expect(lastReply().content).toContain('⚪ collect-it: not enabled');
+    expect(lastReply().content).toContain('⚪ blue-ocean: not enabled');
+    // Series 2 lists no collect-it: no line, no column.
+    expect(lastReply().content).not.toContain('collect-it');
   });
 
   test('status shows the last check and each card with its shop state, ephemeral', async () => {

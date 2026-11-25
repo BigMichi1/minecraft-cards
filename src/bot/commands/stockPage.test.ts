@@ -108,6 +108,19 @@ describe('buildStockPage', () => {
     );
   });
 
+  test('a Turbo Attax page shows only the shops Turbo Attax lists, in its legend too', () => {
+    const page = buildStockPage(
+      input({
+        collection: 'turbo-attax-2026',
+        cards: ids('1', 'MR-HAM'),
+        latest: { summary: undefined, newerUnreadable: false },
+      })
+    );
+    expect(tableLines(page)[0]!.trim().split(/ +/)).toEqual(['Card', 'CI', 'EB', 'ES']);
+    expect(page.content).toContain('CI collect-it · EB eBay · ES euro-soccer-cards');
+    expect(page.content).not.toContain('SE sammel-ente');
+  });
+
   test("another collection's page reads its own shop results from the run", () => {
     const page = buildStockPage(
       input({

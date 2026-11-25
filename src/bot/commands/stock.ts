@@ -1,3 +1,4 @@
+import { shopsOf } from '../collections/index';
 import { MessageFlags, SlashCommandBuilder } from 'discord.js';
 import type { ButtonInteraction, ChatInputCommandInteraction } from 'discord.js';
 import { compareCardIds } from '../cards/cardId';
@@ -5,7 +6,7 @@ import { catalogManager } from '../database/catalogManager';
 import { listingManager } from '../database/listingManager';
 import { runManager } from '../database/runManager';
 import { userManager } from '../database/userManager';
-import { SHOP_IDS, type ShopId } from '../shops/types';
+import type { ShopId } from '../shops/types';
 import { replyWithError } from '../utils/interactionReply';
 import logger, { logError } from '../utils/logger';
 import type { CollectionId } from '../collections/ids';
@@ -54,7 +55,7 @@ function page(
   const latest = runManager.latestReadable();
   const enabled = enabledFor(ctx.enabledShops, collection);
   const lastSuccess: Partial<Record<ShopId, number | null>> = {};
-  for (const shop of SHOP_IDS) {
+  for (const shop of shopsOf(collection)) {
     if (needsLastSuccess(latest.summary, collection, shop, enabled)) {
       lastSuccess[shop] = runManager.lastSuccess(shop, collection, now) ?? null;
     }

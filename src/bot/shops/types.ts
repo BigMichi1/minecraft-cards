@@ -1,7 +1,13 @@
 import type { CardId } from '../cards/cardId';
 import type { CollectionId } from '../collections/ids';
 
-export const SHOP_IDS = ['sammel-ente', 'blue-ocean', 'collect-it', 'ebay'] as const;
+export const SHOP_IDS = [
+  'sammel-ente',
+  'blue-ocean',
+  'collect-it',
+  'ebay',
+  'euro-soccer-cards',
+] as const;
 export type ShopId = (typeof SHOP_IDS)[number];
 
 /** `shop`: a shop's own price; eBay listings are auctions or fixed price ("Buy It Now"). */

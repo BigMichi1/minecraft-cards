@@ -13,6 +13,7 @@ changes or a new one is suggested.
 | [blue-ocean.de](https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/) | yes (the publisher's own shop)  | yes                              | Shopware + Nuxt HTML, `?p=N` pages. One walk of the sticker-cards category for every collection; each product is placed by its URL (details below). Series 3's card id from the product URL suffix (`…-tcc-on-fire-2dd00088-12`; the title's "Nr." is wrong), series 1 and 2's from the title's `Nummer NNN`.                                              |
 | [collect-it.de](https://www.collect-it.de/sammelkarten/lego/minecraft/serie-3/Einzelkarten)           | yes (235 singles)               | yes                              | JTL shop HTML, 30 per page (`…/Einzelkarten_sN`), walked by `<link rel="next">`. Card id at the start of the title (`12 - Squid - …`, `LE01 - …`); price and stock from the listing page.                                                                                                                                                                  |
 | eBay (`EBAY_DE`)                                                                                      | yes (private and trade sellers) | yes, via the official Browse API | Developer account approved and the marketplace account deletion exemption granted ("I do not persist eBay data"); enabled by setting `EBAY_CLIENT_ID` / `EBAY_CLIENT_SECRET`. One run for every collection: each collection's searches (nine in all), every page by `offset`; card ids from titles naming exactly one collection's series (details below). |
+| [euro-soccer-cards.com](https://www.euro-soccer-cards.com/gb/topps-turbo-attax-2026/)                 | yes (Turbo Attax: 392 singles)  | yes                              | PrestaShop HTML, 36 per page (`?page=N`), walked by `<link rel="next">`. Card id from the product URL slug (`…-gu-1-turbo-attax-2026`); sold-out cards stay listed (`OutOfStock`). EU shop (Spain), ships to Germany.                                                                                                                                      |
 
 ## Per collection (2026-11-24, Turbo Attax 2026-11-25)
 
@@ -40,6 +41,15 @@ changes or a new one is suggested.
   series (skipped and counted). 303 articles on 11 pages, all in
   stock (sold-out cards are hidden, as for Minecraft); no `LE`, `BG`, `GU`, `SUN` or `RR` card
   was listed.
+- euro-soccer-cards (2026-11-25 probe, Turbo Attax): `https://www.euro-soccer-cards.com/gb/topps-turbo-attax-2026/`,
+  11 pages of 36 (the last 32), `There are 392 products.` above the grid; robots.txt allows the
+  category and `?page=N` (it disallows sort, filter and search parameters, and everything for
+  PetalBot). Every card section but #343–353 and the relics, #135 included; 30 boxes were
+  `OutOfStock` (flagged `Out-of-Stock`), the rest `InStock`. The list cuts titles
+  (`McLaren Mastercard Formula 1 Team F1...`); the uncut link text ends with the id (`Lando Norris 2026 F1 Hero 4`, checked against the slug),
+  and the picture's alt holds the name with a varying lead-in and set words (`Buy Cards <name>
+Colección Turbo Attax 2026`, `Get yours <name> Cards Turbo Attax F1 2026`) but no number, so the id comes from the slug only. Shipping
+  to Germany: certified mail €5 (Europe zone A). Walk rules: see CLAUDE.md.
 - eBay Turbo Attax (2026-11-25 probe): `turbo attax 2026` had 4782 results, mostly German single
   cards (category "Trading Card Einzelkarten"), so the collection reads up to 40 pages
   (`maxPages`; 24 were needed). Titles are read with Turbo Attax's forms

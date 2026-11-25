@@ -1,3 +1,4 @@
+import { shopsOf } from '../collections/index';
 import { EmbedBuilder } from 'discord.js';
 import type { CardId } from '../cards/cardId';
 import type { RunSummary } from '../check/runner';
@@ -5,7 +6,7 @@ import { shopEntry } from '../database/runManager';
 import type { StoredListing } from '../database/listingManager';
 import { LAST_SUCCESS_WINDOW_MS } from '../database/runManager';
 import { formatPrice, SHOP_NAMES, validUrl } from '../notify/messages';
-import { SHOP_IDS, type ShopId } from '../shops/types';
+import type { ShopId } from '../shops/types';
 import {
   heldBack,
   needsLastSuccess,
@@ -117,7 +118,7 @@ function headLines(input: StatusInput): string[] {
   if (last.error !== undefined) {
     head.push(`❌ Last check failed: ${last.error.slice(0, MAX_ERROR)}`);
   }
-  return [...head, '', ...SHOP_IDS.map((shop) => shopLine(shop, input, last))];
+  return [...head, '', ...shopsOf(input.collection).map((shop) => shopLine(shop, input, last))];
 }
 
 /** The cell text of a listing that is not in stock. */
@@ -221,7 +222,7 @@ function buildTable(input: StatusInput): { header: string; rows: Row[] } {
     const label = cardLabel(card, input);
     const links: string[] = [];
     const markers = new Set<Marker>();
-    const texts = SHOP_IDS.map((shop) => {
+    const texts = shopsOf(input.collection).map((shop) => {
       const cell = cellFor(cellAt(card, shop));
       for (const m of cell.markers) markers.add(m);
       if (!cell.link) return cellText(cell, undefined);
@@ -231,7 +232,7 @@ function buildTable(input: StatusInput): { header: string; rows: Row[] } {
     });
     return { label, texts, markers, links };
   });
-  const widths = SHOP_IDS.map((shop, i) =>
+  const widths = shopsOf(input.collection).map((shop, i) =>
     Math.max(SHOP_NAMES[shop].length, ...built.map((b) => b.texts[i]!.length))
   );
   const shopsWidth = widths.reduce((sum, w) => sum + GAP.length + w, 0);
@@ -245,7 +246,7 @@ function buildTable(input: StatusInput): { header: string; rows: Row[] } {
       .join(GAP)
       .trimEnd();
   return {
-    header: line(['Card', ...SHOP_IDS.map((shop) => SHOP_NAMES[shop])]),
+    header: line(['Card', ...shopsOf(input.collection).map((shop) => SHOP_NAMES[shop])]),
     rows: built.map((b) => ({
       text: line([shorten(b.label, cardWidth), ...b.texts]),
       markers: b.markers,
@@ -291,7 +292,7 @@ export function linkList(lines: string[], limit: number = EMBED_DESCRIPTION_LIMI
 
 /**
  * The `/missing status` reply: the latest check per shop, then a code-block table of the missing
- * cards (rows) by shop (columns), a legend of the markers shown, and an embed whose description
+ * cards (rows) by the shops the collection lists (columns, `shopsOf`), a legend of the markers shown, and an embed whose description
  * links every numbered in-stock cell. Whole rows are kept while the message fits Discord's 2000
  * characters, the rest counted as "… and K more cards" after the block; links of rows left out
  * are dropped, and links over 4096 characters are counted as "… and N more links". There is no
@@ -300,7 +301,7 @@ export function linkList(lines: string[], limit: number = EMBED_DESCRIPTION_LIMI
  */
 export function buildStatusReply(input: StatusInput): StatusReply {
   if (input.cards.length === 0) return { content: EMPTY_LIST, embeds: [] };
-  for (const shop of SHOP_IDS) {
+  for (const shop of shopsOf(input.collection)) {
     if (
       needsLastSuccess(input.latest.summary, input.collection, shop, input.enabledShops) &&
       input.lastSuccess[shop] === undefined

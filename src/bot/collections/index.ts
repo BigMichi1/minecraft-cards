@@ -1,4 +1,5 @@
 import { normalizeCardIdIn, type CardId, type CardIdRule } from '../cards/cardId';
+import { SHOP_IDS, type ShopId } from '../shops/types';
 import { COLLECTION_IDS, type CollectionDefinition, type CollectionId } from './ids';
 import { legoMinecraft1 } from './legoMinecraft1';
 import { legoMinecraft2 } from './legoMinecraft2';
@@ -56,6 +57,18 @@ export function collectionName(id: CollectionId): string {
 export function collectionKleinanzeigen(id: CollectionId): string | null {
   const known: Partial<Record<string, CollectionDefinition>> = DEFINITIONS;
   return known[id]?.kleinanzeigen ?? null;
+}
+
+/**
+ * The shops a collection's definition lists, in SHOP_IDS order: the columns and lines of its
+ * card commands (stored listings of another shop are not shown there; none is stored, as no
+ * adapter of that shop covers the collection). Every shop (SHOP_IDS) when no definition exists (a
+ * database row for an id this build does not define).
+ */
+export function shopsOf(id: CollectionId): readonly ShopId[] {
+  const known: Partial<Record<string, CollectionDefinition>> = DEFINITIONS;
+  const definition = known[id];
+  return definition ? SHOP_IDS.filter((shop) => definition.shops[shop] !== undefined) : SHOP_IDS;
 }
 
 /** Slash command choices for the `collection` option. */

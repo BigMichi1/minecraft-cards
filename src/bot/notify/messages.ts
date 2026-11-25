@@ -38,6 +38,7 @@ export const SHOP_NAMES: Record<ShopId, string> = {
   'blue-ocean': 'blue-ocean',
   'collect-it': 'collect-it',
   ebay: 'eBay',
+  'euro-soccer-cards': 'euro-soccer-cards',
 };
 
 /**

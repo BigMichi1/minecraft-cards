@@ -16,6 +16,7 @@ import { createPacedFetch } from '../utils/pacedFetch';
 import { blueOceanCollectionsOf, createBlueOceanFetcher } from './blueOcean';
 import { createCollectItFetcher } from './collectIt';
 import { createEbayFetcher, ebayCollectionsOf } from './ebay';
+import { createEuroSoccerCardsFetcher } from './euroSoccerCards';
 import { createSammelEnteFetcher } from './sammelEnte';
 import {
   SHOP_IDS,
@@ -38,6 +39,7 @@ export const SHOP_HOSTS: Readonly<Record<Exclude<ShopId, 'ebay'>, string>> = {
   'sammel-ente': 'shop-sammel-ente.de',
   'blue-ocean': 'www.blue-ocean.de',
   'collect-it': 'www.collect-it.de',
+  'euro-soccer-cards': 'www.euro-soccer-cards.com',
 };
 
 /** Test seams: the definitions, the fetch the pacers wrap, and their clock. */
@@ -57,18 +59,30 @@ export interface AdapterDeps {
  * collection read titles by `Nummer`), or with a `g`/`y` title or exclusion marker, or eBay
  * settings without a search (the collection's listings would be marked gone, never searched),
  * with a `g`/`y` marker or exclusion pattern (`test` would keep state between titles), or with a
- * page cap that is not a whole number from 1 to 50 (eBay takes no offset beyond 10000).
+ * page cap that is not a whole number from 1 to 50 (eBay takes no offset beyond 10000). A
+ * series label of no readable kind (collect-it `Serie N` or a year, sammel-ente `Serie N`) and a
+ * euro-soccer-cards slug suffix that is not a dash-led lowercase slug are refused too.
  */
 function checkSettings(definition: CollectionDefinition): void {
   checkIdRule(definition);
-  for (const shop of ['sammel-ente', 'collect-it'] as const) {
+  for (const shop of ['sammel-ente', 'collect-it', 'euro-soccer-cards'] as const) {
     const settings = definition.shops[shop];
     if (!settings) continue;
     // collect-it titles end with `Serie N` or a year; sammel-ente's name `Serie N` before their pipe.
     const label = shop === 'collect-it' ? /^(?:Serie \d+|(?:19|20)\d{2})$/ : /^Serie \d+$/;
-    if (!label.test(settings.series)) {
+    if ('series' in settings && !label.test(settings.series)) {
       throw new Error(
         `${definition.id}: the ${shop} series label must be "Serie N"${shop === 'collect-it' ? ' or a year' : ''}`
+      );
+    }
+    if ('slugSuffix' in settings && !settings.category.endsWith('/')) {
+      // Products sit right inside the category: without the slash none would be inside it.
+      throw new Error(`${definition.id}: the euro-soccer-cards category must end with /`);
+    }
+    if ('slugSuffix' in settings && !/^(?:-[a-z0-9]+)*$/.test(settings.slugSuffix)) {
+      // Slugs are lowercased before the suffix is cut: another spelling would never match.
+      throw new Error(
+        `${definition.id}: the euro-soccer-cards slug suffix must be empty or a dash-led lowercase slug`
       );
     }
     const host = new URL(settings.category).hostname;
@@ -217,6 +231,12 @@ function fetcherFor(
     case 'sammel-ente': {
       const settings = definition.shops['sammel-ente'];
       return settings ? createSammelEnteFetcher(settings, fetchFn) : null;
+    }
+    case 'euro-soccer-cards': {
+      const settings = definition.shops['euro-soccer-cards'];
+      return settings
+        ? createEuroSoccerCardsFetcher(settings, fetchFn, {}, definition.cardIds)
+        : null;
     }
     case 'collect-it': {
       const settings = definition.shops['collect-it'];

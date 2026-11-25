@@ -32,6 +32,7 @@ describe('createShopAdapters', () => {
       'sammel-ente:lego-minecraft-3',
       'collect-it:lego-minecraft-3',
       'collect-it:turbo-attax-2026',
+      'euro-soccer-cards:turbo-attax-2026',
       'blue-ocean:lego-minecraft-3',
     ]);
     expect(warned.some((w) => w.includes('eBay disabled'))).toBe(true);
@@ -69,7 +70,11 @@ describe('createShopAdapters', () => {
       'lego-minecraft-3',
       'turbo-attax-2026',
     ]);
-    expect(enabledShopsOf(value).get('turbo-attax-2026')).toEqual(['collect-it', 'ebay']);
+    expect(enabledShopsOf(value).get('turbo-attax-2026')).toEqual([
+      'collect-it',
+      'euro-soccer-cards',
+      'ebay',
+    ]);
     expect(enabledShopsOf(value).get('lego-minecraft-2')).toEqual([
       'sammel-ente',
       'blue-ocean',
@@ -214,6 +219,50 @@ describe('createShopAdapters', () => {
     expect(at('collect-it', '2026')).not.toThrow();
     expect(at('sammel-ente', '2026')).toThrow(
       'lego-minecraft-1: the sammel-ente series label must be "Serie N"'
+    );
+  });
+
+  test('a euro-soccer-cards slug suffix of no lowercase slug form is refused at start', () => {
+    for (const slugSuffix of ['-Turbo-Attax-2026', 'turbo-attax-2026', '-a/b']) {
+      const bad = {
+        ...turboAttax2026,
+        shops: {
+          'euro-soccer-cards': { ...turboAttax2026.shops['euro-soccer-cards']!, slugSuffix },
+        },
+      };
+      expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+        'turbo-attax-2026: the euro-soccer-cards slug suffix must be empty or a dash-led lowercase slug'
+      );
+    }
+  });
+
+  test('a euro-soccer-cards category without its trailing slash is refused at start', () => {
+    const bad = {
+      ...turboAttax2026,
+      shops: {
+        'euro-soccer-cards': {
+          category: 'https://www.euro-soccer-cards.com/gb/topps-turbo-attax-2026',
+          slugSuffix: '',
+        },
+      },
+    };
+    expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+      'turbo-attax-2026: the euro-soccer-cards category must end with /'
+    );
+  });
+
+  test('a euro-soccer-cards category on another host is refused at start', () => {
+    const elsewhere = {
+      ...turboAttax2026,
+      shops: {
+        'euro-soccer-cards': {
+          category: 'https://euro-soccer-cards.example/gb/topps-turbo-attax-2026/',
+          slugSuffix: '',
+        },
+      },
+    };
+    expect(() => createShopAdapters(null, undefined, { collections: [elsewhere] })).toThrow(
+      'turbo-attax-2026: euro-soccer-cards category is on euro-soccer-cards.example, not www.euro-soccer-cards.com'
     );
   });
 

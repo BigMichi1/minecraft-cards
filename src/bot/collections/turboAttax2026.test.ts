@@ -16,6 +16,10 @@ describe('turboAttax2026', () => {
             'https://www.collect-it.de/sammelkarten/formel1/Topps-Turbo-Attax-Formel-1-2026/Einzelkarten',
           series: '2026',
         },
+        'euro-soccer-cards': {
+          category: 'https://www.euro-soccer-cards.com/gb/topps-turbo-attax-2026/',
+          slugSuffix: '-turbo-attax-2026',
+        },
         ebay: {
           queries: ['turbo attax 2026'],
           idForms: 'turbo-attax',

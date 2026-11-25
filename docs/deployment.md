@@ -50,8 +50,8 @@ docker-compose logs -f minecraft-cards
 
 On start the log shows "Database migrations applied", the catalog and the model loading. The
 first check run after an update that brings new reference pictures (laststicker's scans,
-multi-collection step 2) downloads them at one per 1.5 s, about 6 minutes for series 3, before
-it sends DMs; later runs read them from the embedding cache. The
+multi-collection step 2) downloads them at one per 1.5 s, about 6 minutes for series 3 (251 cards), up to about 7 for
+series 1 (283) and 10 for Turbo Attax (402 scans; series 2 has none), before it sends DMs; later runs read them from the embedding cache. The
 database lives in the `./data` volume (`/app/data/cards.db`): back it up, it holds users'
 missing lists and listing state.
 
@@ -97,3 +97,9 @@ Series 1 and 2 have no starter catalog: their cards arrive with their first last
 card until then. sammel-ente sells two series 2 cards laststicker lacks (LE21 "Chicken Jockey",
 LE22 "Enderman"); add them with `/admin catalog add collection:lego-minecraft-2` if they are
 wanted.
+
+Topps F1 Turbo Attax 2026 has no starter catalog either: its 422 laststicker cards arrive with
+its first sync. laststicker lacks #135; add it with
+`/admin catalog add collection:turbo-attax-2026 card:135 name:Valtteri Bottas`. Its relics have
+no laststicker scans and no fallback shop, so their listings stay `no_reference` (alerts go out
+unconfirmed).

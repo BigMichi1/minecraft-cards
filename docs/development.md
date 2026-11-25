@@ -60,8 +60,8 @@ create it again. Production deploys only from `main`, whose migrations never cha
   rule (`cardIds`). A shop adapter is bound to one collection (`shops/adapters.ts`), except
   blue-ocean's one walk and eBay's one run, which cover every collection with their settings and
   store each listing in the collection its URL (blue-ocean) or title (eBay) names. The card
-  commands show the shops a collection lists. How to add a collection: `docs/collections.md`. Collection ids are never renamed or removed: the
-  database does not check them. A listing URL is unique across collections: it belongs to the
+  commands show the shops a collection lists. How to add a collection: `docs/collections.md`.
+  Collection ids are never renamed or removed: the database does not check them. A listing URL is unique across collections: it belongs to the
   collection that stored it first (an unmapped eBay listing moves to the collection its title
   now names), and `/admin map` maps only within that collection for now. The design and rollout
   are in `docs/superpowers/specs/2026-11-19-multi-collection-design.md`.

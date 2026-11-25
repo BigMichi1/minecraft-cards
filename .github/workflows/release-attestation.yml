@@ -97,22 +97,27 @@ jobs:
             echo "tags=$TAGS_JSON"
           } >> "$GITHUB_OUTPUT"
 
-      # docker.yml builds the image on the same release event; the notes name its tags and its
-      # verify command, so wait until the version tag is pushed (at most 30 minutes).
-      - name: Wait for the release image
+      # docker.yml builds and signs the image on the same release event; the notes name its tags
+      # and its verify command, so wait until that command passes: the version tag is pushed and
+      # signed (at most 30 minutes). The last failure is printed if it never does.
+      - name: Wait for the signed release image
         env:
           IMAGE: ${{ steps.release.outputs.image }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           VERSION="${RELEASE_TAG#v}"
+          last=""
           for _ in $(seq 1 60); do
-            if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
-              echo "$IMAGE:$VERSION is published"
+            if last="$(cosign verify "$IMAGE:$VERSION" \
+              --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com 2>&1)"; then
+              echo "$IMAGE:$VERSION is published and signed"
               exit 0
             fi
             sleep 30
           done
-          echo "::error::$IMAGE:$VERSION was not published within 30 minutes"
+          printf '%s\n' "$last" | tail -n 5
+          echo "::error::$IMAGE:$VERSION was not published and signed within 30 minutes"
           exit 1
 
       - name: Generate Release Manifest

@@ -11,7 +11,7 @@ import { ShopLayoutError } from './types';
 
 const SHOP = 'euro-soccer-cards' satisfies ShopId;
 const PAGE_DELAY_MS = 1500;
-/** 11 pages on 2026-11-25. */
+/** The page cap; the category had 11 pages on 2026-11-25. */
 const MAX_PAGES = 40;
 /** Products on every page but the last (from the saved pages). */
 const PAGE_SIZE = 36;
@@ -19,8 +19,13 @@ const BOX = '.product-miniature';
 const MAX_QUOTED = 200;
 // "There are 392 products." above the grid (page 1 and every other page).
 const PRODUCT_TOTAL = /^There (?:are|is) (\d+) products?\.$/;
-// The picture's alt: "Buy Cards <name> Colección Turbo Attax 2026".
-const ALT_NAME = /^Buy Cards (.+?)(?: Colección .*)?$/;
+// The picture's alt: "Buy Cards <name> Colección Turbo Attax 2026", also "Buy Cards online <name>
+// …" and "Buy Cards <name> Topps Formula 1 Turbo Attax 2026".
+const ALT_NAME = /^Buy Cards (?:online )?(.+?)(?: (?:Colección|Topps Formula) .*)?$/;
+// The id a link text ends with when it is not cut ("… Hero 4", "… SUN 8", "… Relic MR-HAM").
+const TEXT_ID = /(?:^|\s)((?:[A-Za-z]{2,3}[\s-]?)?[A-Za-z0-9]{1,3})$/;
+/** A price in the microdata's `content`: digits, a dot and at most two decimals. */
+const PRICE = /^\d+(?:\.\d{1,2})?$/;
 
 function quote(value: string): string {
   return `"${clipText(value, MAX_QUOTED)}"`;
@@ -44,9 +49,11 @@ export function euroSoccerCardsPageNumber(href: string, category: string): numbe
 }
 
 /**
- * The card id in a product URL's last path segment: the slug, less `suffix` when it ends with it, ends with the card number, a prefix of the rule
- * and its number (`…-gu-1`), or a code family and its letters (`…-mr-ham`). Other words before
- * the number are names (`…-f1-car-184` is #184). Null when none of these.
+ * The card id at the end of a product URL's last path segment, after `suffix` is cut off: a
+ * bare number (`…-184`), a rule prefix and its number (`…-gu-1` is GU1; a prefixed number the
+ * rule refuses falls back to the bare number), or a code family and its three letters
+ * (`…-mr-ham`). Any other word before the number is part of the name (`…-f1-car-184` is #184).
+ * Null otherwise, also for a tail of four or more digits (a year: a changed suffix).
  */
 export function slugCardId(url: string, rule: CardIdRule, suffix: string): CardId | null {
   const parsed = URL.parse(url);
@@ -56,6 +63,8 @@ export function slugCardId(url: string, rule: CardIdRule, suffix: string): CardI
   const parts = slug.split('-');
   const last = parts.at(-1) ?? '';
   const before = parts.at(-2) ?? '';
+  // A four-digit tail is a year or a changed slug suffix ("…-2026"), never a card number here.
+  if (/^\d{4,}$/.test(last)) return null;
   if (/^\d+$/.test(last)) {
     const prefixed = rule.prefixes.includes(before.toUpperCase())
       ? normalizeCardIdIn(rule, `${before}${last}`)
@@ -78,14 +87,18 @@ export interface EuroSoccerCardsPage {
   /** The raw hrefs of `<link rel="canonical">` and `<link rel="next">`, null when absent. */
   readonly canonical: string | null;
   readonly next: string | null;
-  /** Boxes without a link, a card id or a known availability. */
+  /**
+   * Boxes without a link, with a link outside the category, without a card id (or with a link
+   * text naming another card), a known and consistent availability, or a readable price.
+   */
   readonly skipped: number;
   readonly firstSkipped: string | null;
 }
 
 /**
- * Parse one category page. The category holds only singles: a box whose id or availability
- * cannot be read is skipped and counted, and the fetcher fails the walk on any. A sold-out card
+ * Parse one category page. The category holds only singles: a box whose link, id, availability
+ * or price cannot be read is skipped and counted (also one whose uncut link text ends with
+ * another card's id than its slug), and the fetcher fails the walk on any. A sold-out card
  * stays listed (`OutOfStock`), so it is stored unavailable, never skipped.
  */
 export function parseEuroSoccerCardsPage(
@@ -122,30 +135,43 @@ export function parseEuroSoccerCardsPage(
       skip(`${quote(href)}: a link outside the category`);
       return;
     }
-    const url = parsedUrl.toString();
+    // Stored without query or fragment (PrestaShop adds `#/…` for combinations), so a listing
+    // keeps one URL from run to run.
+    const url = `${parsedUrl.origin}${parsedUrl.pathname}`;
     const cardId = slugCardId(url, rule, settings.slugSuffix);
     if (cardId === null) {
       skip(`${quote(href)}: no card id in the link`);
       return;
     }
-    const availabilityHref = box.find('link[itemprop="availability"]').first().attr('href');
-    const available = availabilityHref === undefined ? null : readAvailability(availabilityHref);
-    if (available === null) {
+    // A link text that is not cut ends with the card's id: it must name the slug's card.
+    const textId = linkText.endsWith('...')
+      ? null
+      : normalizeCardIdIn(rule, (TEXT_ID.exec(linkText)?.[1] ?? '').replace(/\s/g, ''));
+    if (textId !== null && textId !== cardId) {
+      skip(`${quote(href)}: its text ${quote(linkText)} names another card than its link`);
+      return;
+    }
+    // Every availability link of the box must say the same.
+    const states = box
+      .find('link[itemprop="availability"]')
+      .map((_, link) => readAvailability($(link).attr('href') ?? ''))
+      .get() as (boolean | null)[];
+    const available = states.length > 0 && states.every((v) => v === states[0]) ? states[0] : null;
+    if (available === null || available === undefined) {
       skip(
-        `${quote(href)}: ${availabilityHref === undefined ? 'no availability' : `unknown availability ${quote(availabilityHref)}`}`
+        `${quote(href)}: ${states.length === 0 ? 'no availability' : 'an unknown or conflicting availability'}`
       );
       return;
     }
     const amount = box.find('[itemprop="price"]').first().attr('content');
-    const currency = box.find('meta[itemprop="priceCurrency"]').first().attr('content') || 'EUR';
-    let price: Listing['price'] = null;
-    if (amount !== undefined && /^\d+(?:\.\d{1,2})?$/.test(amount)) {
-      price = { cents: Math.round(Number.parseFloat(amount) * 100), currency };
-    } else {
-      logger.warn(
-        `euro-soccer-cards: ${quote(href)} has ${amount === undefined ? 'no price' : `a malformed price ${quote(amount)}`}`
+    if (amount === undefined || !PRICE.test(amount)) {
+      skip(
+        `${quote(href)}: ${amount === undefined ? 'no price' : `a malformed price ${quote(amount)}`}`
       );
+      return;
     }
+    const currency = box.find('meta[itemprop="priceCurrency"]').first().attr('content') || 'EUR';
+    const price = { cents: Math.round(Number.parseFloat(amount) * 100), currency };
     const picture = img.attr('data-full-size-image-url') ?? img.attr('src');
     listings.push({
       shop: SHOP,
@@ -189,8 +215,9 @@ async function fetchPage(url: string, page: number, fetchFn: FetchFn | undefined
  * euro-soccer-cards.com lists a set's singles in one category, 36 per page (`?page=N`), sold-out
  * cards included (`OutOfStock`). The walk follows `<link rel="next">`; each page's canonical link
  * must name the page asked for (a page past the end redirects to page 1), every page must hold
- * products and every box must be readable, every page linking a next one must be full, and the
- * cards read must equal the total page 1 names. Anything else, or reaching MAX_PAGES, is a
+ * products and every box must be readable, every page's `rel="next"` must name the next page,
+ * every page linking a next one must be full, and the distinct products read must equal the
+ * total page 1 names. Anything else, or reaching MAX_PAGES, is a
  * ShopLayoutError: a partial read would mark real listings gone. Card ids come from the URL slug
  * only (the list shows titles cut short, and the picture's alt names no number).
  */
@@ -269,6 +296,18 @@ export function createEuroSoccerCardsFetcher(
         throw new ShopLayoutError(
           `euro-soccer-cards: read ${byUrl.size} products, but page 1 counts ${total}`
         );
+      }
+      // One card under two URLs is the sign of a misread slug: logged for the admin's log.
+      const urlsById = new Map<CardId, string[]>();
+      for (const l of byUrl.values()) {
+        for (const id of l.cardIds) urlsById.set(id, [...(urlsById.get(id) ?? []), l.url]);
+      }
+      for (const [id, urls] of urlsById) {
+        if (urls.length > 1) {
+          logger.warn(
+            `euro-soccer-cards: card ${id} under ${urls.length} products: ${urls.join(', ')}`
+          );
+        }
       }
       return { listings: [...byUrl.values()] };
     },

@@ -292,7 +292,7 @@ export function linkList(lines: string[], limit: number = EMBED_DESCRIPTION_LIMI
 
 /**
  * The `/missing status` reply: the latest check per shop, then a code-block table of the missing
- * cards (rows) by shop (columns), a legend of the markers shown, and an embed whose description
+ * cards (rows) by the shops the collection lists (columns, `shopsOf`), a legend of the markers shown, and an embed whose description
  * links every numbered in-stock cell. Whole rows are kept while the message fits Discord's 2000
  * characters, the rest counted as "… and K more cards" after the block; links of rows left out
  * are dropped, and links over 4096 characters are counted as "… and N more links". There is no

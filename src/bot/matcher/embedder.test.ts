@@ -759,6 +759,7 @@ describe('allowedImageUrl', () => {
       'https://www.blue-ocean.de/a.jpg',
       'https://www.collect-it.de/media/image/product/623996/md/12-squid-charakterkarte-serie-3.jpg',
       'https://i.ebayimg.com/images/g/a/s-l225.jpg',
+      'https://www.euro-soccer-cards.com/185224-large_default/x-le-15-turbo-attax-2026.jpg',
       'https://www.laststicker.com/i/cards/12125/1.jpg',
     ]) {
       expect(allowedImageUrl(ok)).toBe(true);

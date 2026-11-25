@@ -119,11 +119,15 @@ export interface BlueOceanSettings {
 
 /** euro-soccer-cards' category of a set; card ids come from the product URL slug. */
 export interface EuroSoccerCardsSettings {
-  /** The category page (`?page=N` pages), on www.euro-soccer-cards.com. */
+  /**
+   * The category page (`?page=N` pages), on www.euro-soccer-cards.com, ending with `/`: the
+   * products sit right inside it (`…/topps-turbo-attax-2026/<slug>`).
+   */
   readonly category: string;
   /**
-   * The set's tail of product slugs (`-turbo-attax-2026`), cut before the card id is read; `''`
-   * when the slugs end with the id.
+   * The set's tail of product slugs (`-turbo-attax-2026`), cut before the card id is read when a
+   * slug ends with it; `''` when the slugs end with the id. Lowercase and dash-led (slugs are
+   * lowercased first; checked at start).
    */
   readonly slugSuffix: string;
 }

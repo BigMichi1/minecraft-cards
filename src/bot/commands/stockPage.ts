@@ -199,8 +199,9 @@ function pagingRow(collection: CollectionId, page: number, pages: number, filter
 }
 
 /**
- * One `/stock` page: a title with the filter and `page x/y`, the last check per shop, a code
- * block with a row per card and a column per shop (`x`, `-`, `?`, `n/a`), and a legend. The rows
+ * One `/stock` page: a title with the filter and `page x/y`, the last check per shop the
+ * collection lists (`shopsOf`), a code block with a row per card and a column per such shop
+ * (`x`, `-`, `?`, `n/a`), and a legend. The rows
  * per page follow from the widths: what the page holds without rows, counted with the widest
  * page label, leaves room for a whole number of rows of the table's full width, so every page
  * fits in Discord's 2000 characters and one more row would not. With more than one page, ◀ ▶

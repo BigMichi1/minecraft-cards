@@ -222,6 +222,20 @@ describe('createShopAdapters', () => {
     );
   });
 
+  test('a euro-soccer-cards slug suffix of no lowercase slug form is refused at start', () => {
+    for (const slugSuffix of ['-Turbo-Attax-2026', 'turbo-attax-2026', '-a/b']) {
+      const bad = {
+        ...turboAttax2026,
+        shops: {
+          'euro-soccer-cards': { ...turboAttax2026.shops['euro-soccer-cards']!, slugSuffix },
+        },
+      };
+      expect(() => createShopAdapters(null, undefined, { collections: [bad] })).toThrow(
+        'turbo-attax-2026: the euro-soccer-cards slug suffix must be empty or a dash-led lowercase slug'
+      );
+    }
+  });
+
   test('a euro-soccer-cards category on another host is refused at start', () => {
     const elsewhere = {
       ...turboAttax2026,

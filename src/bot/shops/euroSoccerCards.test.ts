@@ -11,6 +11,7 @@ import {
   slugCardId,
 } from './euroSoccerCards';
 import { ShopLayoutError } from './types';
+import { HttpError } from '../utils/http';
 
 const SETTINGS = turboAttax2026.shops['euro-soccer-cards']!;
 const CATEGORY = SETTINGS.category;
@@ -58,7 +59,16 @@ describe('slugCardId', () => {
     expect(slugCardId(product(slug), TURBO_ATTAX_CARD_IDS, SETTINGS.slugSuffix)).toBe(cid(id));
   });
 
-  test('a slug without a trailing card id, or a prefix of another rule, reads nothing', () => {
+  test('a year or other four-digit tail is no card id; a prefix the rule does not know is a name', () => {
+    expect(
+      slugCardId(product('lando-norris-2026'), TURBO_ATTAX_CARD_IDS, SETTINGS.slugSuffix)
+    ).toBeNull();
+    expect(
+      slugCardId(product('x-le-1-turbo-attax-f1-2026'), TURBO_ATTAX_CARD_IDS, SETTINGS.slugSuffix)
+    ).toBeNull();
+  });
+
+  test('a slug without a trailing card id reads nothing; an unknown prefix leaves the number', () => {
     expect(slugCardId(product('mclaren-team-logos'), TURBO_ATTAX_CARD_IDS, '')).toBeNull();
     expect(slugCardId(product('x-gu-1'), MINECRAFT_CARD_IDS, '')).toBe(cid('1'));
     expect(slugCardId(product('x-gu-0'), TURBO_ATTAX_CARD_IDS, '')).toBeNull();
@@ -128,6 +138,52 @@ describe('parseEuroSoccerCardsPage', () => {
     expect(page.firstSkipped).toContain('availability');
   });
 
+  test('the link text, when not cut, must name the same card as the slug', () => {
+    const $ = cheerio.load(P1);
+    const a = $('.product-miniature').eq(3).find('.product-title a').first();
+    expect(a.text().trim()).toBe('Lando Norris 2026 F1 Hero 4');
+    a.text('Lando Norris 2026 F1 Hero 5');
+    const page = read($.html());
+    expect(page.skipped).toBe(1);
+    expect(page.firstSkipped).toContain('names another card than its link');
+  });
+
+  test('a query or fragment on a product link is dropped from the stored URL', () => {
+    const $ = cheerio.load(P1);
+    const a = $('.product-miniature').first().find('.product-title a');
+    a.attr('href', `${a.attr('href')}?utm_source=x#/1-size-s`);
+    expect(read($.html()).listings[0]!.url).toBe(
+      product('mclaren-mastercard-formula-1-team-f1-team-logos-1')
+    );
+  });
+
+  test('a box without a readable price, or with stock links that disagree, is unreadable', () => {
+    const $ = cheerio.load(P1);
+    $('.product-miniature').first().find('[itemprop="price"]').attr('content', '1,50');
+    $('.product-miniature').eq(1).find('[itemprop="price"]').remove();
+    $('.product-miniature')
+      .eq(2)
+      .append('<link itemprop="availability" href="http://schema.org/OutOfStock">');
+    const page = read($.html());
+    expect(page.skipped).toBe(3);
+    expect(page.firstSkipped).toContain('price');
+  });
+
+  test('the title is the alt text without its shop words; a picture without a large size uses src', () => {
+    const $ = cheerio.load(P1);
+    const img = $('.product-miniature').first().find('img');
+    img.attr(
+      'alt',
+      'Buy Cards online McLaren Mastercard Formula 1 Team F1 Team Logos Topps Formula 1 Turbo Attax 2026'
+    );
+    img.removeAttr('data-full-size-image-url');
+    const first = read($.html()).listings[0]!;
+    expect(first.title).toBe('McLaren Mastercard Formula 1 Team F1 Team Logos');
+    expect(first.imageUrl).toBe(
+      'https://www.euro-soccer-cards.com/184504-home_default/mclaren-mastercard-formula-1-team-f1-team-logos-1.jpg'
+    );
+  });
+
   test('a product link outside the category is skipped', () => {
     const $ = cheerio.load(P1);
     const link = (n: number) => $('.product-miniature').eq(n).find('.product-title a');
@@ -148,9 +204,16 @@ describe('parseEuroSoccerCardsPage', () => {
 });
 
 describe('createEuroSoccerCardsFetcher', () => {
-  test('walks rel="next" and reads exactly the total', async () => {
+  test('walks rel="next", 1500 ms between pages, and reads exactly the total', async () => {
     const { fetchFn, calls } = twoPages();
-    const result = await fetchAll(fetchFn);
+    const sleeps: number[] = [];
+    const result = await createEuroSoccerCardsFetcher(
+      SETTINGS,
+      fetchFn,
+      { sleep: async (ms) => void sleeps.push(ms) },
+      TURBO_ATTAX_CARD_IDS
+    ).fetchListings();
+    expect(sleeps).toEqual([1500]);
     expect(calls).toEqual([CATEGORY, `${CATEGORY}?page=2`]);
     expect(result.listings).toHaveLength(68);
     expect(result.listings.filter((l) => !l.available).length).toBeGreaterThan(0);
@@ -174,11 +237,52 @@ describe('createEuroSoccerCardsFetcher', () => {
       },
       'unreadable product box',
     ],
+    [
+      'a canonical link missing',
+      { p2: (html: string) => html.replace(/<link rel="canonical"[^>]*>/, '') },
+      'page 2 has no canonical link',
+    ],
   ] as const)('%s is a ShopLayoutError', async (_name, over, message) => {
     const { fetchFn } = twoPages(over);
     const error = await fetchAll(fetchFn).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ShopLayoutError);
     expect(String(error)).toContain(message);
+  });
+
+  test('a next link naming another page, or a short page linking one, is a ShopLayoutError', async () => {
+    const wrongNext = cheerio.load(P1);
+    wrongNext('link[rel="next"]').attr('href', `${CATEGORY}?page=3`);
+    const e1 = await fetchAll(fakeFetch({ [CATEGORY]: wrongNext.html() }).fetchFn).catch(
+      (e: unknown) => e
+    );
+    expect(String(e1)).toContain('page 1 links page 3 as the next page');
+    const short = cheerio.load(P1);
+    short('.product-miniature').last().remove();
+    const e2 = await fetchAll(fakeFetch({ [CATEGORY]: short.html() }).fetchFn).catch(
+      (e: unknown) => e
+    );
+    expect(String(e2)).toContain('page 1 has 35 products, but links a next page');
+  });
+
+  test('a product on two pages counts once, so the total no longer matches', async () => {
+    const { fetchFn } = twoPages({
+      total: 68,
+      p2: () => {
+        const $ = cheerio.load(P11);
+        const firstOfP1 = cheerio.load(P1)('.product-miniature').first();
+        $('.product-miniature').first().replaceWith(firstOfP1);
+        return $.html();
+      },
+    });
+    const error = await fetchAll(fetchFn).catch((e: unknown) => e);
+    expect(String(error)).toContain('read 67 products, but page 1 counts 68');
+  });
+
+  test('an HTTP error on page 2 rejects with it, nothing returned', async () => {
+    const { fetchFn } = twoPages();
+    const failing: typeof fetchFn = async (url, init) =>
+      url.endsWith('?page=2') ? new Response('busy', { status: 503 }) : fetchFn(url, init);
+    await expect(fetchAll(failing)).rejects.toBeInstanceOf(HttpError);
   });
 
   test('page 1 without a total, a page without boxes and the page cap are ShopLayoutErrors', async () => {
@@ -201,7 +305,7 @@ describe('createEuroSoccerCardsFetcher', () => {
       `<html><head><link rel="canonical" href="${page === 1 ? CATEGORY : `${CATEGORY}?page=${page}`}">` +
       `<link rel="next" href="${CATEGORY}?page=${page + 1}"></head><body>` +
       `<div class="total-products">There are 9999 products.</div>` +
-      Array.from({ length: 36 }, (_, i) => box(page * 100 + i + 1)).join('') +
+      Array.from({ length: 36 }, (_, i) => box((page % 20) * 36 + i + 1)).join('') +
       '</body></html>';
     const capped = await createEuroSoccerCardsFetcher(
       SETTINGS,

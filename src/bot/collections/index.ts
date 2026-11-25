@@ -61,7 +61,9 @@ export function collectionKleinanzeigen(id: CollectionId): string | null {
 
 /**
  * The shops a collection's definition lists, in SHOP_IDS order: the columns and lines of its
- * card commands. Every shop for a collection this build does not define.
+ * card commands (stored listings of another shop are not shown there; none is stored, as no
+ * adapter of that shop covers the collection). Every shop (SHOP_IDS) when no definition exists (a
+ * database row for an id this build does not define).
  */
 export function shopsOf(id: CollectionId): readonly ShopId[] {
   const known: Partial<Record<string, CollectionDefinition>> = DEFINITIONS;

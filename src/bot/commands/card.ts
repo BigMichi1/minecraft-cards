@@ -34,7 +34,7 @@ const NUMBER_MAX_LENGTH = 10;
 
 export const data = new SlashCommandBuilder()
   .setName('card')
-  .setDescription('One card in every shop, with links to the cheapest offers')
+  .setDescription('One card in every shop that sells it, with links to the cheapest offers')
   .addStringOption(collectionOption)
   .addStringOption((o) =>
     o

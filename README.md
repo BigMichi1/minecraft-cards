@@ -17,7 +17,7 @@ synced from laststicker once a day; `catalog add` adds a card laststicker lacks.
 explains the rest.
 
 - `/stock collection:<c> [only:all|missing|in-stock]` pages through every card of that collection
-  (one row each, one column per shop): `x` in stock, `-` not available (held back and paused
+  (one row each, one column per shop that sells the collection): `x` in stock, `-` not available (held back and paused
   count as not available), `?` not checked, `n/a` not enabled. ◀ ▶ buttons turn the pages; each
   page fits in one message.
 - `/card collection:<c> number:<id> [shop:<shop>]` shows one card per shop (the best listing, the
@@ -26,7 +26,7 @@ explains the rest.
   prices compared in one currency) and a Kleinanzeigen search; `shop:` limits it to one shop.
 
 `/missing status` shows the last check per shop (with "data as of" for a shop whose check failed
-or did not run), then a table with one row per missing card and one column per shop:
+or did not run), then a table with one row per missing card and one column per shop that sells the collection:
 
 - A cell is a price, `in stock` (no price), `sold out`, `ended`, `paused`, `–` (the shop's last
   check succeeded and lists no such card), `?` (that check failed or never ran and nothing is

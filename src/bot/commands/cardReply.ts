@@ -14,7 +14,7 @@ export interface CardInput extends CellContext {
   name: string | null;
   /** The card's usable reference picture (never a placeholder or a shared one), or null. */
   reference: string | null;
-  /** The shop `shop:` names, or null for every shop. */
+  /** The shop `shop:` names, or null for every shop the collection lists (`shopsOf`). */
   shop: ShopId | null;
 }
 
@@ -103,7 +103,7 @@ export function linkRows(buttons: ButtonBuilder[]): ActionRowBuilder<ButtonBuild
 }
 
 /**
- * The `/card` reply: an embed titled `#12 Squid` with one line per shop (the best listing, as in
+ * The `/card` reply: an embed titled `#12 Squid` with one line per shop the collection lists (or the `shop:` one) (the best listing, as in
  * `/missing status`, with the offer count when there are several), the last check, and the
  * reference picture as thumbnail. Each shop with an offer gets an `Open <shop>` link button to
  * its first offer with a valid URL (the cheapest backed single, else the cheapest other single,

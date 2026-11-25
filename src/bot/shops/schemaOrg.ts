@@ -1,4 +1,4 @@
-/** schema.org values the shops' product microdata carries. */
+// schema.org values the shops' product microdata carries.
 
 // schema.org ItemAvailability values, lowercased, and whether each means "can be ordered now".
 const AVAILABILITY = new Map<string, boolean>([

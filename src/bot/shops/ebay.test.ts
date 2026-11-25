@@ -1807,6 +1807,48 @@ describe('createEbayFetcher', () => {
     expect(error.message).not.toContain('leaked');
   });
 
+  test('a token answer without access_token or expires_in is an error', async () => {
+    for (const tokenBody of [
+      JSON.stringify({ expires_in: 7200 }),
+      JSON.stringify({ access_token: 'x' }),
+    ]) {
+      const adapter = createEbayFetcher({
+        collections: SERIES_3_ONLY,
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: makeFetch({ tokenBody }).fetchFn,
+        sleep: noSleep,
+      });
+      await expect(adapter.fetchListings()).rejects.toThrow(
+        'eBay token response has no access_token/expires_in'
+      );
+    }
+  });
+
+  test('an item without an item id and with an unreadable web URL is invalid', async () => {
+    const good = {
+      itemId: 'v1|270000000001|0',
+      legacyItemId: '270000000001',
+      title: 'LEGO Minecraft On Fire Karte 12',
+      itemWebUrl: 'https://www.ebay.de/itm/270000000001',
+      price: { value: '1.00', currency: 'EUR' },
+      buyingOptions: ['FIXED_PRICE'],
+    };
+    const broken = { title: 'LEGO Minecraft On Fire Karte 13', itemWebUrl: 'not a url' };
+    const fake = makeFetch({
+      searchBody: () => JSON.stringify({ total: 2, itemSummaries: [good, broken] }),
+    });
+    const result = await createEbayFetcher({
+      collections: SERIES_3_ONLY,
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+    }).fetchListings();
+    expect(result.skippedInvalid).toBe(1);
+    expect(result.listings.map((l) => l.url)).toEqual(['https://www.ebay.de/itm/270000000001']);
+  });
+
   test('a failure body echoing the Basic credential is redacted (C3)', async () => {
     const basic = btoa('id:topsecret');
     const fake = makeFetch({

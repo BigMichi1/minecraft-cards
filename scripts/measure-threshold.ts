@@ -28,7 +28,8 @@ const { createTransformersEmbedder } = await import('../src/bot/matcher/embedder
 const { cosineSimilarity } = await import('../src/bot/matcher/similarity');
 const { createSammelEnteFetcher, parseSammelEntePage } =
   await import('../src/bot/shops/sammelEnte');
-const { createBlueOceanFetcher, parseBlueOceanPage } = await import('../src/bot/shops/blueOcean');
+const { BLUE_OCEAN_COLLECTIONS, createBlueOceanFetcher, parseBlueOceanPage } =
+  await import('../src/bot/shops/blueOcean');
 const { fetchText } = await import('../src/bot/utils/http');
 const { legoMinecraft3 } = await import('../src/bot/collections/legoMinecraft3');
 type Listing = import('../src/bot/shops/types').Listing;
@@ -37,6 +38,9 @@ const MODELS = ['Xenova/clip-vit-base-patch32', 'Xenova/dinov2-small'];
 const SAMMEL_ENTE_P1 = 'https://shop-sammel-ente.de/Minecraft/Serie-3/?p=1';
 const BLUE_OCEAN_P1 =
   'https://www.blue-ocean.de/produkte/lego/lego-minecraft/lego-minecraft-sticker-cards/?p=1';
+
+// Series 3 only: its card ids are the ones sammel-ente's series 3 category uses.
+const SERIES_3 = BLUE_OCEAN_COLLECTIONS.filter((c) => c.id === legoMinecraft3.id);
 
 function argValue(name: string): string | undefined {
   const i = process.argv.indexOf(name);
@@ -51,14 +55,14 @@ async function loadListings(): Promise<{ sammel: Listing[]; blue: Listing[] }> {
   if (pagesArg === '1') {
     return {
       sammel: parseSammelEntePage(await fetchText(SAMMEL_ENTE_P1), null).listings,
-      blue: parseBlueOceanPage(await fetchText(BLUE_OCEAN_P1)).listings,
+      blue: [...parseBlueOceanPage(await fetchText(BLUE_OCEAN_P1), SERIES_3).listings],
     };
   }
   if (pagesArg !== 'all') throw new Error(`--pages takes 1 or all, got "${pagesArg}"`);
   return {
     sammel: (await createSammelEnteFetcher(legoMinecraft3.shops['sammel-ente']!).fetchListings())
       .listings,
-    blue: (await createBlueOceanFetcher().fetchListings()).listings,
+    blue: (await createBlueOceanFetcher(undefined, {}, SERIES_3).fetchListings()).listings,
   };
 }
 
@@ -101,7 +105,6 @@ function fewestErrors(trueSims: Scored, falseSims: Scored): number {
   return best.threshold;
 }
 
-// The blue-ocean parser already keeps only series 3 ("On Fire") titles.
 const { sammel, blue } = await loadListings();
 const reference = imagesById(sammel);
 const candidates = imagesById(blue);

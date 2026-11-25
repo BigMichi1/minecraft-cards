@@ -80,6 +80,34 @@ describe('listingManager', () => {
     expect(listingManager.listingsForCards('lego-minecraft-3', [])).toEqual([]);
   });
 
+  test('markGone false keeps unseen listings available; listingCounts counts per shop and collection', () => {
+    const blue45: Listing = {
+      ...blue12,
+      url: 'https://www.blue-ocean.de/p/45',
+      cardIds: [cid('45')],
+    };
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12, blue45], 1000);
+    expect(listingManager.listingCounts('blue-ocean', 'lego-minecraft-3')).toEqual({
+      stored: 2,
+      available: 2,
+    });
+    expect(listingManager.listingCounts('blue-ocean', 'lego-minecraft-1')).toEqual({
+      stored: 0,
+      available: 0,
+    });
+    expect(listingManager.listingCounts('ebay', 'lego-minecraft-3').stored).toBe(0);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 2000, {
+      markGone: false,
+    });
+    expect(listingManager.getByUrl(blue45.url)!.available).toBe(true);
+    listingManager.upsertFromRun('blue-ocean', 'lego-minecraft-3', [blue12], 3000);
+    expect(listingManager.getByUrl(blue45.url)!.available).toBe(false);
+    expect(listingManager.listingCounts('blue-ocean', 'lego-minecraft-3')).toEqual({
+      stored: 2,
+      available: 1,
+    });
+  });
+
   describe('collections', () => {
     test('a listing is stored in the collection of the run that found it', () => {
       const [stored] = listingManager.upsertFromRun(

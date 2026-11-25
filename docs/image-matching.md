@@ -67,8 +67,9 @@ for DINOv2-small); the directory is gitignored.
 
 ## Measurement (2026-11-17)
 
-`./bin/mise run measure:threshold` reads every page of both shops, keeps the blue-ocean
-series 3 listings ("On Fire" in the title), and pairs them with sammel-ente by card id:
+`./bin/mise run measure:threshold` reads every page of both shops (blue-ocean for series 3
+only: on 2026-11-17 by its "On Fire" titles, today placed by URL) and pairs them with
+sammel-ente by card id:
 
 - **true pairs**: blue-ocean card _n_ against sammel-ente card _n_;
 - **false pairs**: blue-ocean card _n_ against the sammel-ente card of the next card id both
@@ -356,12 +357,13 @@ puzzle cards #154 to #180), so 261 load and those 22 use sammel-ente's picture.
 
 ## Data quality finding
 
-The blue-ocean category also lists series 1 and 2 cards (titles "LEGO Minecraft TCC 1 …",
-URLs ending `-tcc-1`). Card ids come from the URL suffix, so those listings would get a
-card id too (for example `1` from `…-tcc-1`) that is not the series 3 card of that number;
+In the 2026-11-17 measurement the blue-ocean category also listed series 1 and 2 cards (titles
+"LEGO Minecraft TCC 1 …", URLs then ending `-tcc-1`; the current forms are in `docs/shops.md`).
+Card ids came from the URL suffix, so those listings would have got a
+card id too (for example `1` from `…-tcc-1`) that was not the series 3 card of that number;
 in the measurement 250 of 456 blue-ocean listings were such cards. The blue-ocean parser
-drops them by title (`isOnFireCardTitle`: the title must contain "LEGO Minecraft TCC" and
-"On Fire"), and the measurement script reads blue-ocean through it.
+now places every product in its own collection by its URL (`docs/shops.md`), and the
+measurement script reads series 3 only.
 
 ## Compiled binary (`bun build --compile`)
 

@@ -237,13 +237,13 @@ Per-shop settings and parser changes:
   `MR-HAM - … - 2026`. The title's collection marker (`Serie 1`, `2026`) must match the
   definition, else the item is skipped (counted). All walk rules (page total, `rel="next"`, full
   pages, canonical link) stay as they are.
-- **blue-ocean**: category URL, card id from the URL suffix as today, plus the title marker per
+- **blue-ocean** (superseded by the PR 3c notes): category URL, card id from the URL suffix as today, plus the title marker per
   collection (`TCC 1`, the Boom-Bastic category's own list, `On Fire`). The mixed category with
   stickers (`Nummer 001 I LEGO® Minecraft Sticker`) is not used. A product whose title number and
   URL suffix disagree keeps today's `idConflict` handling.
 - **eBay**: see below.
 
-Shop errors and alerts (eBay excepted, see below) are keyed per (shop, collection) (`shop-error:collect-it:lego-minecraft-1`), and
+Shop errors and alerts (eBay excepted, see below; blue-ocean too, see the PR 3c notes) are keyed per (shop, collection) (`shop-error:collect-it:lego-minecraft-1`), and
 a failing fetch leaves only that (shop, collection)'s stored listings untouched. `/admin status`
 lists results per collection and shop.
 
@@ -449,11 +449,43 @@ Found in the review of PR 1 (collection key), to settle in the step that needs t
   marker also takes `Staffel 3` (as series 1 and 2 take theirs) and `TCC 3` (as series 1
   takes `TCC 1`).
 - A collection whose own searches all return no usable item is a shop error of that collection
-  (`emptySearches`); the others are stored.
+  (`emptySearches`, renamed `emptyCollections` in PR 3c); the others are stored.
 - Series 3's name check refuses a name series 1 or 2 has at that number, and reads no title by
   name while their card list is not loaded; picture candidates and the name check stay series
   3 only. Step 4 (Turbo Attax) adds its marker (`Turbo Attax` and `2026`) and its id rule's
   title forms.
+
+## Notes from PR 3c for the later steps
+
+- blue-ocean has no series 1 category page: its sticker-cards category lists the singles of all
+  three series, stickers and packs (2026-11-24: 31 pages, 734 products). One walk serves every
+  collection with `shops['blue-ocean']` (`BlueOceanSettings`: category path, product code,
+  picture part, title marker, exclusion marker), through the PR 3b shared-run machinery: one
+  adapter (`collections`), alerts `shop-error:blue-ocean`, `shop-outside:blue-ocean` and
+  `shop-unreadable:blue-ocean` for the run, storing per collection. This supersedes the
+  blue-ocean row of the table and the blue-ocean bullet above (separate TCC categories, ids from
+  the URL suffix): the bot reads the mixed category.
+- Each product is placed by its URL: the category path (`trading-card-collection-serie-1`,
+  `trading-card-collection-boom-bastic`) or the product code before the card number of a root
+  URL (`…-702351-09`, `…-00702502-09`, series 3 `…-2dd00088-16`). Stickers (`stickerserie-1`,
+  `00702506`) and packs are no cards, ignored (in the product count only). A title or picture
+  contradicting the placement (another series' title or exclusion marker, `TCC 1`, `TCC 2`,
+  `Boom-Bastic`, `On Fire`, or picture part `_tcc-01`, `_tcc-02`, `tcg3_.p`, or a missing own
+  marker) is skipped and counted (`skippedExcluded`). Series 1 and 2 ids are the title's
+  `Nummer NNN`, which must equal the URL's number (else `skippedNoId`); series 3's stay the URL
+  suffix. An excluded or id-less product's stored listing is neither refreshed nor marked gone
+  (`unreadableUrls`), and its collection marks no listing gone that run
+  (`unreadableCollections`).
+- The walk must read exactly the product total page 1 names; another count, no total or the
+  page cap is a `ShopLayoutError`.
+- `FetchResult.emptySearches` is now `emptyCollections`: a shared run's collections it found
+  nothing of (eBay: searches without a usable item; blue-ocean: no card in the whole walk), a
+  shop error of that collection whose listings stay untouched, unless blue-ocean says it may have
+  sold out (`mayHaveSoldOut`: no product of it seen but unreadable), nothing is placed in it and
+  its recent peak was below 5 listings (`EMPTY_COLLECTION_FLOOR`; no recent successful run, an
+  unreadable run row or entry, or a failed lookup keep it an error, unless it was read before and
+  no stored listing of it is available any more): then it sold out, is stored
+  empty and the admin is told (`shop-soldout`). eBay never reports a sell-out.
 
 ## Left to the builder
 

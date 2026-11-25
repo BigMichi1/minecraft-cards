@@ -2487,7 +2487,8 @@ describe('one eBay run for every collection', () => {
       fetchFn: fake.fetchFn,
       sleep: noSleep,
     }).fetchListings();
-    expect(result.emptySearches).toEqual(['lego-minecraft-1']);
+    expect(result.emptyCollections).toEqual(['lego-minecraft-1']);
+    expect(result.mayHaveSoldOut).toBeUndefined();
     expect(result.listings.map((l) => l.collection)).toEqual(['lego-minecraft-3']);
   });
 
@@ -2536,7 +2537,8 @@ describe('one eBay run for every collection', () => {
         { ...s2, queries: [] },
       ],
     }).fetchListings();
-    expect(result.emptySearches).toEqual(['lego-minecraft-1']);
+    expect(result.emptyCollections).toEqual(['lego-minecraft-1']);
+    expect(result.mayHaveSoldOut).toBeUndefined();
   });
 
   test('a name a series this run does not read has at that number gives no id', async () => {

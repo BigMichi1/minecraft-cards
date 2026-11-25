@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import logger from '../utils/logger';
+import type { CollectionId } from '../collections/ids';
 import { db, initializeDatabase } from './db';
 import { adminAlerts, runs } from './schema/index';
 import {
@@ -153,6 +154,100 @@ describe('runManager', () => {
       expect(warn.mock.calls.every((c) => /not an object/.test(String(c[0])))).toBe(true);
     } finally {
       warn.mockRestore();
+    }
+  });
+
+  test('shopPeakListings strict: an unreadable row in the window makes the peak unknown', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      runManager.record(summary);
+      db.insert(runs).values({ startedAt: NOW, finishedAt: NOW, summary: '{broken' }).run();
+      expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBe(3);
+      expect(
+        runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW, { strict: true })
+      ).toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('shopPeakListings strict: an unreadable entry of the shop and collection makes the peak unknown', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    const row = (extra: Record<string, unknown>) =>
+      db
+        .insert(runs)
+        .values({
+          startedAt: NOW,
+          finishedAt: NOW,
+          summary: JSON.stringify({
+            startedAt: NOW,
+            finishedAt: NOW,
+            notified: 0,
+            dmFailures: 0,
+            shops: {},
+            ...extra,
+          }),
+        })
+        .run();
+    const strict = (c: CollectionId) =>
+      runManager.shopPeakListings('blue-ocean', c, NOW, { strict: true });
+    try {
+      runManager.record(summary);
+      // Another shop's or collection's entry does not matter.
+      row({ shops: { ebay: { listings: 'x' } }, collections: { 'lego-minecraft-2': {} } });
+      expect(strict('lego-minecraft-3')).toBe(3);
+      expect(strict('lego-minecraft-1')).toBeUndefined(); // no run at all
+      row({ shops: { 'blue-ocean': { listings: 'x' } } });
+      expect(strict('lego-minecraft-3')).toBeUndefined();
+      expect(runManager.shopPeakListings('blue-ocean', 'lego-minecraft-3', NOW)).toBe(3);
+      row({ collections: { 'lego-minecraft-1': { 'blue-ocean': { listings: 2 } } } });
+      expect(strict('lego-minecraft-1')).toBe(2);
+      row({ collections: { 'lego-minecraft-1': { 'blue-ocean': null } } });
+      expect(strict('lego-minecraft-1')).toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  test('shopPeakListings strict: an unreadable collections map or collection makes the peak unknown', () => {
+    const warn = spyOn(logger, 'warn').mockImplementation(() => logger);
+    const row = (collections: unknown) =>
+      db
+        .insert(runs)
+        .values({
+          startedAt: NOW,
+          finishedAt: NOW,
+          summary: JSON.stringify({
+            startedAt: NOW,
+            finishedAt: NOW,
+            notified: 0,
+            dmFailures: 0,
+            shops: {},
+            collections,
+          }),
+        })
+        .run();
+    const strict = () =>
+      runManager.shopPeakListings('blue-ocean', 'lego-minecraft-1', NOW, { strict: true });
+    try {
+      row({ 'lego-minecraft-1': { 'blue-ocean': { listings: 2 } } });
+      expect(strict()).toBe(2);
+      // A readable collection without the shop's entry does not matter.
+      row({ 'lego-minecraft-1': { 'sammel-ente': { listings: 1 } } });
+      expect(strict()).toBe(2);
+      row({ 'lego-minecraft-1': 'x' });
+      expect(strict()).toBeUndefined();
+    } finally {
+      warn.mockRestore();
+    }
+    db.delete(runs).run();
+    const warn2 = spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      row({ 'lego-minecraft-1': { 'blue-ocean': { listings: 2 } } });
+      row(5);
+      expect(strict()).toBeUndefined();
+    } finally {
+      warn2.mockRestore();
     }
   });
 

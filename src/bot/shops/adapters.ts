@@ -8,7 +8,7 @@ import { COLLECTIONS } from '../collections/index';
 import type { Config } from '../config';
 import logger from '../utils/logger';
 import { createPacedFetch } from '../utils/pacedFetch';
-import { createBlueOceanFetcher } from './blueOcean';
+import { blueOceanCollectionsOf, createBlueOceanFetcher } from './blueOcean';
 import { createCollectItFetcher } from './collectIt';
 import { createEbayFetcher, ebayCollectionsOf } from './ebay';
 import { createSammelEnteFetcher } from './sammelEnte';
@@ -45,10 +45,13 @@ export interface AdapterDeps {
 
 /**
  * Throws for settings a run would get wrong: a category on another host than its shop (it would
- * skip the shop's pacer), blue-ocean for a collection its series 3 parser does not read (it
- * would store series 3 listings under it), or eBay settings without a search (the collection's
- * listings would be marked gone, never searched) or with a `g`/`y` marker (`test` would keep
- * state between titles).
+ * skip the shop's pacer), blue-ocean settings without a product code (its root-URL cards would
+ * never be placed, all of series 3's), with one that is not lowercase letters and digits (it is put
+ * into a regular expression and compared with lowercased URLs), with an empty picture part (in
+ * every file name), an empty category path or one holding `/` (never matched, yet it makes the
+ * collection read titles by `Nummer`), or with a `g`/`y` title or exclusion marker, or eBay
+ * settings without a search (the collection's listings would be marked gone, never searched) or
+ * with a `g`/`y` marker (`test` would keep state between titles).
  */
 function checkSettings(definition: CollectionDefinition): void {
   for (const shop of ['sammel-ente', 'collect-it'] as const) {
@@ -59,8 +62,32 @@ function checkSettings(definition: CollectionDefinition): void {
       throw new Error(`${definition.id}: ${shop} category is on ${host}, not ${SHOP_HOSTS[shop]}`);
     }
   }
-  if (definition.shops['blue-ocean'] && definition.id !== LEGACY_COLLECTION) {
-    throw new Error(`${definition.id}: blue-ocean is read for ${LEGACY_COLLECTION} only`);
+  const blueOcean = definition.shops['blue-ocean'];
+  // Checked apart from the pattern below only for the clearer message.
+  if (blueOcean && blueOcean.productCode.length === 0) {
+    throw new Error(`${definition.id}: blue-ocean settings without a product code`);
+  }
+  if (blueOcean && !/^[a-z0-9]+$/.test(blueOcean.productCode)) {
+    throw new Error(
+      `${definition.id}: the blue-ocean product code must be lowercase letters and digits`
+    );
+  }
+  if (
+    blueOcean &&
+    (blueOcean.picture === '' ||
+      blueOcean.categoryPath === '' ||
+      (blueOcean.categoryPath?.includes('/') ?? false))
+  ) {
+    throw new Error(
+      `${definition.id}: blue-ocean settings with an empty picture or an empty or multi-segment category path`
+    );
+  }
+  for (const marker of [blueOcean?.title, blueOcean?.excludes]) {
+    if (marker && (marker.global || marker.sticky)) {
+      throw new Error(
+        `${definition.id}: the blue-ocean title or exclusion marker must not use the g or y flag`
+      );
+    }
   }
   const ebay = definition.shops.ebay;
   if (ebay && ebay.queries.length === 0) {
@@ -68,6 +95,31 @@ function checkSettings(definition: CollectionDefinition): void {
   }
   if (ebay && (ebay.series.global || ebay.series.sticky)) {
     throw new Error(`${definition.id}: the eBay series marker must not use the g or y flag`);
+  }
+}
+
+/**
+ * Throws when two collections share a blue-ocean product code or category path, or when one's
+ * picture part contains another's (compared lowercase, as the parser does): the walk would place
+ * every product of the later one in the earlier one, or exclude both.
+ */
+function checkDistinctBlueOcean(definitions: readonly CollectionDefinition[]): void {
+  for (const field of ['productCode', 'categoryPath', 'picture'] as const) {
+    const seen: [string, CollectionId][] = [];
+    for (const d of definitions) {
+      const raw = d.shops['blue-ocean']?.[field];
+      if (raw === undefined) continue;
+      const value = field === 'picture' ? raw.toLowerCase() : raw;
+      const clash = seen.find(([v]) =>
+        field === 'picture' ? v.includes(value) || value.includes(v) : v === value
+      );
+      if (clash) {
+        throw new Error(
+          `${d.id}: blue-ocean ${field} "${raw}" overlaps ${clash[1]}'s "${clash[0]}"`
+        );
+      }
+      seen.push([value, d.id]);
+    }
   }
 }
 
@@ -86,7 +138,7 @@ export function enabledShopsOf(adapters: readonly ShopAdapter[]): EnabledShops {
  * A `ShopId` missing here is a compile error, so a new shop cannot be left out by accident.
  */
 function fetcherFor(
-  shop: Exclude<ShopId, 'ebay'>,
+  shop: Exclude<ShopId, 'ebay' | 'blue-ocean'>,
   definition: CollectionDefinition,
   fetchFn: FetchFn
 ): ShopFetcher | null {
@@ -99,13 +151,28 @@ function fetcherFor(
       const settings = definition.shops['collect-it'];
       return settings ? createCollectItFetcher(settings, fetchFn) : null;
     }
-    case 'blue-ocean':
-      return definition.shops['blue-ocean'] ? createBlueOceanFetcher(fetchFn) : null;
   }
 }
 
 function forCollection(fetcher: ShopFetcher, collection: CollectionId): ShopAdapter {
   return { id: fetcher.id, collection, fetchListings: () => fetcher.fetchListings() };
+}
+
+/**
+ * The adapter of a run covering several collections (`collections`, from one shop's settings):
+ * none when no collection has that shop's settings. The fetcher is built only then, from the
+ * same list, so its collections and the adapter's cannot drift. The run's skipped counts are
+ * filed under its `collection`: series 3's (the summary's `shops`) when covered, else the first.
+ */
+function sharedAdapters<C extends { readonly id: CollectionId }>(
+  collections: readonly C[],
+  fetcherFor: (collections: readonly C[]) => ShopFetcher
+): ShopAdapter[] {
+  const ids = collections.map((c) => c.id);
+  const [first] = ids;
+  if (first === undefined) return [];
+  const collection = ids.includes(LEGACY_COLLECTION) ? LEGACY_COLLECTION : first;
+  return [{ ...forCollection(fetcherFor(collections), collection), collections: ids }];
 }
 
 /**
@@ -132,7 +199,8 @@ export function checkAdapters(adapters: ShopAdapter[]): ShopAdapter[] {
 
 /**
  * The shops this process checks: per collection (COLLECTIONS order), the shops its definition
- * lists (SHOP_IDS order) but eBay, then one eBay adapter for every collection with eBay
+ * lists (SHOP_IDS order) but blue-ocean and eBay, then one blue-ocean adapter for every
+ * collection with blue-ocean settings, then one eBay adapter for every collection with eBay
  * settings, only when its credentials are set. The fetchers of one shop share
  * one paced fetch, so its pages stay SHOP_DELAY_MS apart across collections too.
  * `cardNames(collection)` gives eBay that collection's catalog names for titles without a series
@@ -159,33 +227,25 @@ export function createShopAdapters(
   };
   const definitions = deps.collections ?? COLLECTIONS;
   for (const definition of definitions) checkSettings(definition);
+  checkDistinctBlueOcean(definitions);
   const perCollection = definitions.flatMap((definition) =>
     SHOP_IDS.flatMap((shop): ShopAdapter[] => {
-      if (shop === 'ebay') return [];
+      if (shop === 'ebay' || shop === 'blue-ocean') return [];
       const fetcher = fetcherFor(shop, definition, pacedFor(shop));
       return fetcher ? [forCollection(fetcher, definition.id)] : [];
     })
   );
+  // One blue-ocean walk for every collection with blue-ocean settings: its sticker-cards category
+  // lists every series, each product placed by its URL.
+  const blueOceanAdapters = sharedAdapters(blueOceanCollectionsOf(definitions), (covered) =>
+    createBlueOceanFetcher(pacedFor('blue-ocean'), {}, covered)
+  );
   // One eBay run for every collection with eBay settings: every query is searched once, an item
   // several queries find is stored once, and each title in the collection it names.
-  const onEbay = ebayCollectionsOf(definitions);
-  const ids = onEbay.map((c) => c.id);
-  const ebayAdapters: ShopAdapter[] =
-    ebay && onEbay.length > 0
-      ? [
-          {
-            ...forCollection(
-              createEbayFetcher({
-                ...ebay,
-                collections: onEbay,
-                ...(cardNames ? { cardNames } : {}),
-              }),
-              // The run's skipped counts are filed here: series 3's, the summary's `shops`.
-              ids.includes(LEGACY_COLLECTION) ? LEGACY_COLLECTION : ids[0]!
-            ),
-            collections: ids,
-          },
-        ]
-      : [];
-  return checkAdapters([...perCollection, ...ebayAdapters]);
+  const ebayAdapters = ebay
+    ? sharedAdapters(ebayCollectionsOf(definitions), (covered) =>
+        createEbayFetcher({ ...ebay, collections: covered, ...(cardNames ? { cardNames } : {}) })
+      )
+    : [];
+  return checkAdapters([...perCollection, ...blueOceanAdapters, ...ebayAdapters]);
 }

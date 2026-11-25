@@ -65,11 +65,12 @@ describe('collectionChoices', () => {
 });
 
 describe('definition rules', () => {
-  test('blue-ocean is read for series 3 only, until its parser takes settings', () => {
-    for (const d of COLLECTIONS) {
-      if (d.id === 'lego-minecraft-3') continue;
-      expect(d.shops['blue-ocean']).toBeUndefined();
-    }
+  test('every collection is on blue-ocean, each with its own product code', () => {
+    const codes = COLLECTIONS.map((d) => d.shops['blue-ocean']?.productCode);
+    expect(codes.every((c) => c !== undefined && c.length > 0)).toBe(true);
+    expect(new Set(codes).size).toBe(COLLECTIONS.length);
+    const paths = COLLECTIONS.flatMap((d) => d.shops['blue-ocean']?.categoryPath ?? []);
+    expect(new Set(paths).size).toBe(paths.length);
   });
 
   test('every collection is on eBay, and every series marker names only its own series', () => {

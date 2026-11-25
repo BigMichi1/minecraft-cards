@@ -52,14 +52,54 @@ export interface EbayCollectionSettings {
   readonly series: RegExp;
 }
 
+/**
+ * How blue-ocean's one sticker-cards walk tells a collection's products: each is placed by its URL
+ * (the category path, or the product code of a root URL), and a title or picture naming another
+ * collection contradicts that placement (docs/shops.md).
+ */
+export interface BlueOceanSettings {
+  /**
+   * The category path segment of a product URL (`trading-card-collection-serie-1`). Present also
+   * means the collection numbers its singles in the title: the card id is the title's
+   * `Nummer NNN` (which must equal the URL's number) and the picture starts with it
+   * (`250_lego_…`); absent (series 3), the id is the root URL's suffix and the picture names it
+   * as `P<id>`. One segment, no `/`.
+   */
+  readonly categoryPath?: string;
+  /**
+   * The product code before a root URL's card number (`702351` in `…-702351-09`): lowercase
+   * letters and digits, as the URLs spell it.
+   */
+  readonly productCode: string;
+  /**
+   * A part of the picture file name naming the series (`_tcc-01`, series 3 `tcg3_.p`), compared
+   * lowercase: a product at another collection's URL with such a picture is excluded, and one at
+   * a URL of no known form whose picture also carries a card number is counted as an unreadable
+   * single of this collection (`skippedNoId`), so a changed URL form is seen.
+   */
+  readonly picture?: string;
+  /**
+   * A title of the collection must match this (series 1 `TCC 1`, series 3 `On Fire`; series 2
+   * titles name no series), and a product at another collection's URL whose title matches it is
+   * excluded. No `g` or `y` flag (refused at start).
+   */
+  readonly title?: RegExp;
+  /**
+   * A title naming the collection that its own titles need not carry (series 2 `TCC 2`,
+   * `Boom-Bastic`): only a product at another collection's URL whose title matches it is
+   * excluded. No `g` or `y` flag.
+   */
+  readonly excludes?: RegExp;
+}
+
 /** A collection's settings per shop; a collection lists only the shops that sell it. */
 export interface CollectionShops {
   /** The category page (`?p=N` pages). */
   readonly 'sammel-ente'?: CategoryShopSettings;
   /** The single-card category (walked by `rel="next"`). */
   readonly 'collect-it'?: CategoryShopSettings;
-  /** Series 3 only, today's category (PR 3c reads the TCC categories). */
-  readonly 'blue-ocean'?: Record<string, never>;
+  /** How the shared sticker-cards walk places the collection's products. */
+  readonly 'blue-ocean'?: BlueOceanSettings;
   /** The collection's eBay searches and the series marker its titles name (`Serie 1`). */
   readonly ebay?: EbayCollectionSettings;
 }

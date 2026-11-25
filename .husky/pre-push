@@ -35,7 +35,9 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       exit 1
     fi
   else
-    if ! git rev-list "$remote_sha..$local_sha" >"$commits_file"; then
+    # Updating a ref: the commits it gains, less those already on any branch of the remote
+    # (a branch rebased onto main gains main's commits, which were checked when they landed).
+    if ! git rev-list "$remote_sha..$local_sha" --not "--remotes=$REMOTE" >"$commits_file"; then
       echo "Error: git rev-list failed for $remote_sha..$local_sha; cannot verify DCO sign-offs." >&2
       exit 1
     fi

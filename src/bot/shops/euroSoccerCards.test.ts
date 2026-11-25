@@ -113,6 +113,14 @@ describe('parseEuroSoccerCardsPage', () => {
     });
   });
 
+  test('a product box without a link is skipped', () => {
+    const $ = cheerio.load(P1);
+    $('.product-miniature').first().find('.product-title a').removeAttr('href');
+    const page = read($.html());
+    expect(page.skipped).toBe(1);
+    expect(page.listings).toHaveLength(35);
+  });
+
   test('page 11: the limited editions, sold-out boxes unavailable, no next page', () => {
     const page = read(P11);
     expect(page.listings).toHaveLength(32);
@@ -283,6 +291,32 @@ describe('createEuroSoccerCardsFetcher', () => {
       (e: unknown) => e
     );
     expect(String(e2)).toContain('page 1 has 35 products, but links a next page');
+  });
+
+  test('a fetch failing with a plain error names the page', async () => {
+    const fetchFn: Parameters<typeof fetchAll>[0] = async () => {
+      throw new Error('socket closed');
+    };
+    const error = await fetchAll(fetchFn).catch((e: unknown) => e);
+    expect(String(error)).toContain('euro-soccer-cards: page 1 failed: socket closed');
+  });
+
+  test('one card under two product URLs is read twice (and logged)', async () => {
+    const { fetchFn } = twoPages({
+      total: 69,
+      p2: () => {
+        const $ = cheerio.load(P11);
+        const box = cheerio.load(P1)('.product-miniature').first();
+        box.find('a[href]').each((_, el) => {
+          const href = box.find(el).attr('href') ?? '';
+          box.find(el).attr('href', href.replace('mclaren-mastercard', 'mclaren-other'));
+        });
+        $('.product-miniature').first().before(box);
+        return $.html();
+      },
+    });
+    const result = await fetchAll(fetchFn);
+    expect(result.listings.filter((l) => l.cardIds[0] === cid('1'))).toHaveLength(2);
   });
 
   test('a product on two pages counts once, so the total no longer matches', async () => {

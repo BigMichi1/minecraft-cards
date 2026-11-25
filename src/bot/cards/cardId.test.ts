@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { cardType, compareCardIds, formatCardList, normalizeCardId, parseCardList } from './cardId';
+import {
+  cardType,
+  compareCardIds,
+  formatCardList,
+  MINECRAFT_CARD_IDS,
+  normalizeCardId,
+  normalizeCardIdIn,
+  parseCardList,
+  TURBO_ATTAX_CARD_IDS,
+} from './cardId';
 import { cid, ids } from '../../test/cardIds';
 
 describe('normalizeCardId', () => {
@@ -86,5 +95,57 @@ describe('formatCardList', () => {
   test('compresses pairs and dedupes', () => {
     expect(formatCardList([cid('1'), cid('2'), cid('2')])).toBe('1-2');
     expect(formatCardList([])).toBe('');
+  });
+});
+
+describe('card id rules', () => {
+  test("each rule refuses the other's prefixes", () => {
+    expect(normalizeCardIdIn(MINECRAFT_CARD_IDS, 'GG8')).toBeNull();
+    expect(normalizeCardIdIn(MINECRAFT_CARD_IDS, 'MR-HAM')).toBeNull();
+    expect(normalizeCardIdIn(TURBO_ATTAX_CARD_IDS, 'XXL1')).toBeNull();
+    expect(normalizeCardIdIn(TURBO_ATTAX_CARD_IDS, 'MR-HAM')).toBe(cid('MR-HAM'));
+    expect(normalizeCardIdIn(MINECRAFT_CARD_IDS, 'LE8')).toBe(cid('LE8'));
+  });
+
+  test('Turbo Attax forms', () => {
+    const ta = (raw: string) => normalizeCardIdIn(TURBO_ATTAX_CARD_IDS, raw);
+    expect(ta('LE 08')).toBe(cid('LE8'));
+    expect(ta('sun01')).toBe(cid('SUN1'));
+    expect(ta('#GG1')).toBe(cid('GG1'));
+    expect(ta('bg 2')).toBe(cid('BG2'));
+    expect(ta('GU11')).toBe(cid('GU11'));
+    expect(ta('#0135')).toBe(cid('135'));
+    expect(ta('mr-ham')).toBe(cid('MR-HAM'));
+    expect(ta('MR HAM')).toBe(cid('MR-HAM'));
+    expect(ta('RRALB')).toBe(cid('RR-ALB'));
+    expect(ta('MR-HAMX')).toBeNull();
+    expect(ta('MR-HA')).toBeNull();
+    expect(ta('MR-1')).toBeNull();
+    expect(ta('GG0')).toBeNull();
+    expect(ta('XY5')).toBeNull();
+  });
+
+  test('parseCardList with a rule', () => {
+    expect(parseCardList('1-3, GG1-2, mr-ham, LE 4', TURBO_ATTAX_CARD_IDS)).toEqual({
+      ids: ids('1', '2', '3', 'GG1', 'GG2', 'LE4', 'MR-HAM'),
+      invalid: [],
+    });
+    expect(parseCardList('LE1-LE3, SUN2-3', TURBO_ATTAX_CARD_IDS).ids).toEqual(
+      ids('LE1', 'LE2', 'LE3', 'SUN2', 'SUN3')
+    );
+    expect(parseCardList('MR-HAM-MR-VER, GG1-LE2', TURBO_ATTAX_CARD_IDS)).toEqual({
+      ids: [],
+      invalid: ['MR-HAM-MR-VER', 'GG1-LE2'],
+    });
+    expect(parseCardList('GG1, XXL1').invalid).toEqual(['GG1']);
+  });
+
+  test('compare and format across prefixes', () => {
+    expect(
+      formatCardList(ids('SUN2', '3', 'GG1', 'SUN1', 'MR-HAM', '1', '2', 'RR-ALB', 'BG1'))
+    ).toBe('1-3, BG1, GG1, MR-HAM, RR-ALB, SUN1-SUN2');
+    expect(ids('MR-VER', 'MR-HAM', 'LE2', '10').sort(compareCardIds)).toEqual(
+      ids('10', 'LE2', 'MR-HAM', 'MR-VER')
+    );
   });
 });

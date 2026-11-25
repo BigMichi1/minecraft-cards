@@ -409,3 +409,115 @@
   - Run: `./bin/mise run format:check`
   - Expected: PASS.
 - [ ] **Step 3: Commit** `docs: Topps F1 Turbo Attax 2026`
+
+---
+
+## PR 4b: euro-soccer-cards (Turbo Attax singles)
+
+PR 4b is its own PR. It is branched from PR 4's branch once PR 4 is opened, and rebased onto `main` after PR 4 merges.
+
+### Facts (live probe 2026-11-25, `https://www.euro-soccer-cards.com/gb/topps-turbo-attax-2026/`)
+
+- A Spanish PrestaShop shop with euro prices. It ships to Germany ("Europe zone A", certified mail €5).
+- robots.txt allows category pages and `?page=N`. It disallows only sort, filter and search parameters, plus every page for one crawler (PetalBot).
+- 11 pages of 36 products (the last has 32). Page 1 says `There are 392 products.`
+- Every page has `<link rel="canonical">` naming itself, and `<link rel="next">` until the last page. `?page=12` redirects to page 1, as collect-it does.
+- Box: `.product-miniature`.
+  - The link is `.product-title a[href]`. Its text is cut (`McLaren Mastercard Formula 1 Team F1...`).
+  - The full name is in the picture's `alt`: `Buy Cards <name> Colección Turbo Attax 2026`.
+  - Price: `span.price[itemprop=price][content="1.5"]`, plus `meta[itemprop=priceCurrency]`.
+  - Stock: `link[itemprop=availability]`, `http://schema.org/InStock` or `OutOfStock`. 30 boxes are OutOfStock, flagged `Out-of-Stock`.
+  - Picture: `img[src]` (`…-home_default/…jpg`).
+- Sold-out cards stay listed, so a sell-out is read, not inferred.
+- The card id is only in the URL slug:
+  - `…-f1-team-logos-1`
+  - `…-legends-of-the-grid-150-turbo-attax-2026`
+  - `…-guardians-of-the-grid-gu-1-turbo-attax-2026`
+  - `…-2026-f1-car-184-turbo-attax-2026`: `car` is a section word, so the id is `184`.
+
+  All 392 slugs give distinct ids that laststicker knows, plus `135`.
+
+- Not sold: #343–353 and the relics.
+
+### Review Focus (4b)
+
+1. **A partial walk never marks listings gone.** All of these are `ShopLayoutError`:
+   - a missing total;
+   - read ≠ total;
+   - a canonical that does not name the page;
+   - a page with no boxes;
+   - the page cap;
+   - an unreadable slug, price-less box or unknown availability.
+2. **Slug ids:**
+   - Only the rule's prefixes count (`gu-1` → `GU1`, `car-184` → `184`).
+   - A slug with no trailing number is unreadable (the walk fails).
+   - A relic slug `…-mr-ham-turbo-attax-2026` reads `MR-HAM`.
+3. **OutOfStock boxes are stored as unavailable, not skipped.** One back in stock re-notifies once (the existing runner rule).
+
+### Task 6: The euro-soccer-cards adapter
+
+**Files:**
+
+- Create: `src/bot/shops/schemaOrg.ts` and its test. `readAvailability` moves out of `collectIt.ts` unchanged, and collect-it imports it.
+- Create: `src/bot/shops/euroSoccerCards.ts` and its test.
+- Modify `shops/types.ts`: `SHOP_IDS` gains `'euro-soccer-cards'` (last).
+- Modify `adapters.ts`:
+  - `SHOP_HOSTS['euro-soccer-cards'] = 'www.euro-soccer-cards.com'`;
+  - a `fetcherFor` case;
+  - the category host check.
+- Modify `collections/ids.ts`: `CollectionShops['euro-soccer-cards']?: { readonly category: string }`.
+- Modify `turboAttax2026.ts`: `'euro-soccer-cards': { category: 'https://www.euro-soccer-cards.com/gb/topps-turbo-attax-2026/' }`.
+- Modify the shop labels: `notify/messages.ts` `SHOP_NAMES` (`euro-soccer-cards`), `commands/stockPage.ts` `SHORT` (`ESC`).
+- A migration only if `db:generate` produces one (the `shop` enum is unchecked text in SQLite).
+- Fixtures:
+  - `src/test/fixtures/euro-soccer-cards-p1.html`;
+  - `euro-soccer-cards-p11.html` (the last page: LE, BG and GG cards, `Out-of-Stock` boxes, no `rel="next"`).
+
+**Interfaces:**
+
+- Consumes: `CardIdRule` and `normalizeCardIdIn` (Task 1), `definition.cardIds` (Task 2), and `readAvailability`.
+- Produces:
+  ```ts
+  export function parseEuroSoccerCardsPage(html: string, rule: CardIdRule): EuroSoccerCardsPage;
+  // { listings, productCount, total: number | null, canonical, next, skipped: number, firstSkipped: string | null }
+  export function slugCardId(url: string, rule: CardIdRule): CardId | null;
+  export function createEuroSoccerCardsFetcher(
+    settings: { category: string },
+    fetchFn: FetchFn,
+    rule: CardIdRule
+  ): ShopFetcher;
+  ```
+- Walk:
+  - Follow `rel="next"`, up to a 40-page cap.
+  - Each page's canonical must equal the URL fetched (page 1 the category, page N `?page=N`).
+  - Each page must hold boxes.
+  - The total is from page 1 (`There are (\d+) products?\.`), and the boxes read must equal it.
+  - Any skipped box is a `ShopLayoutError` (alerted, listings untouched), as on collect-it.
+- Listing:
+  - `title`: the `alt` without its `Buy Cards ` prefix and ` Colección …` tail (the link text when no `alt`);
+  - `cardName`: that title;
+  - `price`: from `content`;
+  - `available`: from the availability;
+  - `format: 'fixed_price'`;
+  - the collection from the adapter.
+
+- [ ] **Step 1: Write the failing tests.**
+  - `slugCardId` table: the four slug forms above, `…-mr-ham-turbo-attax-2026` → `MR-HAM`, `…-team-logos` → null, and the Minecraft rule on `…-gu-1` → null.
+  - Page 1: 36 listings, the first `1` at €1.50 in stock, total 392, `next` `?page=2`.
+  - Page 11: 32 listings including `LE1` and `BG1`; `LE3` unavailable; no `next`.
+  - Fetcher with a fake fetch serving the two fixtures as an 11-page walk (pages 2–10 built from page 1 with their canonical and next rewritten): a total mismatch, a wrong canonical, a box without a price and the page cap each throw `ShopLayoutError`.
+  - adapters: a category on another host throws, and Turbo Attax gets one euro-soccer-cards adapter.
+- [ ] **Step 2: Run.**
+  - Run: `./bin/mise run test src/bot/shops`
+  - Expected: FAIL.
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run.**
+  - Run: `./bin/mise run typecheck && ./bin/mise run lint && ./bin/mise run test`
+  - Expected: PASS.
+- [ ] **Step 5: Commit** `feat(shops): euro-soccer-cards for Turbo Attax 2026 singles`
+
+### Task 7: Docs (4b)
+
+- `CLAUDE.md`: architecture (shops list) and a euro-soccer-cards decision (walk rules, slug ids, sold-out boxes listed).
+- `docs/shops.md`, `README.md`, and the spec "Notes from PR 4" (the new shop).
+- Commit `docs: euro-soccer-cards`.

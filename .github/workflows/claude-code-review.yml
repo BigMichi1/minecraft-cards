@@ -12,6 +12,9 @@ on:
 
 jobs:
   claude-review:
+    # Dependabot PRs are not reviewed: their runs get no CLAUDE_CODE_OAUTH_TOKEN, and kodiak's
+    # updates of them fail the action's check that a bot-updated PR has an allowed author.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
@@ -36,6 +39,8 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # kodiak updates PR branches with main; review those pushes too.
+          allowed_bots: 'kodiakhq'
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
           prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'

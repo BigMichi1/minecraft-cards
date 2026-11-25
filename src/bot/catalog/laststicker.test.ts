@@ -212,6 +212,9 @@ describe('the Turbo Attax 2026 page (2026-11-25)', () => {
     expect(() =>
       parseLaststickerPage(html, (raw) => normalizeCardIdIn(MINECRAFT_CARD_IDS, raw))
     ).toThrow(CatalogLayoutError);
+    expect(() =>
+      parseLaststickerPage(html, (raw) => normalizeCardIdIn(MINECRAFT_CARD_IDS, raw))
+    ).toThrow('no card number "GU1"');
   });
 
   test('fetchLaststickerSet reads with the rule it is given', async () => {

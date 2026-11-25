@@ -41,14 +41,17 @@ export const SHOP_NAMES: Record<ShopId, string> = {
 };
 
 /**
- * A Kleinanzeigen search for a card: the collection's search words and the lowercase id; null for
- * a collection this build does not define (a stored row of a removed definition).
+ * A Kleinanzeigen search for a card: the collection's search words and the lowercase id, checked
+ * by validUrl; null for a row the database holds for a collection id this build does not define
+ * (no search words), or a URL validUrl refuses.
  */
 export function kleinanzeigenSearchUrl(collection: CollectionId, cardId: CardId): string | null {
   const words = collectionKleinanzeigen(collection);
   return words === null
     ? null
-    : `https://www.kleinanzeigen.de/s-${words}-${cardId.toLowerCase()}/k0`;
+    : validUrl(
+        `https://www.kleinanzeigen.de/s-${words}-${encodeURIComponent(cardId.toLowerCase())}/k0`
+      );
 }
 
 export const MAX_URL = 512;

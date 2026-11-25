@@ -5,6 +5,8 @@ import { readFixture } from '../../test/shopHelpers';
 import { cid } from '../../test/cardIds';
 import { checkAdapters, createShopAdapters, enabledShopsOf } from './adapters';
 import { legoMinecraft1 } from '../collections/legoMinecraft1';
+import { turboAttax2026 } from '../collections/turboAttax2026';
+import { MINECRAFT_CARD_IDS, TURBO_ATTAX_CARD_IDS } from '../cards/cardId';
 import type { CollectionId } from '../collections/ids';
 
 /** Runs `fn` with `logger.warn` spied, and returns what it returned plus the warned messages. */
@@ -197,6 +199,57 @@ describe('createShopAdapters', () => {
         createShopAdapters(creds, undefined, { collections: [ebay({ maxPages })] })
       ).toThrow('lego-minecraft-1: the eBay page cap must be a whole number from 1 to 50');
     }
+  });
+
+  test('a malformed card id rule or Kleinanzeigen words are refused at start', () => {
+    const at = (over: object) => () =>
+      createShopAdapters(null, undefined, { collections: [{ ...legoMinecraft1, ...over }] });
+    for (const cardIds of [
+      { prefixes: ['le'] },
+      { prefixes: ['LE', 'LE'] },
+      { prefixes: ['L1'] },
+      { prefixes: [] as string[], codes: ['MRX'] },
+      { prefixes: [] as string[], codes: ['MR', 'MR'] },
+    ]) {
+      expect(at({ cardIds })).toThrow('lego-minecraft-1: the card id rule');
+    }
+    for (const kleinanzeigen of ['', 'lego minecraft', 'lego/minecraft', 'Lego', '-x']) {
+      expect(at({ kleinanzeigen })).toThrow('lego-minecraft-1: the Kleinanzeigen search words');
+    }
+  });
+
+  test("a shop's title forms must fit the collection's id rule", () => {
+    const creds = { clientId: 'id', clientSecret: 's' };
+    const mixed = {
+      ...turboAttax2026,
+      shops: { ebay: { ...turboAttax2026.shops.ebay!, idForms: 'minecraft' as const } },
+    };
+    expect(() => createShopAdapters(creds, undefined, { collections: [mixed] })).toThrow(
+      "turbo-attax-2026: eBay's minecraft title forms read another id rule than the collection's"
+    );
+    const taForms = {
+      ...legoMinecraft1,
+      shops: { ebay: { ...legoMinecraft1.shops.ebay!, idForms: 'turbo-attax' as const } },
+    };
+    expect(() => createShopAdapters(creds, undefined, { collections: [taForms] })).toThrow(
+      "lego-minecraft-1: eBay's turbo-attax title forms read another id rule"
+    );
+    // sammel-ente and blue-ocean read Minecraft ids only.
+    for (const shop of ['sammel-ente', 'blue-ocean'] as const) {
+      const wrong = {
+        ...legoMinecraft1,
+        cardIds: TURBO_ATTAX_CARD_IDS,
+        shops: { [shop]: legoMinecraft1.shops[shop]! },
+      };
+      expect(() => createShopAdapters(null, undefined, { collections: [wrong] })).toThrow(
+        `lego-minecraft-1: ${shop} reads only LEGO Minecraft card ids`
+      );
+    }
+    expect(() =>
+      createShopAdapters(null, undefined, {
+        collections: [{ ...legoMinecraft1, cardIds: { ...MINECRAFT_CARD_IDS } }],
+      })
+    ).not.toThrow();
   });
 
   test('without a collection on eBay there is no eBay adapter; without series 3 the first one files the counts', () => {

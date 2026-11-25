@@ -21,19 +21,20 @@ export const turboAttax2026: CollectionDefinition<'turbo-attax-2026'> = {
       series: '2026',
     },
     // "Topps Turbo Attax 2026 Formel 1 Mark Webber Turbo Chrome #340 Trading Card", "LE4", "MR-VER"
-    // (2026-11-25 probe): 4782 results, so 30 pages rather than 5.
+    // (2026-11-25 probe): 4782 results need 24 pages of 200; 40 leave room to grow (8000).
     ebay: {
       queries: ['turbo attax 2026'],
       idForms: 'turbo-attax',
-      maxPages: 30,
+      maxPages: 40,
       // Both words, and no other year ("Miami GP 2023" is unclear).
       series:
         /^(?=.*\bTurbo\s*Attax\b)(?=.*(?<!\d)2026(?!\d))(?!.*(?<!\d)(?:19|20)(?!26)\d\d(?!\d))/i,
-      // Parallels are other cards than the checklist's (spec "Non-goals"): numbered prints
-      // ("03/99", "/94"), Refractor, Pink, Rainbow, Green and Gold, but not the checklist
-      // sections "F1 Gold" and "Black Gold".
+      // Parallels and other cards than the checklist's (spec "Non-goals"): any digit/digit
+      // (numbered prints "03/99", "#269 /94", also "2/38"), Refractor, SuperFractor, Pink,
+      // Rainbow, Green, Silver, Orange, Blue, Purple, Bronze, Printing Plate, autographs, and Gold
+      // or Golden, but not the checklist sections "F1 Gold" and "Black Gold".
       excludes:
-        /\b(?:pink|parallel|variante|refractor|superfractor|rainbow|green)\b|\bgold\b(?<!\b(?:F1®?|Black)\s+gold)|\d\s*\/\s*\d/i,
+        /\b(?:pink|parallel|variante|refractor|superfractor|rainbow|green|silver|orange|blue|purple|bronze|golden|autogramm|autograph|signed|auto|printing\s*plate)\b|\bgold\b(?<!\b(?:F1®?|Black)[\s-]+gold)|\d\s*\/\s*\d/i,
     },
   },
 };

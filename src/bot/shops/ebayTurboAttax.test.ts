@@ -42,6 +42,15 @@ describe('readTurboAttaxCardIds', () => {
     'Topps F1 Turbo Attax 2026 Oliver Bearman Haas Night Shift #NS-4',
     'Turbo Attax 2026 Mr Hamilton',
     'Turbo Attax 2026 Formula 1 F1 F2',
+    // A prefix glued to a word: "LE 24h" is no LE24.
+    'Turbo Attax 2026 Le Mans LE 24h',
+    // Relic codes count only in a relic's title: capitals elsewhere are words.
+    'Turbo Attax 2026 MR BIG RR TOP Lot',
+    // A driver's race number beside the driver is no card number.
+    'Topps Turbo Attax 2026 Lewis Hamilton #44 Ferrari',
+    'Topps Turbo Attax 2026 Max Verstappen #1 Red Bull',
+    'Topps Turbo Attax 2026 Lando Norris No 4 McLaren',
+    'Topps Turbo Attax 2026 Nico Hülkenberg #27 Audi',
   ])('%s gives nothing', (title) => {
     expect(readTurboAttaxCardIds(title)).toEqual([]);
   });
@@ -54,6 +63,12 @@ describe('hasTurboAttaxRange', () => {
     'Turbo Attax 2026 F1 l Legends of the Grid l Complete Set l 15 Karten l #136-150',
     'Topps Turbo Attax 2026 Greats of the Grid GG1-GG8',
     'Topps Turbo Attax 2026 Limited Edition LE 1 bis LE 18',
+    'Topps Turbo Attax 2026 Einzelkarten #1 to #264',
+    'Topps Turbo Attax 2026 Einzelkarten 1 to 264',
+    'Topps Turbo Attax 2026 Karten 1~150',
+    // Any order: a choice either way.
+    'Topps Turbo Attax 2026 #121-120',
+    'Topps Turbo Attax 2026 #288 - 150',
   ])('%s is a range', (title) => {
     expect(hasTurboAttaxRange(title)).toBe(true);
   });
@@ -63,7 +78,7 @@ describe('hasTurboAttaxRange', () => {
     'Turbo Attax F1 (Formel 1 / Formula 1) 2026 BG 2 Franco Colapinto (Black Gold)',
     'Topps Turbo Attax Formel 1 - 2026 Karten',
     'GG8 - Michael Schumacher - Greats Of The Grid - Limited Edition Turbo Attax 2026',
-    'Topps Turbo Attax 2026 #288 - 150',
+    'Topps Turbo Attax 2026 Max Verstappen #3 2026 F1',
   ])('%s is no range', (title) => {
     expect(hasTurboAttaxRange(title)).toBe(false);
   });

@@ -335,7 +335,10 @@ function readIdsIn(
   collection: CollectionId,
   collections: readonly EbayCollection[]
 ): CardId[] {
-  const forms = collections.find((c) => c.id === collection)?.idForms ?? 'minecraft';
+  const settings = collections.find((c) => c.id === collection);
+  // Placed titles name a known collection, and the default (series 3) is always known.
+  if (!settings) throw new Error(`eBay: no settings of ${collection} to read a title with`);
+  const forms = settings.idForms;
   return forms === 'turbo-attax' ? readTurboAttaxCardIds(title) : readCardIds(title);
 }
 
@@ -944,9 +947,11 @@ export function createEbayFetcher(
       };
       const perQuery = new Map<string, number>();
       for (const query of queries) {
+        // The largest cap of the collections searching it; MAX_PAGES_PER_QUERY when they set none.
         const maxPages = Math.max(
-          ...collections.filter((c) => c.queries.includes(query)).map((c) => c.maxPages ?? 0),
-          MAX_PAGES_PER_QUERY
+          ...collections
+            .filter((c) => c.queries.includes(query))
+            .map((c) => c.maxPages ?? MAX_PAGES_PER_QUERY)
         );
         const items = await search(query, pace, truncated, maxPages);
         itemsSeen += items.length;

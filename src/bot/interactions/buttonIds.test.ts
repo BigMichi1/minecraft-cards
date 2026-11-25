@@ -84,6 +84,8 @@ describe('Confirm ids', () => {
       image,
     });
     expect(decodeConfirmId(`admin-confirm:7:ZZ9:${image}`)).toBeNull();
+    const relic = { ...listing, cardIds: [cid('MR-HAM'), cid('GG8')] };
+    expect(decodeConfirmId(encodeConfirmId(relic)!)?.cardIds).toEqual(relic.cardIds);
   });
 
   test('no cards gives no id', () => {

@@ -151,6 +151,23 @@ describe('notification messages', () => {
     expect(row.components[2].custom_id).toBe('report:1');
   });
 
+  test("a DM row's Kleinanzeigen search is the listing's collection's; none for an unknown one", () => {
+    const labelsAndUrls = (over: Partial<StoredListing>) => {
+      const row = (
+        atMsg(buildNotificationMessages([item(1, over)]), 0).components![0] as any
+      ).toJSON();
+      return row.components.map((c: { label: string; url?: string }) => [c.label, c.url]);
+    };
+    expect(
+      labelsAndUrls({ collection: 'turbo-attax-2026', cardIds: [cid('MR-HAM')] })
+    ).toContainEqual([
+      'Kleinanzeigen #MR-HAM',
+      'https://www.kleinanzeigen.de/s-turbo-attax-2026-mr-ham/k0',
+    ]);
+    const unknown = labelsAndUrls({ collection: 'other-set' as CollectionId });
+    expect(unknown.some(([label]: [string]) => label.startsWith('Kleinanzeigen'))).toBe(false);
+  });
+
   test('the title names the collection: names repeat across series', () => {
     const e = embedJson(
       atMsg(buildNotificationMessages([item(1, { collection: 'lego-minecraft-1' })]), 0)

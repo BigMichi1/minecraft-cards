@@ -13,6 +13,7 @@ import {
   EBAY_COLLECTIONS,
   titleExclusion,
   EBAY_QUERIES,
+  MAX_PAGES_PER_QUERY,
 } from './ebay';
 
 /** The fetcher tests read the series 3 fixture: series 3's searches and markers only. */
@@ -2696,6 +2697,24 @@ describe('Turbo Attax 2026', () => {
     expect(result.skippedExcluded).toBe(counted.filter((e) => e === 'excluded').length);
   });
 
+  test('the fixture with every catalog loaded puts no Turbo Attax title in series 3 by name', async () => {
+    const fake = makeFetch({ searchBody: () => FIXTURE });
+    const result = await createEbayFetcher({
+      clientId: 'id',
+      clientSecret: 's',
+      fetchFn: fake.fetchFn,
+      sleep: noSleep,
+      cardNames: (c) =>
+        c === 'lego-minecraft-3'
+          ? new Map([
+              [cid('101'), 'Kimi Antonelli'],
+              [cid('12'), 'Michael Schumacher'],
+            ])
+          : OTHER_SERIES_NAMES,
+    }).fetchListings();
+    expect(result.listings.filter((l) => l.collection !== 'turbo-attax-2026')).toEqual([]);
+  });
+
   test('titleExclusion names the Turbo Attax reasons', () => {
     const why = (title: string) => titleExclusion(title, 'turbo-attax-2026');
     expect(why('Topps Turbo Attax 2026 Lewis Hamilton Karte #323 limitiert 03/99')).toBe(
@@ -2784,18 +2803,49 @@ describe('Turbo Attax 2026', () => {
     };
 
     test("Turbo Attax's search of 4782 results is read whole, not cut", async () => {
-      expect(TA[0]!.maxPages).toBe(30);
+      expect(TA[0]!.maxPages).toBe(40);
       const { result, pages } = await run(4782);
       expect(pages).toBe(24);
       expect(result.truncated).toBeUndefined();
       expect(result.listings).toHaveLength(4782);
     });
 
-    test('a search beyond its 30 pages is still cut and reported', async () => {
-      const { result, pages } = await run(7000);
-      expect(pages).toBe(30);
+    test('a search beyond its 40 pages is still cut and reported', async () => {
+      const { result, pages } = await run(9000);
+      expect(pages).toBe(40);
       expect(result.truncated).toHaveLength(1);
-      expect(result.truncated![0]).toContain('30-page cap');
+      expect(result.truncated![0]).toContain('40-page cap');
+    });
+
+    test("in one run each query keeps its own collections' cap: Minecraft 5 pages, Turbo Attax 40", async () => {
+      const fake = makeFetch({ searchBody: paged(9000) });
+      const result = await createEbayFetcher({
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings();
+      const pagesOf = (q: string) =>
+        fake.searchUrls.filter((u) => new URL(u).searchParams.get('q') === q).length;
+      for (const q of EBAY_QUERIES) {
+        expect({ q, pages: pagesOf(q) }).toEqual({
+          q,
+          pages: q === 'turbo attax 2026' ? 40 : MAX_PAGES_PER_QUERY,
+        });
+      }
+      expect(result.truncated!.some((t) => t.includes('5-page cap'))).toBe(true);
+    });
+
+    test('a collection may lower its cap below the default', async () => {
+      const fake = makeFetch({ searchBody: paged(9000) });
+      await createEbayFetcher({
+        collections: [{ ...TA[0]!, maxPages: 2 }],
+        clientId: 'id',
+        clientSecret: 's',
+        fetchFn: fake.fetchFn,
+        sleep: noSleep,
+      }).fetchListings();
+      expect(fake.searchUrls).toHaveLength(2);
     });
   });
 });

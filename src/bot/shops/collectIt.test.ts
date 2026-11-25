@@ -867,21 +867,50 @@ describe('Turbo Attax 2026', () => {
     expect(byId.get(cid('344'))?.cardName).toBe('George Russell');
   });
 
-  test('a Turbo Attax title in a Minecraft category is another series, never a skip', () => {
-    const page = parseCollectItPage(TA_P1, 'Serie 1', MINECRAFT_CARD_IDS);
-    expect(page.listings).toEqual([]);
-    expect(page.excluded).toHaveLength(30);
-    expect(page.skippedNoId + page.skippedInvalid).toBe(0);
-  });
-
-  test('a Minecraft title in the Turbo Attax category is another series', () => {
-    const page = parseCollectItPage(
+  test('a year label in a Minecraft category, or a Serie label in Turbo Attax, is no series label', () => {
+    const minecraft = parseCollectItPage(TA_P1, 'Serie 1', MINECRAFT_CARD_IDS);
+    expect(minecraft.listings).toEqual([]);
+    expect(minecraft.excluded).toEqual([]);
+    expect(minecraft.skippedNoId).toBe(30);
+    expect(minecraft.firstSkipped).toContain('no series label');
+    const turbo = parseCollectItPage(
       readFixture('collect-it-serie-1-p1.html'),
       '2026',
       TURBO_ATTAX_CARD_IDS
     );
-    expect(page.listings).toEqual([]);
-    expect(page.excluded).toHaveLength(30);
+    expect(turbo.listings).toEqual([]);
+    expect(turbo.excluded).toEqual([]);
+    expect(turbo.skippedNoId).toBe(30);
+  });
+
+  test('another year in the Turbo Attax category is another series; one such box is counted', () => {
+    const $ = cheerio.load(TA_P1);
+    $('.c-product-box-content-title').first().text('1 - Team Logo McLaren Mastercard - 2025');
+    const page = parseCollectItPage($.html(), '2026', TURBO_ATTAX_CARD_IDS);
+    expect(page.listings).toHaveLength(29);
+    expect(page.excluded).toHaveLength(1);
+    expect(page.skippedNoId).toBe(0);
+  });
+
+  test('one year-labelled box in a Minecraft category fails the walk instead of reading as sold out', async () => {
+    const S1 = readFixture('collect-it-serie-1-p1.html');
+    const $ = cheerio.load(S1);
+    $('link[rel="next"], link[rel="prev"]').remove();
+    $('.ci-pagination-meta').html('Du hast <strong>alle 30</strong> Artikel gesehen');
+    $('.c-product-box-content-title').first().text('1 - Steve - Skin Karte - 2026');
+    const { fetchFn } = fakeFetch({ Einzelkarten: $.html() });
+    const series1 = legoMinecraft1.shops['collect-it']!;
+    await expect(
+      createCollectItFetcher(series1, fetchFn, { delayMs: 0 }).fetchListings()
+    ).rejects.toThrow(/unreadable product box.*no series label/);
+  });
+
+  test('a first title part that is no card id form is no card id, also when the rule would read it', () => {
+    const $ = cheerio.load(readFixture('collect-it-serie-1-p1.html'));
+    $('.c-product-box-content-title').first().text('#1 - Steve - Skin Karte - Serie 1');
+    const page = parseCollectItPage($.html(), 'Serie 1', MINECRAFT_CARD_IDS);
+    expect(page.skippedNoId).toBe(1);
+    expect(page.firstSkipped).toContain('no card id');
   });
 
   test("the fetcher reads with the collection's rule", async () => {

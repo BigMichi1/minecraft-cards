@@ -19,7 +19,7 @@ describe('turboAttax2026', () => {
         ebay: {
           queries: ['turbo attax 2026'],
           idForms: 'turbo-attax',
-          maxPages: 30,
+          maxPages: 40,
           series: turboAttax2026.shops.ebay!.series,
           excludes: turboAttax2026.shops.ebay!.excludes,
         },
@@ -50,6 +50,16 @@ describe('turboAttax2026', () => {
       'Green Max Verstappen',
       'LANDO NORRIS GOLD LE5',
       'Gold Relic',
+      'Golden Max Verstappen',
+      'Signature Style Silver #269',
+      'Orange #12',
+      'Blue Foil #12',
+      'Purple #12',
+      'Bronze #12',
+      'Holo Autogramm 80',
+      'Signed Auto #12',
+      '#12 Autograph',
+      'Printing Plate #12',
     ]) {
       expect({ title, parallel: parallel.test(title) }).toEqual({ title, parallel: true });
     }

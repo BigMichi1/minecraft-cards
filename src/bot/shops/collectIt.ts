@@ -37,11 +37,28 @@ export function readArticleTotal(text: string): number | null {
 // "LE01 - Ender Dragon - Limitierte Karte - Serie 3" -> id "LE1" (canonical, the collection's rule).
 // "XXL 1 - Explodierender Creeper - …" (series 1) -> id "XXL1";
 // "MR-HAM - Lewis Hamilton - Manufactured Relic - 2026" (Turbo Attax) -> id "MR-HAM".
-// The first part, spaces removed, is read with the collection's card id rule.
-const TITLE_PATTERN = /^(.+?) - (.+?)(?: - |$)/;
-// The last ` - ` part of a title naming a series: "Serie 1", or a year ("2026", Turbo Attax);
-// compared with the collection's.
-const SERIES_SUFFIX = / - (Serie \d+|(?:19|20)\d{2})$/i;
+// The first part (letters and digits, at most one dash or space inside), spaces removed, is read
+// with the collection's card id rule.
+const TITLE_PATTERN = /^([A-Za-z0-9]+(?:[- ][A-Za-z0-9]+)?) - (.+?)(?: - |$)/;
+// The last ` - ` part of a title naming a series, of the kind the collection's label is: "Serie 1"
+// (LEGO Minecraft) or a year ("2026", Turbo Attax). A label of the other kind is no series label:
+// collect-it changed its titles, so the box is unreadable rather than another series'.
+const SERIE_SUFFIX = / - (Serie \d+)$/i;
+const YEAR_SUFFIX = / - ((?:19|20)\d{2})$/;
+const YEAR_LABEL = /^(?:19|20)\d{2}$/;
+
+/** The series label a title ends with, of `series`' kind (either kind when null). */
+function seriesLabel(title: string, series: string | null): string | undefined {
+  const patterns =
+    series === null
+      ? [SERIE_SUFFIX, YEAR_SUFFIX]
+      : [YEAR_LABEL.test(series) ? YEAR_SUFFIX : SERIE_SUFFIX];
+  for (const pattern of patterns) {
+    const label = pattern.exec(title)?.[1];
+    if (label !== undefined) return label;
+  }
+  return undefined;
+}
 // schema.org ItemAvailability values, lowercased, and whether each means "can be ordered now".
 const AVAILABILITY = new Map<string, boolean>([
   ['instock', true],
@@ -179,24 +196,25 @@ export function parseCollectItPage(
       skippedInvalid++;
       return;
     }
-    const match = TITLE_PATTERN.exec(title);
-    const cardId = match ? normalizeCardIdIn(rule, (match[1] ?? '').replace(/\s/g, '')) : null;
-    if (!match || !cardId) {
-      skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no card id`);
-      skippedNoId++;
-      return;
-    }
-    const titleSeries = SERIES_SUFFIX.exec(title)?.[1];
+    const titleSeries = seriesLabel(title, series);
     if (series !== null && titleSeries === undefined) {
-      // A title naming no series: the title format changed, so this box cannot be trusted, and
-      // a box the walk drops would read as sold out (collect-it hides sold-out cards).
+      // A title naming no series of the collection's kind: the title format changed, so this
+      // box cannot be trusted, and a box the walk drops would read as sold out (collect-it hides
+      // sold-out cards).
       skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no series label`);
       skippedNoId++;
       return;
     }
     if (series !== null && titleSeries !== undefined && !sameSeries(titleSeries, series)) {
-      // Another series' card in this category: counted, never stored as this collection's.
+      // Another series' card in this category, whatever its id: counted, never stored here.
       excluded.push(url);
+      return;
+    }
+    const match = TITLE_PATTERN.exec(title);
+    const cardId = match ? normalizeCardIdIn(rule, (match[1] ?? '').replace(/\s/g, '')) : null;
+    if (!match || !cardId) {
+      skip(`${quote(title)} (${clipText(url, MAX_QUOTED)}): no card id`);
+      skippedNoId++;
       return;
     }
     const availabilityHref = box.find('link[itemprop="availability"]').first().attr('href');
